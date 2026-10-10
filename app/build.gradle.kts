@@ -31,7 +31,16 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/notice"))
 }
+
+// The About screen renders the repository's NOTICE.md, so it is packaged as an asset from its one source.
+val packageNotice = tasks.register<Copy>("packageNotice") {
+    from(rootProject.file("NOTICE.md"))
+    into(layout.buildDirectory.dir("generated/notice"))
+}
+tasks.named("preBuild") { dependsOn(packageNotice) }
 
 kotlin {
     compilerOptions {
@@ -41,10 +50,13 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":protocol"))
-    implementation(project(":analytics"))
-    implementation(project(":data"))
-    implementation(project(":strap"))
+    // -Pcirclet.coreOnly builds the UI against :core and its fakes alone, for when a backend module is mid-change.
+    if (!providers.gradleProperty("circlet.coreOnly").isPresent) {
+        implementation(project(":protocol"))
+        implementation(project(":analytics"))
+        implementation(project(":data"))
+        implementation(project(":strap"))
+    }
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -53,6 +65,10 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.core)
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
 
     testImplementation(libs.junit)
 }
