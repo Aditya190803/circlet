@@ -18,6 +18,22 @@ internal class DartRandom(seed: Long) {
         return (hi * POW2_27 + lo) / POW2_53
     }
 
+    /** Dart VM `Random.nextInt`: power-of-two mask, otherwise 32-bit rejection sampling. */
+    fun nextInt(max: Int): Int {
+        require(max > 0)
+        if ((max and -max) == max) {
+            nextState()
+            return ((state and 0xFFFFFFFFL) and (max - 1).toLong()).toInt()
+        }
+        val pow2_32 = 1L shl 32
+        while (true) {
+            nextState()
+            val rnd32 = state and 0xFFFFFFFFL
+            val result = rnd32 % max
+            if (rnd32 - result + max <= pow2_32) return result.toInt()
+        }
+    }
+
     private fun nextPowerOfTwo(max: Int): Int {
         nextState()
         return ((state and 0xFFFFFFFFL) and (max - 1).toLong()).toInt()

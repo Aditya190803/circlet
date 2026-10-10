@@ -1,0 +1,194 @@
+// Ported from OpenStrap analytics/lib/src/onehz/clinical/hrv_freq.dart.
+// CLINICAL TIER-1 — frequency-domain HRV via Lomb-Scargle on NATIVE beat times.
+
+package app.circlet.analytics.heart
+
+import app.circlet.analytics.foundations.OsMetric
+import app.circlet.analytics.foundations.Tier
+import app.circlet.analytics.foundations.freqGrid
+import app.circlet.analytics.foundations.lombScargle
+import app.circlet.analytics.foundations.round6
+import kotlin.math.ceil
+
+data class HrvFreq(
+    val ulf: Double? = null,
+    val vlf: Double? = null,
+    val lf: Double? = null,
+    val hf: Double? = null,
+    val total: Double? = null,
+    /** Bands [total] summed. Null exactly when [total] is null. */
+    val totalBands: List<String>? = null,
+    val lfhf: Double? = null,
+    val nuLf: Double? = null,
+    val nuHf: Double? = null,
+    val hfGated: Boolean,
+) {
+    fun toJson(): Map<String, Any?> {
+        val m = linkedMapOf<String, Any?>()
+        if (ulf != null) m["ulf"] = round6(ulf)
+        if (vlf != null) m["vlf"] = round6(vlf)
+        if (lf != null) m["lf"] = round6(lf)
+        if (hf != null) m["hf"] = round6(hf)
+        if (total != null) m["total"] = round6(total)
+        if (totalBands != null) m["total_bands"] = totalBands
+        if (lfhf != null) m["lf_hf"] = round6(lfhf)
+        if (nuLf != null) m["nu_lf"] = round6(nuLf)
+        if (nuHf != null) m["nu_hf"] = round6(nuHf)
+        m["hf_gated"] = hfGated
+        return m
+    }
+}
+
+/**
+ * Frequency-domain HRV from cleaned NN (Laguna 1998 / Bigger 1992).
+ * Welch-averaged Lomb–Scargle on native beat times. A band the record cannot
+ * resolve is null, never 0. HF (and total, LF/HF, nu) is withheld when
+ * [artifactFraction] exceeds [hfArtifactGate].
+ */
+fun hrvFreq(
+    nnMs: List<Double>,
+    nnTimesMs: List<Double>,
+    artifactFraction: Double,
+    hfArtifactGate: Double = 0.15,
+    oversample: Double = 4.0,
+): OsMetric<HrvFreq> {
+    val inputs = listOf("rr_cleaned", "beat_times")
+    if (nnMs.size < 16 || nnTimesMs.size != nnMs.size) {
+        return OsMetric.absent(
+            tier = Tier.HIGH,
+            inputsUsed = inputs,
+            note = "too few beats for a spectral estimate",
+        )
+    }
+    val tSec = nnTimesMs.map { it / 1000.0 }
+    val spanSec = tSec.last() - tSec.first()
+    if (spanSec <= 0.0) {
+        return OsMetric.absent(
+            tier = Tier.HIGH,
+            inputsUsed = inputs,
+            note = "degenerate beat times",
+        )
+    }
+    val ulf = welchBandPower(tSec, nnMs, 0.0003, 0.003, oversample = oversample)
+    val vlf = welchBandPower(tSec, nnMs, 0.003, 0.04, oversample = oversample)
+    val lf = welchBandPower(tSec, nnMs, 0.04, 0.15, oversample = oversample)
+    val hfRaw = welchBandPower(tSec, nnMs, 0.15, 0.40, oversample = oversample)
+    if (lf == null && hfRaw == null) {
+        return OsMetric.absent(
+            tier = Tier.HIGH,
+            inputsUsed = inputs,
+            note = "record too short to resolve any HRV band",
+        )
+    }
+    val hfGated = artifactFraction > hfArtifactGate
+    val hf = if (hfGated) null else hfRaw
+    var lfhf: Double? = null
+    var nuLf: Double? = null
+    var nuHf: Double? = null
+    if (lf != null && hf != null && (lf + hf) > 0.0) {
+        lfhf = if (hf == 0.0) null else lf / hf
+        nuLf = 100.0 * lf / (lf + hf)
+        nuHf = 100.0 * hf / (lf + hf)
+    }
+    // Insertion order is the published totalBands order. An unresolved band is
+    // absent from the sum, never entered as 0. A gated HF withholds total.
+    val bands = linkedMapOf(
+        "ulf" to ulf,
+        "vlf" to vlf,
+        "lf" to lf,
+        "hf" to hfRaw,
+    )
+    val resolved = ArrayList<String>()
+    for ((name, power) in bands) {
+        if (power != null) resolved.add(name)
+    }
+    val total = if (hfGated || lf == null || hfRaw == null) {
+        null
+    } else {
+        var s = 0.0
+        for (b in resolved) s += bands[b]!!
+        s
+    }
+    val conf = ((1.0 - artifactFraction) * (if (hfGated) 0.6 else 0.9)).coerceIn(0.2, 0.9)
+    val note = if (hfGated) {
+        "HF suppressed: artifact fraction ${round6(artifactFraction)} " +
+            "> gate — LF/VLF reported, HF/LF-HF/nu/total withheld"
+    } else {
+        "PRV spectrum; HF band quantization-limited at 1 Hz"
+    }
+    return OsMetric(
+        value = HrvFreq(
+            ulf = ulf,
+            vlf = vlf,
+            lf = lf,
+            hf = hf,
+            total = total,
+            totalBands = if (total == null) null else resolved,
+            lfhf = lfhf,
+            nuLf = nuLf,
+            nuHf = nuHf,
+            hfGated = hfGated,
+        ),
+        confidence = conf,
+        tier = Tier.HIGH,
+        inputsUsed = inputs,
+        note = note,
+    )
+}
+
+/**
+ * Welch-averaged Lomb–Scargle power in [loHz, hiHz), or null when the record
+ * is too short to resolve that band. Segment length is [cyclesPerSegment]
+ * periods of [loHz]; grid spacing is that resolution divided by [oversample].
+ */
+private fun welchBandPower(
+    tSec: List<Double>,
+    y: List<Double>,
+    loHz: Double,
+    hiHz: Double,
+    cyclesPerSegment: Double = 10.0,
+    oversample: Double = 4.0,
+    minPointsPerSegment: Int = 16,
+): Double? {
+    if (loHz <= 0.0 || hiHz <= loHz || tSec.size < minPointsPerSegment) return null
+    val span = tSec.last() - tSec.first()
+    val segSec = cyclesPerSegment / loHz
+    if (span < segSec) return null
+    val df = 1.0 / segSec / oversample
+    val nGrid = ceil((hiHz - loHz) / df).toInt() + 1
+    val grid = freqGrid(loHz, hiHz, nGrid)
+    var sum = 0.0
+    var k = 0
+    val step = segSec / 2.0
+    var start = tSec.first()
+    while (start + segSec <= tSec.last()) {
+        val end = start + segSec
+        val ts = ArrayList<Double>()
+        val ys = ArrayList<Double>()
+        for (i in tSec.indices) {
+            if (tSec[i] < start) continue
+            if (tSec[i] >= end) break
+            ts.add(tSec[i])
+            ys.add(y[i])
+        }
+        if (ts.size >= minPointsPerSegment && ts.last() - ts.first() >= segSec * 0.8) {
+            var maxGap = 0.0
+            for (i in 1 until ts.size) {
+                val g = ts[i] - ts[i - 1]
+                if (g > maxGap) maxGap = g
+            }
+            if (maxGap <= segSec * 0.2) {
+                val ls = lombScargle(ts, ys, grid)
+                if (ls != null) {
+                    val p = ls.bandPower(loHz, hiHz)
+                    if (p.isFinite()) {
+                        sum += p
+                        k++
+                    }
+                }
+            }
+        }
+        start += step
+    }
+    return if (k == 0) null else sum / k
+}
