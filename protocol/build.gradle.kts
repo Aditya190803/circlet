@@ -15,6 +15,9 @@ java {
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     useJUnit()
+    testLogging {
+        showStandardStreams = true
+    }
 }
 
 dependencies {
