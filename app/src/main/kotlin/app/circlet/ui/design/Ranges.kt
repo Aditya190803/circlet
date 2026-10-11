@@ -122,7 +122,7 @@ fun RangeLegend(
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(8.dp).clip(CircleShape).background(TypicalBand))
             Spacer(Modifier.width(6.dp))
-            Text("TYPICAL  ${format(ideal.low)} – ${format(ideal.high)}", style = label(10.sp, Palette.Faint))
+            Text("IDEAL  ${format(ideal.low)} – ${format(ideal.high)}", style = label(10.sp, Palette.Faint))
         }
     }
 }

@@ -9,13 +9,16 @@
 // Ideal ranges are published population ranges only, each cited in
 // [MetricReference.idealSource] and below. No invented numbers: a metric with
 // no defensible published range carries a null ideal and a personal band only.
-// - HRV RMSSD: Nunan et al. 2010, a quantitative review of short-term HRV in
-//   21,438 healthy adults (pooled mean RMSSD ~42 ms, study means spanning
-//   19–75 ms). These are SHORT-TERM RESTING norms; nightly sleep RMSSD usually
-//   reads higher, so the band is context, not a target. One adult band: no
-//   verified age/sex buckets were available, so none are encoded.
-// - Resting heart rate: 60–100 bpm adult range (American Heart Association;
-//   trained athletes often 40–60).
+// - HRV RMSSD: the ideal runs from the average for the user's age up to the top
+//   of the middle half, using the nightly averages WHOOP has published for its
+//   members (about 78 ms at 25, 60 at 35, 48 at 45, 44 at 55, 35 at 65; middle
+//   half roughly 0.7 to 1.35 times the average). Members skew fit, and the
+//   figure is a sleeping RMSSD like Circlet's, so it suits a fitness target
+//   better than clinic norms. WHOOP publishes men and women within a few ms of
+//   each other, so one curve serves both. With no age on the profile the band
+//   falls back to Nunan et al. 2010 (short-term resting study means, 19–75 ms).
+// - Resting heart rate: 40–60 bpm, the range the American Heart Association
+//   gives for well-trained adults.
 // - Respiratory rate at rest: 12–20 breaths per minute (adult clinical range).
 // - Sleep duration: 7–9 h for adults, 8–10 h for teenagers, 7–8 h for older
 //   adults (Watson et al. 2015, AASM/SRS consensus; Hirshkowitz et al. 2015,
@@ -23,9 +26,9 @@
 // - Sleep efficiency: 85% and above is considered normal (clinical criterion).
 // - VO2max: Cooper Institute fitness category tables by age and sex (thresholds
 //   as published in Garmin's manuals, reprinted with permission from The Cooper
-//   Institute). The ideal is the "good" (60th percentile) threshold and above,
-//   capped at the "superior" (95th) value for display; the label names the
-//   user's category when today's value exists.
+//   Institute). The ideal is the "excellent" (80th percentile) threshold and
+//   above, capped at the "superior" (95th) value for display; the label names
+//   the user's category when today's value exists.
 // - Steps: no ideal (the count is an estimate) and no personal band here.
 // - Strain, recovery, stress: no population ideal; personal band only.
 // - Skin temperature deviation: within ±1 SD of the user's own baseline
@@ -69,19 +72,12 @@ fun references(
     }
     val today = history.find { it.date == date }
     return listOf(
-        reference(
-            MetricKind.HRV,
-            band(prior.mapNotNull { it.heart.hrv.rmssdMs.value }, minDays),
-            ReferenceRange(19.0, 75.0),
-            "Typical adult short-term resting range (nightly sleep values often read higher)",
-            "Nunan et al. 2010",
-            true,
-        ),
+        hrvReference(profile.ageOn(date), band(prior.mapNotNull { it.heart.hrv.rmssdMs.value }, minDays)),
         reference(
             MetricKind.RESTING_HEART_RATE,
             band(prior.mapNotNull { it.heart.resting.bpm.value?.toDouble() }, minDays),
-            ReferenceRange(60.0, 100.0),
-            "Normal adult range (trained athletes often 40–60)",
+            ReferenceRange(40.0, 60.0),
+            "Well-trained adult range",
             "American Heart Association",
             false,
         ),
@@ -177,6 +173,39 @@ private fun reference(
     higherIsBetter = higherIsBetter,
 )
 
+/** Average nightly RMSSD by age among WHOOP members, as WHOOP has published it. */
+private val HRV_BY_AGE = listOf(25 to 78.0, 35 to 60.0, 45 to 48.0, 55 to 44.0, 65 to 35.0)
+
+/** Top of the middle half relative to the average, from the same published spread. */
+private const val HRV_UPPER_RATIO = 1.35
+
+private fun hrvAverageAt(age: Int): Double {
+    if (age <= HRV_BY_AGE.first().first) return HRV_BY_AGE.first().second
+    if (age >= HRV_BY_AGE.last().first) return HRV_BY_AGE.last().second
+    val upper = HRV_BY_AGE.indexOfFirst { it.first >= age }
+    val (a0, v0) = HRV_BY_AGE[upper - 1]
+    val (a1, v1) = HRV_BY_AGE[upper]
+    return v0 + (v1 - v0) * (age - a0) / (a1 - a0)
+}
+
+private fun hrvReference(age: Int?, personal: Personal): MetricReference {
+    if (age == null) {
+        return reference(
+            MetricKind.HRV, personal, ReferenceRange(19.0, 75.0),
+            "Typical adult short-term resting range", "Nunan et al. 2010", true,
+        )
+    }
+    val average = hrvAverageAt(age)
+    return reference(
+        MetricKind.HRV,
+        personal,
+        ReferenceRange(Math.round(average).toDouble(), Math.round(average * HRV_UPPER_RATIO).toDouble()),
+        "Average to upper range for age $age among fit adults",
+        "WHOOP published member averages by age",
+        true,
+    )
+}
+
 private data class SleepIdeal(val ideal: ReferenceRange, val label: String, val source: String)
 
 private fun sleepDurationIdeal(age: Int?): SleepIdeal = when {
@@ -243,8 +272,8 @@ private fun vo2MaxReference(
     return reference(
         MetricKind.VO2_MAX,
         personal,
-        ReferenceRange(row.good, row.superior),
-        "Good or better for $who $bandLabel$category",
+        ReferenceRange(row.excellent, row.superior),
+        "Excellent or better for $who $bandLabel$category",
         "Cooper Institute fitness norms",
         true,
     )

@@ -143,12 +143,12 @@ class ReferencesTest {
         val male35 = Profile(null, 35, Sex.MALE, 180.0, 80.0, null, emptyList())
         val history = listOf(dayWith(date, vo2 = 49.0))
         val female = references(female35, date, history).single { it.kind == MetricKind.VO2_MAX }
-        assertEquals(37.8, female.ideal!!.low, 1e-9)
+        assertEquals(42.4, female.ideal!!.low, 1e-9)
         assertEquals(47.4, female.ideal!!.high, 1e-9)
         assertTrue(female.idealLabel!!, female.idealLabel!!.contains("women 30–39"))
         assertTrue(female.idealLabel!!, female.idealLabel!!.contains("You: Superior"))
         val male = references(male35, date, history).single { it.kind == MetricKind.VO2_MAX }
-        assertEquals(44.0, male.ideal!!.low, 1e-9)
+        assertEquals(48.3, male.ideal!!.low, 1e-9)
         assertEquals(54.0, male.ideal!!.high, 1e-9)
         assertTrue(male.idealLabel!!, male.idealLabel!!.contains("You: Excellent"))
     }
@@ -189,7 +189,7 @@ class ReferencesTest {
     fun headlineIdealsCarryCitations() {
         val refs = references(adultMale, date, emptyList())
         fun cited(kind: MetricKind): MetricReference = refs.single { it.kind == kind }
-        assertEquals("Nunan et al. 2010", cited(MetricKind.HRV).idealSource)
+        assertEquals("WHOOP published member averages by age", cited(MetricKind.HRV).idealSource)
         assertEquals("American Heart Association", cited(MetricKind.RESTING_HEART_RATE).idealSource)
         assertNotNull(cited(MetricKind.RESPIRATORY_RATE).idealSource)
         assertNotNull(cited(MetricKind.SLEEP_EFFICIENCY).idealSource)

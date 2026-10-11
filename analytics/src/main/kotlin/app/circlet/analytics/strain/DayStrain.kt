@@ -89,7 +89,7 @@ fun dayLoad(
         ).toCore()
     }
     val zones = zoneMinutes(clipped, profile, zone, date, now, restingHeartRateBpm, priorResting)
-    val kcal = dayCaloriesFromMinutes(minutes, profile, date, restingHeartRateBpm, maxHr)
+    val kcal = dayCaloriesFromMinutes(minutes, profile, date, restingHeartRateBpm, maxHr, elapsedMinutes(zone, date, now))
     return DayLoad(Strain(strainMetric, zones), kcal, quietToday)
 }
 
@@ -223,7 +223,13 @@ fun dayCalories(
     }
     val minutes = perMinuteBpm(samples.upTo(now), zone, date)
     if (minutes.none { it > 0 }) return Metric.absent(AbsentReason.NOT_WORN)
-    return dayCaloriesFromMinutes(minutes, profile, date, restingHeartRateBpm, maxHeartRateBpm)
+    return dayCaloriesFromMinutes(minutes, profile, date, restingHeartRateBpm, maxHeartRateBpm, elapsedMinutes(zone, date, now))
+}
+
+/** Minutes of [date] that have passed by [now]: the whole day once it is over. */
+internal fun elapsedMinutes(zone: ZoneId, date: LocalDate, now: Instant): Int {
+    val start = date.atStartOfDay(zone).toEpochSecond()
+    return ((now.epochSecond - start) / 60).coerceIn(0L, 1440L).toInt()
 }
 
 /**
@@ -237,6 +243,7 @@ internal fun dayCaloriesFromMinutes(
     date: LocalDate,
     restingHeartRateBpm: Double?,
     maxHeartRateBpm: Double?,
+    elapsedMinutes: Int = 1440,
 ): Metric<Int> {
     val age = profile.ageOn(date)?.toDouble()
     val weight = profile.weightKg
@@ -250,6 +257,7 @@ internal fun dayCaloriesFromMinutes(
         CalorieProfile(weight, height, age, calorieSex(profile.sex)),
         maxHeartRateBpm,
         restingHeartRateBpm,
+        dayMinutes = elapsedMinutes,
     ) ?: return Metric.absent(AbsentReason.IMPLAUSIBLE)
     return Metric.of(energy.total.roundToInt(), confidenceTier(0.55))
 }
