@@ -19,8 +19,12 @@ import androidx.compose.ui.unit.sp
 import app.circlet.core.AbsentReason
 import app.circlet.core.CalibrationStatus
 import app.circlet.core.DaySummary
+import app.circlet.core.MetricKind
+import app.circlet.core.MetricReference
 import app.circlet.core.RecoveryDriver
 import app.circlet.core.RecoveryDriverKind
+import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
 import app.circlet.core.SleepSession
 import app.circlet.core.SleepStage
 import app.circlet.ui.design.AbsentDash
@@ -37,6 +41,8 @@ import app.circlet.ui.design.Hypnogram
 import app.circlet.ui.design.LocalTimeFormat
 import app.circlet.ui.design.MetricRow
 import app.circlet.ui.design.Palette
+import app.circlet.ui.design.RangeBar
+import app.circlet.ui.design.RangeLegend
 import app.circlet.ui.design.Skeleton
 import app.circlet.ui.design.StatRow
 import app.circlet.ui.design.TileRow
@@ -45,11 +51,13 @@ import app.circlet.ui.design.ZoneBars
 import app.circlet.ui.design.body
 import app.circlet.ui.design.dateTitle
 import app.circlet.ui.design.decimal
+import app.circlet.ui.design.forKind
 import app.circlet.ui.design.glyph
 import app.circlet.ui.design.grouped
 import app.circlet.ui.design.hoursMinutes
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
+import app.circlet.ui.design.signedDeviation
 import app.circlet.ui.design.words
 import app.circlet.ui.state.DayUiState
 import app.circlet.ui.state.Loadable
@@ -91,6 +99,14 @@ private fun DetailFrame(
     }
 }
 
+/** A range bar and its legend for one reference. Draws nothing when the day has no reference for the metric. */
+@Composable
+private fun RangeBlock(ref: MetricReference?, value: Double?, format: (Double) -> String) {
+    if (ref == null) return
+    RangeBar(value, ref.personal, ref.ideal)
+    RangeLegend(ref.personal, ref.personalDays, ref.ideal, ref.idealLabel, format)
+}
+
 /** "Avg of last 12 days" over the days before the selected one, or null with fewer than two. */
 private fun <T : Any> DayUiState.typical(pick: (DaySummary) -> T?, format: (Double) -> String, toDouble: (T) -> Double): String? {
     val values = earlier.mapNotNull { day -> pick(day)?.let(toDouble) }
@@ -129,6 +145,7 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
             }
+            RangeBlock(day.references.forKind(MetricKind.SLEEP_DURATION), sleep?.timeAsleep?.toMinutes()?.toDouble()) { hoursMinutes(it.toInt()) }
             val debt = day.sleepDebt.shortfall.value
             val bedtime = day.sleepNeed.recommendedBedtime
             val lines = listOfNotNull(
@@ -146,6 +163,7 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 StatRow("TIME IN BED", sleep.timeInBed.hoursMinutes())
                 Divider()
                 MetricRow("SLEEP EFFICIENCY", sleep.efficiency, "%") { it.toString() }
+                RangeBlock(day.references.forKind(MetricKind.SLEEP_EFFICIENCY), sleep.efficiency.value?.toDouble()) { "${it.decimal(0)}%" }
                 Divider()
                 StatRow("TIME TO FALL ASLEEP", sleep.latency.toMinutes().toString(), "MIN")
                 Divider()
@@ -240,15 +258,21 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 "HRV", day.heart.hrv.rmssdMs, "MS",
                 note = state.typical({ it.heart.hrv.rmssdMs.value }, { it.decimal(0) }) { it },
             ) { it.decimal(0) }
+            RangeBlock(day.references.forKind(MetricKind.HRV), day.heart.hrv.rmssdMs.value) { it.decimal(0) }
             Divider()
             MetricRow(
                 "RESTING HEART RATE", day.heart.resting.bpm, "BPM",
                 note = state.typical({ it.heart.resting.bpm.value }, { it.decimal(0) }) { it.toDouble() },
             ) { it.toString() }
+            RangeBlock(day.references.forKind(MetricKind.RESTING_HEART_RATE), day.heart.resting.bpm.value?.toDouble()) { it.decimal(0) }
             Divider()
             MetricRow(
                 "RESPIRATORY RATE", day.heart.respiratoryRate.breathsPerMinute, "RPM",
                 note = state.typical({ it.heart.respiratoryRate.breathsPerMinute.value }, { it.decimal() }) { it },
+            ) { it.decimal() }
+            RangeBlock(
+                day.references.forKind(MetricKind.RESPIRATORY_RATE),
+                day.heart.respiratoryRate.breathsPerMinute.value?.toDouble(),
             ) { it.decimal() }
             Divider()
             MetricRow("SLEEP PERFORMANCE", day.sleepPerformance.percent, "%") { it.toString() }
@@ -262,12 +286,54 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 absent = if (day.heart.hrv.frequency == null) day.heart.hrv.rmssdMs.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
             )
         }
+        SkinTemperatureCard(day.skinTemperature)
         Card("LAST 7 DAYS") {
             val week = state.week
             WeekBars(
                 week.map { it.recovery.score.value?.toFloat() }, week.dayLabels(), 100f,
                 week.map { Palette.recovery(it.recovery.score.value) }, week.map { it.recovery.score.value?.let { v -> "$v%" } ?: "" },
             )
+        }
+    }
+}
+
+/**
+ * Skin temperature for the night, as a deviation in standard deviations of the user's own nights.
+ * It never shows degrees: the strap has no calibrated temperature.
+ */
+@Composable
+private fun SkinTemperatureCard(skin: SkinTemperature?) {
+    Card("SKIN TEMPERATURE") {
+        when {
+            skin == null -> Text(
+                "Skin temperature is not scored for this night. It needs the strap worn through the night.",
+                style = body(13.sp, Palette.Faint),
+            )
+            skin.flag == SkinTempFlag.NOT_ENOUGH_BASELINE -> Text(
+                "Building your baseline. ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"} so far, " +
+                    "so there is nothing to compare yet. Readings are a deviation from your own nights, not a temperature.",
+                style = body(13.sp, Palette.Faint),
+            )
+            else -> {
+                val deviation = skin.deviation.value
+                StatRow(
+                    "DEVIATION", deviation?.signedDeviation(), "SD",
+                    color = if (skin.flag == SkinTempFlag.ELEVATED) Palette.Warn else Palette.White,
+                    confidence = skin.deviation.confidence.takeIf { deviation != null },
+                    absent = if (deviation == null) skin.deviation.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    when {
+                        deviation == null -> "No reading for this night. The value is in standard deviations of your own nights, never degrees."
+                        skin.flag == SkinTempFlag.ELEVATED ->
+                            "Above your usual nights, compared with ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"}. This is relative to you, not a temperature."
+                        else ->
+                            "Close to your usual nights, compared with ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"}. This is relative to you, not a temperature."
+                    },
+                    style = body(12.sp, Palette.Faint),
+                )
+            }
         }
     }
 }
@@ -345,6 +411,7 @@ fun StrainScreen(
                     absent = target.absentReason, confidence = target.confidence, alignEnd = true, modifier = Modifier.weight(1f),
                 )
             }
+            RangeBlock(day.references.forKind(MetricKind.STRAIN), strain) { it.decimal() }
             val goal = target.value
             if (strain != null && goal != null) {
                 Spacer(Modifier.height(12.dp))
@@ -363,6 +430,10 @@ fun StrainScreen(
             MetricRow("CALORIES", day.calories, "KCAL") { it.grouped() }
             Divider()
             MetricRow("STEPS", day.steps.count, tag = "ESTIMATE", note = "Counted from wrist movement") { it.grouped() }
+        }
+        Card("FITNESS") {
+            MetricRow("VO2 MAX", day.vo2Max.mlPerKgMin, "ML/KG/MIN") { it.decimal() }
+            RangeBlock(day.references.forKind(MetricKind.VO2_MAX), day.vo2Max.mlPerKgMin.value) { it.decimal() }
         }
         Card("HEART RATE ZONES") {
             ZoneBars(day.strain.zoneMinutes.takeIf { strain != null })

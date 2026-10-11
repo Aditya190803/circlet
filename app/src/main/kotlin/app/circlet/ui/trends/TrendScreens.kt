@@ -22,11 +22,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import app.circlet.core.DaySummary
 import app.circlet.core.MetricKind
+import app.circlet.core.MetricsRepository
 import app.circlet.core.RecordKind
+import app.circlet.core.TimeSource
 import app.circlet.core.TrendRange
 import app.circlet.core.WeeklyRecap
 import app.circlet.ui.LocalMessenger
+import app.circlet.ui.design.RangeBar
+import app.circlet.ui.design.RangeLegend
+import app.circlet.ui.design.forKind
+import app.circlet.ui.state.today
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import app.circlet.ui.day.DetailHeader
 import app.circlet.ui.day.ScreenColumn
 import app.circlet.ui.design.Card
@@ -130,6 +144,8 @@ fun MetricTrendScreen(kind: MetricKind, onBack: () -> Unit) {
     val vm = containerViewModel { c, _ -> MetricTrendViewModel(c.metrics, c.time) }
     LaunchedEffect(kind) { vm.open(kind) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val rangeVm = containerViewModel { c, _ -> TodayRangeViewModel(c.metrics, c.time) }
+    val today by rangeVm.day.collectAsStateWithLifecycle()
     ScreenColumn {
         DetailHeader(kind.label().uppercase(), onBack = onBack)
         Segmented(
@@ -141,6 +157,36 @@ fun MetricTrendScreen(kind: MetricKind, onBack: () -> Unit) {
             Loadable.Loading -> Skeleton(Modifier.fillMaxWidth().height(220.dp))
             is Loadable.Failed -> ErrorState(content.message)
             is Loadable.Ready -> TrendBody(kind, content.value)
+        }
+        YourRangeCard(kind, today)
+    }
+}
+
+/** Today's summary, read only for the YOUR RANGE card. Null until it arrives or when it cannot be read. */
+private class TodayRangeViewModel(metrics: MetricsRepository, time: TimeSource) : ViewModel() {
+    val day: StateFlow<DaySummary?> = metrics.observeDay(time.today())
+        .map<DaySummary, DaySummary?> { it }
+        .catch { emit(null) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+}
+
+/** Where today's value sits against the user's own normal and the ideal band. Absent when today has no reference for [kind]. */
+@Composable
+private fun YourRangeCard(kind: MetricKind, day: DaySummary?) {
+    val ref = day?.references?.forKind(kind) ?: return
+    val value = day.metricValue(kind).value
+    Card(title = "YOUR RANGE") {
+        RangeBar(value, ref.personal, ref.ideal)
+        RangeLegend(
+            personal = ref.personal,
+            personalDays = ref.personalDays,
+            ideal = ref.ideal,
+            idealLabel = ref.idealLabel,
+            format = { kind.format(it) },
+        )
+        ref.idealSource?.let { source ->
+            Spacer(Modifier.height(8.dp))
+            Text(source, style = label(10.sp, Palette.Faint))
         }
     }
 }

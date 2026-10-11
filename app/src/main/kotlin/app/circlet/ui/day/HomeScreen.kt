@@ -19,10 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.circlet.core.AbsentReason
 import app.circlet.core.Confidence
 import app.circlet.core.DaySummary
 import app.circlet.core.LinkState
 import app.circlet.core.MetricKind
+import app.circlet.core.SkinTempFlag
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
@@ -46,11 +48,14 @@ import app.circlet.ui.design.Sweep
 import app.circlet.ui.design.TileRow
 import app.circlet.ui.design.body
 import app.circlet.ui.design.decimal
+import app.circlet.ui.design.forKind
 import app.circlet.ui.design.glyph
 import app.circlet.ui.design.grouped
 import app.circlet.ui.design.hoursMinutes
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
+import app.circlet.ui.design.positionTag
+import app.circlet.ui.design.signedDeviation
 import app.circlet.ui.design.words
 import app.circlet.ui.state.DayUiState
 import app.circlet.ui.state.Loadable
@@ -311,11 +316,38 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         val resting = average(week.mapNotNull { it.heart.resting.bpm.value?.toDouble() })
         val breaths = average(week.mapNotNull { it.heart.respiratoryRate.breathsPerMinute.value })
         val asleep = average(week.mapNotNull { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() })
-        MetricRow("HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" }, onClick = { onOpenMetric(MetricKind.HRV) }) { it.decimal(0) }
+        val refs = summary.references
+        MetricRow(
+            "HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" },
+            tag = positionTag(summary.heart.hrv.rmssdMs.value, refs.forKind(MetricKind.HRV)?.personal),
+            onClick = { onOpenMetric(MetricKind.HRV) },
+        ) { it.decimal(0) }
         Divider()
-        MetricRow("RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" }, onClick = { onOpenMetric(MetricKind.RESTING_HEART_RATE) }) { it.toString() }
+        MetricRow(
+            "RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" },
+            tag = positionTag(summary.heart.resting.bpm.value?.toDouble(), refs.forKind(MetricKind.RESTING_HEART_RATE)?.personal),
+            onClick = { onOpenMetric(MetricKind.RESTING_HEART_RATE) },
+        ) { it.toString() }
         Divider()
-        MetricRow("RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" }, onClick = { onOpenMetric(MetricKind.RESPIRATORY_RATE) }) { it.decimal() }
+        MetricRow(
+            "RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" },
+            tag = positionTag(summary.heart.respiratoryRate.breathsPerMinute.value?.toDouble(), refs.forKind(MetricKind.RESPIRATORY_RATE)?.personal),
+            onClick = { onOpenMetric(MetricKind.RESPIRATORY_RATE) },
+        ) { it.decimal() }
+        Divider()
+        val skin = summary.skinTemperature
+        val scored = skin != null && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
+        val deviation = if (scored) skin?.deviation?.value else null
+        StatRow(
+            "SKIN TEMPERATURE", deviation?.signedDeviation(), "SD",
+            note = when {
+                skin == null -> "Not scored for this night"
+                !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
+                else -> "Deviation from your own nights"
+            },
+            absent = if (scored && deviation == null) skin?.deviation?.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
+            onClick = { onOpenMetric(MetricKind.SKIN_TEMPERATURE) },
+        )
         Divider()
         MetricRow("HOURS OF SLEEP", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }, onClick = { onOpenMetric(MetricKind.SLEEP_DURATION) }) { it.timeAsleep.hoursMinutes() }
         Divider()
