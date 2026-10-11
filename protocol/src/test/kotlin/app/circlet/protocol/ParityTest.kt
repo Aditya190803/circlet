@@ -59,6 +59,7 @@ class ParityTest {
             "accel_g" to record.gravity,
             "spo2_red_raw" to record.red.toLong(),
             "spo2_ir_raw" to record.infrared.toLong(),
+            "skin_temp_raw" to record.skinTempCountRaw.toLong(),
             "ambient_raw" to record.ambient.toLong(),
             "raw_tail" to hex(record.rawTail),
         )
@@ -87,7 +88,7 @@ class ParityTest {
     }
 }
 
-private val IGNORED_R24 = setOf("ppg_red_ir", "skin_contact", "skin_temp_raw")
+private val IGNORED_R24 = setOf("ppg_red_ir", "skin_contact")
 
 private fun diff(actual: Any?, expected: Any?, path: String, r24: Boolean): String? {
     if (expected == null) return if (actual == null) null else "$path: expected null, got $actual"

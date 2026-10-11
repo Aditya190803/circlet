@@ -10,8 +10,12 @@ package app.circlet.protocol
  * [heartRate] of zero means the strap reported no pulse.
  *
  * Three OpenStrap fields are omitted because that decoder marks them as
- * misidentified: the u16 straddling the float at offset 32, the exponent byte
- * at offset 51, and the fast u16 at offset 68.
+ * misidentified: the u16 straddling the float at offset 32 and the exponent
+ * byte at offset 51. The u16 at offset 68 is exposed as [R24.skinTempCountRaw]
+ * instead: OpenStrap's protocol audit disputes the temperature reading (on one
+ * large capture it moves several counts a second, which skin cannot), so it is
+ * a relative count only, never degrees, and whether it behaves as temperature
+ * on this firmware still needs a real strap to confirm.
  */
 data class R24(
     val version: Int,
@@ -25,6 +29,15 @@ data class R24(
     val red: Int,
     val infrared: Int,
     val ambient: Int,
+    /**
+     * The uncalibrated u16 at inner offset 68. This is a relative count, not
+     * degrees, and its temperature interpretation is unconfirmed: OpenStrap's
+     * protocol audit found the word moving several counts a second on a large
+     * capture, which a skin temperature cannot do. Zero is the absent sentinel
+     * for layouts that do not carry the word. Stored so a nightly settled mean
+     * can be compared with this user's own nights; never converted to °C.
+     */
+    val skinTempCountRaw: Int = 0,
     val rawTail: ByteArray,
 ) {
     override fun equals(other: Any?): Boolean {
@@ -41,6 +54,7 @@ data class R24(
             red == other.red &&
             infrared == other.infrared &&
             ambient == other.ambient &&
+            skinTempCountRaw == other.skinTempCountRaw &&
             rawTail.contentEquals(other.rawTail)
     }
 
@@ -56,6 +70,7 @@ data class R24(
         h = 31 * h + red
         h = 31 * h + infrared
         h = 31 * h + ambient
+        h = 31 * h + skinTempCountRaw
         h = 31 * h + rawTail.contentHashCode()
         return h
     }
@@ -160,6 +175,7 @@ private fun parseV24(
         red = if (optical) u16(inner, 64) else 0,
         infrared = if (optical) u16(inner, 66) else 0,
         ambient = if (optical) u16(inner, 70) else 0,
+        skinTempCountRaw = if (optical) u16(inner, 68) else 0,
         rawTail = if (inner.size > 13) inner.copyOfRange(13, inner.size) else ByteArray(0),
     )
 }
