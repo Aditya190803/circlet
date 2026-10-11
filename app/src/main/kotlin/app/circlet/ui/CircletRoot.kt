@@ -40,7 +40,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -48,6 +51,8 @@ import androidx.navigation.compose.rememberNavController
 import app.circlet.AppContainer
 import app.circlet.core.ClockStyle
 import app.circlet.core.LinkState
+import app.circlet.core.MetricKind
+import app.circlet.ui.alarm.AlarmsScreen
 import app.circlet.ui.day.DayScreen
 import app.circlet.ui.day.HomeScreen
 import app.circlet.ui.day.RecoveryScreen
@@ -69,7 +74,19 @@ import app.circlet.ui.more.PairScreen
 import app.circlet.ui.more.ProfileScreen
 import app.circlet.ui.more.UnitsScreen
 import app.circlet.ui.more.rememberNotice
+import app.circlet.ui.journal.JournalInsightsScreen
+import app.circlet.ui.journal.JournalScreen
 import app.circlet.ui.onboarding.OnboardingFlow
+import app.circlet.ui.portability.DataScreen
+import app.circlet.ui.stress.StressScreen
+import app.circlet.ui.trends.MetricTrendScreen
+import app.circlet.ui.trends.RecordsScreen
+import app.circlet.ui.trends.TrendsScreen
+import app.circlet.ui.trends.WeeklyRecapScreen
+import app.circlet.ui.workout.ActivityDetailScreen
+import app.circlet.ui.workout.LiveWorkoutScreen
+import app.circlet.ui.workout.StartWorkoutScreen
+import app.circlet.ui.workout.WorkoutsScreen
 import app.circlet.ui.state.DayViewModel
 import app.circlet.ui.state.MoreViewModel
 import app.circlet.ui.state.Notice
@@ -77,6 +94,8 @@ import app.circlet.ui.state.PairingViewModel
 import app.circlet.ui.state.containerViewModel
 import app.circlet.ui.strap.PairingFix
 import app.circlet.ui.strap.rememberAccess
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.delay
 
 /** The five destinations on the bottom bar. */
@@ -88,15 +107,47 @@ enum class Tab(val route: String, val title: String, val glyph: Glyph) {
     MORE("more", "MORE", Glyph.More),
 }
 
-/** Screens pushed on top of a tab. Wave 2 adds its routes here. */
+/**
+ * Screens pushed on top of a tab.
+ *
+ * Route table:
+ * - more/profile, more/units, more/about, more/pair, more/data: More rows and setup screens
+ * - trends: TrendsScreen. trends/metric/{kind}: MetricTrendScreen. trends/recap: WeeklyRecapScreen. trends/records: RecordsScreen
+ * - alarms: AlarmsScreen
+ * - stress/{date}: StressScreen
+ * - journal/{date}: JournalScreen. insights/journal: JournalInsightsScreen
+ * - workouts/{date}: WorkoutsScreen. workout/{id}/{date}: ActivityDetailScreen
+ * - workout/start: StartWorkoutScreen. workout/live: LiveWorkoutScreen
+ * - debug/gallery: debug builds only
+ */
 object Routes {
     const val ONBOARDING = "onboarding"
     const val PROFILE = "more/profile"
     const val UNITS = "more/units"
     const val ABOUT = "more/about"
     const val PAIR = "more/pair"
+    const val DATA = "more/data"
+    const val TRENDS = "trends"
+    const val RECAP = "trends/recap"
+    const val RECORDS = "trends/records"
+    const val ALARMS = "alarms"
+    const val JOURNAL_INSIGHTS = "insights/journal"
+    const val START_WORKOUT = "workout/start"
+    const val LIVE_WORKOUT = "workout/live"
     const val GALLERY = "debug/gallery"
+
+    fun trend(kind: MetricKind) = "trends/metric/${kind.name}"
+    fun stress(date: LocalDate) = "stress/$date"
+    fun journal(date: LocalDate) = "journal/$date"
+    fun workouts(date: LocalDate) = "workouts/$date"
+    fun workout(id: String, date: LocalDate) = "workout/$id/$date"
 }
+
+private fun stringArg(name: String) = navArgument(name) { type = NavType.StringType }
+
+private fun NavBackStackEntry.arg(name: String): String = arguments?.getString(name).orEmpty()
+
+private fun NavBackStackEntry.date(name: String): LocalDate = LocalDate.parse(arg(name))
 
 /** Shows one short line above the navigation bar. Screens reach it through [LocalMessenger]. */
 class Messenger {
@@ -229,6 +280,9 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                         onRetry = day::retry,
                         onProfile = { nav.navigate(Routes.PROFILE) },
                         onStrap = { nav.select(Tab.MORE) },
+                        onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
+                        onOpenAllActivities = { nav.navigate(Routes.workouts(state.date)) },
+                        onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
                     )
                 }
                 composable(Tab.SLEEP.route) { SleepScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
@@ -254,7 +308,13 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             profile = { nav.navigate(Routes.PROFILE) },
                             units = { nav.navigate(Routes.UNITS) },
                             about = { nav.navigate(Routes.ABOUT) },
-                            gallery = DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
+                            trends = { nav.navigate(Routes.TRENDS) },
+                            journal = { nav.navigate(Routes.journal(state.date)) },
+                            alarms = { nav.navigate(Routes.ALARMS) },
+                            stress = { nav.navigate(Routes.stress(state.date)) },
+                            workouts = { nav.navigate(Routes.workouts(state.date)) },
+                            data = { nav.navigate(Routes.DATA) },
+                            gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
                         ),
                     )
                 }
@@ -292,6 +352,70 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                         }
                     }
                     PairScreen(phase, scanning, found, pairing::scan, pairing::pair, fixPairing) { nav.popBackStack() }
+                }
+                composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
+                composable(Routes.TRENDS) {
+                    TrendsScreen(
+                        onBack = { nav.popBackStack() },
+                        onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
+                        onOpenDay = { date ->
+                            day.shift(ChronoUnit.DAYS.between(state.date, date))
+                            nav.select(Tab.HOME)
+                        },
+                        onOpenRecap = { nav.navigate(Routes.RECAP) },
+                        onOpenRecords = { nav.navigate(Routes.RECORDS) },
+                    )
+                }
+                composable(
+                    "trends/metric/{kind}",
+                    arguments = listOf(stringArg("kind")),
+                ) { entry ->
+                    MetricTrendScreen(MetricKind.valueOf(entry.arg("kind")), onBack = { nav.popBackStack() })
+                }
+                composable(Routes.RECAP) { WeeklyRecapScreen { nav.popBackStack() } }
+                composable(Routes.RECORDS) { RecordsScreen { nav.popBackStack() } }
+                composable(Routes.ALARMS) { AlarmsScreen { nav.popBackStack() } }
+                composable("stress/{date}", arguments = listOf(stringArg("date"))) { entry ->
+                    StressScreen(entry.date("date")) { nav.popBackStack() }
+                }
+                composable("journal/{date}", arguments = listOf(stringArg("date"))) { entry ->
+                    JournalScreen(
+                        entry.date("date"),
+                        onBack = { nav.popBackStack() },
+                        onOpenInsights = { nav.navigate(Routes.JOURNAL_INSIGHTS) },
+                    )
+                }
+                composable(Routes.JOURNAL_INSIGHTS) { JournalInsightsScreen { nav.popBackStack() } }
+                composable("workouts/{date}", arguments = listOf(stringArg("date"))) { entry ->
+                    val date = entry.date("date")
+                    WorkoutsScreen(
+                        date,
+                        onBack = { nav.popBackStack() },
+                        onOpenActivity = { id -> nav.navigate(Routes.workout(id, date)) },
+                        onStartWorkout = { nav.navigate(Routes.START_WORKOUT) },
+                    )
+                }
+                composable(
+                    "workout/{id}/{date}",
+                    arguments = listOf(stringArg("id"), stringArg("date")),
+                ) { entry ->
+                    ActivityDetailScreen(entry.arg("id"), entry.date("date")) { nav.popBackStack() }
+                }
+                composable(Routes.START_WORKOUT) {
+                    StartWorkoutScreen(
+                        onBack = { nav.popBackStack() },
+                        onStarted = {
+                            nav.navigate(Routes.LIVE_WORKOUT) { popUpTo(Routes.START_WORKOUT) { inclusive = true } }
+                        },
+                    )
+                }
+                composable(Routes.LIVE_WORKOUT) {
+                    LiveWorkoutScreen(
+                        onBack = { nav.popBackStack() },
+                        onFinished = { id ->
+                            nav.navigate(Routes.workout(id, state.today)) { popUpTo(Routes.LIVE_WORKOUT) { inclusive = true } }
+                        },
+                    )
                 }
                 DebugHooks.gallery?.let { gallery ->
                     composable(Routes.GALLERY) { gallery { nav.popBackStack() } }

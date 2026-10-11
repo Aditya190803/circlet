@@ -62,6 +62,12 @@ class MoreActions(
     val profile: () -> Unit = {},
     val units: () -> Unit = {},
     val about: () -> Unit = {},
+    val trends: () -> Unit = {},
+    val journal: () -> Unit = {},
+    val alarms: () -> Unit = {},
+    val stress: () -> Unit = {},
+    val workouts: () -> Unit = {},
+    val data: () -> Unit = {},
     val gallery: (() -> Unit)? = null,
 )
 
@@ -108,6 +114,18 @@ fun MoreScreen(
                 StatRow("LAST SYNC", strap.lastSync?.let { stamp(it) } ?: "NOT YET")
             }
             Card {
+                ListRow("Trends", Glyph.Trends, "Metrics over weeks and months, plus records", onClick = actions.trends)
+                Divider()
+                ListRow("Journal", Glyph.Journal, "Log how the day went and see what moves your scores", onClick = actions.journal)
+                Divider()
+                ListRow("Alarms", Glyph.Alarm, "Wake-up alarms the strap can buzz for", onClick = actions.alarms)
+                Divider()
+                ListRow("Stress", Glyph.Stress, "Stress through the selected day", onClick = actions.stress)
+                Divider()
+                ListRow("Workouts", Glyph.Run, "Activities for the selected day", onClick = actions.workouts)
+                Divider()
+                ListRow("Export data", Glyph.Export, "Take your recorded data out of Circlet", onClick = actions.data)
+                Divider()
                 ListRow("Profile", Glyph.Person, "Age, height, weight and max heart rate", onClick = actions.profile)
                 Divider()
                 ListRow("Units", Glyph.Ruler, "Weight and clock", onClick = actions.units)

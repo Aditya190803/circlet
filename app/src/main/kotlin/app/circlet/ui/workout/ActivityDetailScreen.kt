@@ -14,15 +14,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.circlet.AppContainer
 import app.circlet.core.AbsentReason
 import app.circlet.core.Activity
 import app.circlet.core.ActivitySource
+import app.circlet.core.Outcome
 import app.circlet.ui.LocalMessenger
 import app.circlet.ui.day.DetailHeader
 import app.circlet.ui.day.ScreenColumn
@@ -45,9 +49,13 @@ import app.circlet.ui.design.decimal
 import app.circlet.ui.design.grouped
 import app.circlet.ui.design.label
 import app.circlet.ui.design.TimeFormat
+import app.circlet.ui.design.QuietButton
+import app.circlet.ui.design.TextEntry
+import app.circlet.ui.design.words
 import app.circlet.ui.state.Loadable
 import app.circlet.ui.state.containerViewModel
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 @Composable
 fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit) {
@@ -57,6 +65,10 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
     val format = LocalTimeFormat.current
     val today = LocalDate.now(format.zone)
     var confirming by remember { mutableStateOf(false) }
+    var changingSport by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val ready = (state as? Loadable.Ready<Activity>)?.value
     LaunchedEffect(activityId, date) { vm.open(activityId, date) }
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     LaunchedEffect(vm) { vm.deleted.collect { onBack() } }
@@ -73,8 +85,28 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
                 is Loadable.Failed -> ErrorState(current.message, onRetry = null)
                 is Loadable.Ready<Activity> -> ActivityBody(activity = current.value, format = format)
             }
-            if (state is Loadable.Ready<Activity>) {
+            if (ready != null) {
+                SecondaryButton("CHANGE SPORT") { changingSport = true }
                 SecondaryButton("DELETE ACTIVITY") { confirming = true }
+            }
+        }
+    }
+
+    if (changingSport && ready != null) {
+        var query by remember { mutableStateOf("") }
+        Sheet(title = "CHANGE SPORT", onDismiss = { changingSport = false }) {
+            TextEntry(query, "Sport", placeholder = "Search sports") { query = it }
+            Spacer(Modifier.height(Space.xs))
+            filterSports(query).forEach { pick ->
+                QuietButton(pick.label()) {
+                    changingSport = false
+                    scope.launch {
+                        when (val result = AppContainer.get(context).workouts.edit(ready.copy(sport = pick))) {
+                            is Outcome.Ok -> Unit
+                            is Outcome.Err -> messenger.show(result.error.words())
+                        }
+                    }
+                }
             }
         }
     }

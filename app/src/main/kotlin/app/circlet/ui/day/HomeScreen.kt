@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import app.circlet.core.Confidence
 import app.circlet.core.DaySummary
 import app.circlet.core.LinkState
+import app.circlet.core.MetricKind
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
@@ -38,6 +39,7 @@ import app.circlet.ui.design.MetricDial
 import app.circlet.ui.design.MetricRow
 import app.circlet.ui.design.NoticeCard
 import app.circlet.ui.design.Palette
+import app.circlet.ui.design.QuietButton
 import app.circlet.ui.design.Skeleton
 import app.circlet.ui.design.StatRow
 import app.circlet.ui.design.Sweep
@@ -71,6 +73,9 @@ fun HomeScreen(
     onRetry: () -> Unit,
     onProfile: () -> Unit,
     onStrap: () -> Unit,
+    onOpenActivity: (String) -> Unit = {},
+    onOpenAllActivities: () -> Unit = {},
+    onOpenMetric: (MetricKind) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize()) {
         TopBar(state.date, state.today, state.strap, onShift, onProfile, onStrap)
@@ -99,8 +104,8 @@ fun HomeScreen(
                 }
                 HeartCard(state, summary, loading)
                 PlanCard(state, summary, loading)
-                MyDayCard(summary, loading, onOpen)
-                KeyStatistics(state, summary, loading)
+                MyDayCard(summary, loading, onOpen, onOpenActivity, onOpenAllActivities)
+                KeyStatistics(state, summary, loading, onOpenMetric)
             }
         }
     }
@@ -249,7 +254,13 @@ private fun PlanCard(state: DayUiState, summary: DaySummary?, loading: Boolean) 
 }
 
 @Composable
-private fun MyDayCard(summary: DaySummary?, loading: Boolean, onOpen: (DayScreen) -> Unit) {
+private fun MyDayCard(
+    summary: DaySummary?,
+    loading: Boolean,
+    onOpen: (DayScreen) -> Unit,
+    onOpenActivity: (String) -> Unit,
+    onOpenAllActivities: () -> Unit,
+) {
     val format = LocalTimeFormat.current
     Card("MY DAY") {
         if (loading) {
@@ -278,13 +289,15 @@ private fun MyDayCard(summary: DaySummary?, loading: Boolean, onOpen: (DayScreen
             TileRow(
                 activity.strain.value?.decimal(), Palette.Strain, activity.sport.label(),
                 format.range(activity.start, activity.end), glyph = activity.sport.glyph(),
-            ) { onOpen(DayScreen.STRAIN) }
+            ) { onOpenActivity(activity.id) }
         }
+        Divider()
+        QuietButton("ALL ACTIVITIES") { onOpenAllActivities() }
     }
 }
 
 @Composable
-private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Boolean) {
+private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Boolean, onOpenMetric: (MetricKind) -> Unit) {
     Card("KEY STATISTICS") {
         if (summary == null) {
             for ((i, name) in listOf("HRV", "RESTING HEART RATE", "RESPIRATORY RATE", "HOURS OF SLEEP", "CALORIES", "STEPS").withIndex()) {
@@ -298,16 +311,16 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         val resting = average(week.mapNotNull { it.heart.resting.bpm.value?.toDouble() })
         val breaths = average(week.mapNotNull { it.heart.respiratoryRate.breathsPerMinute.value })
         val asleep = average(week.mapNotNull { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() })
-        MetricRow("HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" }) { it.decimal(0) }
+        MetricRow("HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" }, onClick = { onOpenMetric(MetricKind.HRV) }) { it.decimal(0) }
         Divider()
-        MetricRow("RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" }) { it.toString() }
+        MetricRow("RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" }, onClick = { onOpenMetric(MetricKind.RESTING_HEART_RATE) }) { it.toString() }
         Divider()
-        MetricRow("RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" }) { it.decimal() }
+        MetricRow("RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" }, onClick = { onOpenMetric(MetricKind.RESPIRATORY_RATE) }) { it.decimal() }
         Divider()
-        MetricRow("HOURS OF SLEEP", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }) { it.timeAsleep.hoursMinutes() }
+        MetricRow("HOURS OF SLEEP", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }, onClick = { onOpenMetric(MetricKind.SLEEP_DURATION) }) { it.timeAsleep.hoursMinutes() }
         Divider()
-        MetricRow("CALORIES", summary.calories, "KCAL") { it.grouped() }
+        MetricRow("CALORIES", summary.calories, "KCAL", onClick = { onOpenMetric(MetricKind.CALORIES) }) { it.grouped() }
         Divider()
-        MetricRow("STEPS", summary.steps.count, tag = "ESTIMATE") { it.grouped() }
+        MetricRow("STEPS", summary.steps.count, tag = "ESTIMATE", onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
     }
 }
