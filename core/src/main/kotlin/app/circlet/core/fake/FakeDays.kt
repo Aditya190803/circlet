@@ -15,11 +15,16 @@ import app.circlet.core.HrvSpotCheck
 import app.circlet.core.JournalEntry
 import app.circlet.core.JournalTag
 import app.circlet.core.Metric
+import app.circlet.core.MetricKind
+import app.circlet.core.MetricReference
 import app.circlet.core.Recovery
 import app.circlet.core.RecoveryDriver
 import app.circlet.core.RecoveryDriverKind
+import app.circlet.core.ReferenceRange
 import app.circlet.core.RespiratoryRate
 import app.circlet.core.RestingHeartRate
+import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
 import app.circlet.core.SleepConsistency
 import app.circlet.core.SleepCycle
 import app.circlet.core.SleepDebt
@@ -82,6 +87,12 @@ internal fun generateHistory(today: LocalDate, zone: ZoneId, scenario: FakeScena
         val day = assemble(date, zone, night, next, index, scenario, bedMinutes.toList(), debtWindow.toList())
         days[date] = day
         spots[date] = if (index % 5 == 0) listOf(spotCheck(date, zone, night.hrv)) else emptyList()
+    }
+    for (date in dates) {
+        val day = days.getValue(date)
+        if (day.sleep.value == null) continue
+        val prior = dates.filter { it < date }.mapNotNull { days[it] }.filter { it.sleep.value != null }
+        days[date] = day.copy(references = fakeReferences(prior, day))
     }
     return GeneratedHistory(
         days = days,
@@ -257,6 +268,159 @@ private fun assemble(
         },
         vo2Max = Vo2Max(Metric.of(41.0 + (index % 5) * 0.4, Confidence.LOW)),
         wellness = flags,
+        skinTemperature = fakeSkinTemp(index, night.poor),
+    )
+}
+
+/**
+ * One demo night of relative skin temperature.
+ *
+ * [priorNights] is how many nights precede this one in the demo window. The
+ * flag stays [SkinTempFlag.NOT_ENOUGH_BASELINE] until seven precede it, as in
+ * the analytics gate. The poor night runs hot; one settled night runs warm but
+ * below the elevation line; the rest sit near their own baseline.
+ */
+private fun fakeSkinTemp(index: Int, poor: Boolean): SkinTemperature {
+    val deviation = when {
+        poor -> 2.3
+        index == 12 -> 2.4
+        index == 10 -> 1.4
+        else -> ((index * 37) % 11 - 5) / 10.0
+    }
+    if (index < 7) {
+        return SkinTemperature(
+            deviation = Metric.absent(AbsentReason.CALIBRATING),
+            baselineNights = index,
+            flag = SkinTempFlag.NOT_ENOUGH_BASELINE,
+        )
+    }
+    return SkinTemperature(
+        deviation = Metric.of(deviation, if (poor) Confidence.HIGH else Confidence.MEDIUM),
+        baselineNights = index,
+        flag = if (deviation >= 2.0) SkinTempFlag.ELEVATED else SkinTempFlag.NORMAL,
+    )
+}
+
+/**
+ * Demo reference rows for the ten headline kinds the analytics reference
+ * package covers. Personal bands are the prior demo days' mean plus or minus
+ * one sample standard deviation, null until seven prior days carry the metric.
+ * Ideal ranges match that package's published tables; the demo profile is a
+ * 32-year-old woman, so sleep and VO2max use the adult and women-30–39 rows.
+ */
+private fun fakeReferences(prior: List<DaySummary>, day: DaySummary): List<MetricReference> {
+    fun band(values: List<Double>): ReferenceRange? {
+        if (values.size < 7) return null
+        val mean = values.average()
+        val variance = values.sumOf { (it - mean) * (it - mean) } / (values.size - 1)
+        val sd = sqrt(variance)
+        if (!sd.isFinite()) return null
+        return ReferenceRange(mean - sd, mean + sd)
+    }
+
+    fun priorOf(read: (DaySummary) -> Double?): List<Double> = prior.mapNotNull(read)
+
+    val vo2 = day.vo2Max.mlPerKgMin.value
+    val vo2Category = vo2?.let {
+        when {
+            it >= 47.4 -> "Superior"
+            it >= 42.4 -> "Excellent"
+            it >= 37.8 -> "Good"
+            it >= 34.4 -> "Fair"
+            else -> "Poor"
+        }
+    }
+    return listOf(
+        MetricReference(
+            kind = MetricKind.HRV,
+            personal = band(priorOf { it.heart.hrv.rmssdMs.value }),
+            personalDays = priorOf { it.heart.hrv.rmssdMs.value }.size,
+            ideal = ReferenceRange(19.0, 75.0),
+            idealLabel = "Typical adult short-term resting range (nightly sleep values often read higher)",
+            idealSource = "Nunan et al. 2010",
+            higherIsBetter = true,
+        ),
+        MetricReference(
+            kind = MetricKind.RESTING_HEART_RATE,
+            personal = band(priorOf { it.heart.resting.bpm.value?.toDouble() }),
+            personalDays = priorOf { it.heart.resting.bpm.value?.toDouble() }.size,
+            ideal = ReferenceRange(60.0, 100.0),
+            idealLabel = "Normal adult range (trained athletes often 40–60)",
+            idealSource = "American Heart Association",
+            higherIsBetter = false,
+        ),
+        MetricReference(
+            kind = MetricKind.RESPIRATORY_RATE,
+            personal = band(priorOf { it.heart.respiratoryRate.breathsPerMinute.value }),
+            personalDays = priorOf { it.heart.respiratoryRate.breathsPerMinute.value }.size,
+            ideal = ReferenceRange(12.0, 20.0),
+            idealLabel = "Normal adult resting range",
+            idealSource = "Adult clinical reference range",
+            higherIsBetter = null,
+        ),
+        MetricReference(
+            kind = MetricKind.SLEEP_DURATION,
+            personal = band(priorOf { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() }),
+            personalDays = priorOf { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() }.size,
+            ideal = ReferenceRange(420.0, 540.0),
+            idealLabel = "7–9 hours for adults",
+            idealSource = "Watson et al. 2015 (AASM/SRS consensus)",
+            higherIsBetter = null,
+        ),
+        MetricReference(
+            kind = MetricKind.SLEEP_EFFICIENCY,
+            personal = band(priorOf { it.sleep.value?.efficiency?.value?.toDouble() }),
+            personalDays = priorOf { it.sleep.value?.efficiency?.value?.toDouble() }.size,
+            ideal = ReferenceRange(85.0, 100.0),
+            idealLabel = "85% and above is considered normal",
+            idealSource = "Clinical sleep criterion",
+            higherIsBetter = true,
+        ),
+        MetricReference(
+            kind = MetricKind.VO2_MAX,
+            personal = band(priorOf { it.vo2Max.mlPerKgMin.value }),
+            personalDays = priorOf { it.vo2Max.mlPerKgMin.value }.size,
+            ideal = ReferenceRange(37.8, 47.4),
+            idealLabel = "Good or better for women 30–39" + (vo2Category?.let { " · You: $it" } ?: ""),
+            idealSource = "Cooper Institute fitness norms",
+            higherIsBetter = true,
+        ),
+        MetricReference(
+            kind = MetricKind.STRAIN,
+            personal = band(priorOf { it.strain.score.value }),
+            personalDays = priorOf { it.strain.score.value }.size,
+            ideal = null,
+            idealLabel = null,
+            idealSource = null,
+            higherIsBetter = null,
+        ),
+        MetricReference(
+            kind = MetricKind.RECOVERY,
+            personal = band(priorOf { it.recovery.score.value?.toDouble() }),
+            personalDays = priorOf { it.recovery.score.value?.toDouble() }.size,
+            ideal = null,
+            idealLabel = null,
+            idealSource = null,
+            higherIsBetter = true,
+        ),
+        MetricReference(
+            kind = MetricKind.STRESS,
+            personal = band(priorOf { it.stress.score.value }),
+            personalDays = priorOf { it.stress.score.value }.size,
+            ideal = null,
+            idealLabel = null,
+            idealSource = null,
+            higherIsBetter = false,
+        ),
+        MetricReference(
+            kind = MetricKind.SKIN_TEMPERATURE,
+            personal = band(priorOf { it.skinTemperature?.deviation?.value }),
+            personalDays = priorOf { it.skinTemperature?.deviation?.value }.size,
+            ideal = ReferenceRange(-1.0, 1.0),
+            idealLabel = "Within ±1 SD of your own baseline",
+            idealSource = "Circlet nightly-deviation band",
+            higherIsBetter = null,
+        ),
     )
 }
 

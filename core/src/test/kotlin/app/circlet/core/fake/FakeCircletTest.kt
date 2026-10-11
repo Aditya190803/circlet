@@ -8,6 +8,7 @@ import app.circlet.core.ManualTimeSource
 import app.circlet.core.Outcome
 import app.circlet.core.SleepStage
 import app.circlet.core.MetricKind
+import app.circlet.core.SkinTempFlag
 import app.circlet.core.Sport
 import app.circlet.core.TrendRange
 import app.circlet.core.WellnessKind
@@ -118,6 +119,64 @@ class FakeCircletTest {
         assertTrue(missing.heartRateByMinute.isEmpty())
         assertNotNull(empty.observeDay(today.minusDays(1)).first().sleep.value)
         assertEquals(LinkState.CONNECTED, empty.state.value.link)
+    }
+
+    @Test
+    fun pairedDaysCarrySkinTemperatureAndReferences() = runBlocking {
+        val clock = ManualTimeSource(start, zone)
+        val fake = FakeCirclet(clock, FakeScenario.PAIRED)
+        val today = LocalDate.of(2026, 10, 10)
+        val days = fake.observeRange(today.minusDays(13), today).first()
+        assertEquals(14, days.size)
+
+        val first = days.first()
+        val skinFirst = checkNotNull(first.skinTemperature)
+        assertEquals(SkinTempFlag.NOT_ENOUGH_BASELINE, skinFirst.flag)
+        assertEquals(0, skinFirst.baselineNights)
+        assertEquals(AbsentReason.CALIBRATING, skinFirst.deviation.absentReason)
+
+        val last = days.last()
+        val skinLast = checkNotNull(last.skinTemperature)
+        assertEquals(13, skinLast.baselineNights)
+        assertNotNull(skinLast.deviation.value)
+
+        val elevated = days.mapNotNull { it.skinTemperature }.filter { it.flag == SkinTempFlag.ELEVATED }
+        assertTrue(elevated.isNotEmpty())
+        assertTrue(elevated.all { (it.deviation.value ?: 0.0) >= 2.0 })
+
+        val kinds = last.references.map { it.kind }.toSet()
+        assertEquals(10, last.references.size)
+        for (kind in listOf(
+            MetricKind.HRV, MetricKind.RESTING_HEART_RATE, MetricKind.RESPIRATORY_RATE,
+            MetricKind.SLEEP_DURATION, MetricKind.SLEEP_EFFICIENCY, MetricKind.VO2_MAX,
+            MetricKind.STRAIN, MetricKind.RECOVERY, MetricKind.STRESS, MetricKind.SKIN_TEMPERATURE,
+        )) {
+            assertTrue(kind.name, kind in kinds)
+        }
+        val hrv = last.references.single { it.kind == MetricKind.HRV }
+        assertNotNull(hrv.personal)
+        assertEquals(13, hrv.personalDays)
+        assertEquals(19.0, hrv.ideal!!.low, 0.0)
+        assertEquals(75.0, hrv.ideal!!.high, 0.0)
+        assertNotNull(hrv.idealSource)
+        val strain = last.references.single { it.kind == MetricKind.STRAIN }
+        assertNotNull(strain.personal)
+        assertNull(strain.ideal)
+        assertNull(strain.idealLabel)
+        val firstHrv = first.references.single { it.kind == MetricKind.HRV }
+        assertNull(firstHrv.personal)
+        assertEquals(0, firstHrv.personalDays)
+        assertNotNull(firstHrv.ideal)
+
+        val trend = fake.trend(MetricKind.SKIN_TEMPERATURE, TrendRange.WEEK)
+        assertTrue(trend is Outcome.Ok)
+        assertEquals(7, (trend as Outcome.Ok).value.size)
+        assertTrue((trend as Outcome.Ok).value.any { it.value.value != null })
+
+        val unpaired = FakeCirclet(ManualTimeSource(start, zone), FakeScenario.UNPAIRED)
+        val bare = unpaired.observeDay(today).first()
+        assertNull(bare.skinTemperature)
+        assertTrue(bare.references.isEmpty())
     }
 
     @Test

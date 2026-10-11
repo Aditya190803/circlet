@@ -32,6 +32,11 @@ data class OpticalChannels(
  * not a measured rate. Null means the record had no heart-rate field.
  * [rrIntervalsMs] are beat-to-beat intervals in milliseconds, in order.
  * [rawRecord] is the original record body so a later decoder can re-read it.
+ * [skinTempCount] is the uncalibrated u16 at inner offset 68. It is not degrees.
+ * Null means that layout did not carry the word. OpenStrap's protocol audit found
+ * the word moving several counts a second on a large capture, which a skin
+ * temperature cannot; it is stored so a nightly settled mean can be compared
+ * with this user's own nights, and it is never converted to °C.
  */
 data class Sample(
     /** Unix epoch second of the record. */
@@ -41,6 +46,7 @@ data class Sample(
     val gravity: GravityVector?,
     val optical: OpticalChannels?,
     val rawRecord: List<Byte>?,
+    val skinTempCount: Int? = null,
 )
 
 /** Measured heart rate in bpm, or null when the sample is off-wrist, missing, or implausible. */

@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.Flow
  * null is a minute with no sample) and is empty when the day was not computed.
  * [calories] are total kilocalories for the local day.
  * Calibration lives on [Recovery.calibration].
+ * [skinTemperature] is null when that night was not scored. [references] is empty
+ * until a day has been compared with a baseline and with published ranges.
  */
 data class DaySummary(
     val date: LocalDate,
@@ -32,6 +34,8 @@ data class DaySummary(
     val targetStrain: TargetStrain,
     val vo2Max: Vo2Max,
     val wellness: List<WellnessFlag>,
+    val skinTemperature: SkinTemperature? = null,
+    val references: List<MetricReference> = emptyList(),
 )
 
 /**

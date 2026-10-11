@@ -17,7 +17,8 @@ import java.time.LocalDate
  * respiratory rate is breaths per minute;
  * steps are a count;
  * calories are kilocalories;
- * VO2max is ml/kg/min.
+ * VO2max is ml/kg/min;
+ * skin temperature is a deviation, in standard deviations of the user's own nights.
  */
 enum class MetricKind {
     SLEEP_PERFORMANCE,
@@ -35,6 +36,7 @@ enum class MetricKind {
     STEPS,
     CALORIES,
     VO2_MAX,
+    SKIN_TEMPERATURE,
 }
 
 /** How far back a trend looks from today. A week is 7 local days and a month is 30. */

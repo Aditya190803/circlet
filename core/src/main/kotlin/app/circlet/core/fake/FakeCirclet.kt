@@ -688,6 +688,8 @@ private fun read(day: DaySummary, metric: MetricKind): Metric<Double> = when (me
     MetricKind.STEPS -> day.steps.count.asDouble()
     MetricKind.CALORIES -> day.calories.asDouble()
     MetricKind.VO2_MAX -> day.vo2Max.mlPerKgMin
+    MetricKind.SKIN_TEMPERATURE -> day.skinTemperature?.deviation
+        ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
 }
 
 private fun Metric<Int>.asDouble(): Metric<Double> =
