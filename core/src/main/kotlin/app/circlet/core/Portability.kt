@@ -53,6 +53,17 @@ data class ExportResult(
  * [restore] reads a content URI previously produced by [exportDatabase] or chosen by the user.
  * Turning Health Connect on requests every [HealthKind]. Turning it off clears the grants.
  */
+/**
+ * What an import of another app's history added.
+ * [skipped] counts days left alone because this phone already had its own data for them.
+ */
+data class ImportResult(
+    val imported: Int,
+    val skipped: Int,
+    val firstDay: java.time.LocalDate?,
+    val lastDay: java.time.LocalDate?,
+)
+
 interface DataPortability {
     val healthConnect: StateFlow<HealthConnectStatus>
     val backup: StateFlow<BackupSettings>
@@ -62,6 +73,13 @@ interface DataPortability {
     suspend fun updateBackup(backup: BackupSettings): Outcome<Unit>
 
     suspend fun restore(uri: String): Outcome<Unit>
+
+    /**
+     * Adds the days from a WHOOP data export (the export zip or its
+     * `physiological_cycles.csv`) so trends and baselines can use that history.
+     * Days this phone already computed from the strap are kept as they are.
+     */
+    suspend fun importWhoopExport(uri: String): Outcome<ImportResult>
 
     suspend fun setHealthConnectEnabled(enabled: Boolean): Outcome<Unit>
 }

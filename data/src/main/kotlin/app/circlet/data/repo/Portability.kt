@@ -1,5 +1,11 @@
 package app.circlet.data.repo
 
+import app.circlet.core.ImportResult
+import app.circlet.data.codec.DayCodec
+import app.circlet.data.db.DaySummaryEntity
+import app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION
+import app.circlet.data.importer.cyclesCsvFrom
+import app.circlet.data.importer.parseWhoopCycles
 import android.content.Context
 import app.circlet.core.BackupSettings
 import app.circlet.core.CoreError
@@ -89,6 +95,50 @@ internal class DataPortabilityImpl(
             refreshHealth()
             scheduleBackup(store.context, memory.backup.value)
             pipeline.nudge()
+        }
+    }
+
+    override suspend fun importWhoopExport(uri: String): Outcome<ImportResult> {
+        val bytes = try {
+            store.io { documents.read(uri) }
+        } catch (error: Exception) {
+            return Outcome.Err(CoreError.Storage(error.message ?: "unreadable"))
+        }
+        val csv = cyclesCsvFrom(bytes)
+            ?: return Outcome.Err(CoreError.Invalid("That file is not a WHOOP data export"))
+        val days = parseWhoopCycles(csv)
+        if (days.isEmpty()) return Outcome.Err(CoreError.Invalid("The export has no days to import"))
+        return catchStorage {
+            var imported = 0
+            var skipped = 0
+            store.lock.withLock {
+                store.io {
+                    store.database.runInTransaction {
+                        for (day in days) {
+                            val iso = day.date.toString()
+                            // A day this phone computed from the strap's own samples stays as it is.
+                            val existing = store.database.days().get(iso)
+                            if (existing != null && existing.algorithmVersion != IMPORTED_ALGORITHM_VERSION) {
+                                skipped++
+                                continue
+                            }
+                            store.database.days().upsert(
+                                DaySummaryEntity(
+                                    date = iso,
+                                    algorithmVersion = IMPORTED_ALGORITHM_VERSION,
+                                    computedAtMillis = store.time.now().toEpochMilli(),
+                                    payload = DayCodec.encode(day),
+                                ),
+                            )
+                            imported++
+                        }
+                    }
+                }
+            }
+            store.generation.value = store.generation.value + 1
+            // Later days lean on the imported history for their baselines, so they are scored again.
+            pipeline.nudge()
+            ImportResult(imported, skipped, days.first().date, days.last().date)
         }
     }
 

@@ -1,5 +1,6 @@
 package app.circlet.data.repo
 
+import app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION
 import app.circlet.core.CoreError
 import app.circlet.core.DaySummary
 import app.circlet.core.HrvSpotCheck
@@ -87,7 +88,8 @@ internal class MetricsRepositoryImpl(
         val iso = date.toString()
         val stale = store.io {
             val row = store.database.days().get(iso)
-            row != null && row.algorithmVersion != store.dayEngine.algorithmVersion
+            row != null && row.algorithmVersion != IMPORTED_ALGORITHM_VERSION &&
+                row.algorithmVersion != store.dayEngine.algorithmVersion
         }
         if (stale) store.io { store.database.dirty().mark(iso) }
         val dirty = stale || store.io { store.database.dirty().generation(iso) != null }
@@ -102,7 +104,7 @@ internal class MetricsRepositoryImpl(
             } else {
                 store.database.days().range(from.toString(), to.toString())
             }
-            rows.filter { it.algorithmVersion != store.dayEngine.algorithmVersion }
+            rows.filter { it.algorithmVersion != IMPORTED_ALGORITHM_VERSION && it.algorithmVersion != store.dayEngine.algorithmVersion }
                 .forEach { store.database.dirty().mark(it.date) }
         }
         pipeline.recomputeDirty()

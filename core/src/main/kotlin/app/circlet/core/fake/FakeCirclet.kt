@@ -9,6 +9,7 @@ import app.circlet.core.Confidence
 import app.circlet.core.CoreError
 import app.circlet.core.CorrelationMetric
 import app.circlet.core.DataPortability
+import app.circlet.core.ImportResult
 import app.circlet.core.DaySummary
 import app.circlet.core.ExportResult
 import app.circlet.core.FoundStrap
@@ -516,6 +517,11 @@ class FakeCirclet(
         }
         backupState.value = backup
         return Outcome.Ok(Unit)
+    }
+
+    override suspend fun importWhoopExport(uri: String): Outcome<ImportResult> {
+        if (uri.isBlank()) return Outcome.Err(CoreError.Invalid("import needs a file"))
+        return Outcome.Ok(ImportResult(imported = 0, skipped = 0, firstDay = null, lastDay = null))
     }
 
     override suspend fun restore(uri: String): Outcome<Unit> {

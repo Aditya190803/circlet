@@ -90,6 +90,10 @@ fun DataScreen(onBack: () -> Unit) {
     val pickRestore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) pendingRestore = uri.toString()
     }
+    val pickWhoopExport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) vm.importWhoop(uri.toString())
+    }
+    val importing by vm.importing.collectAsState()
 
     Column(Modifier.fillMaxSize()) {
         DetailHeader("DATA", onBack = onBack)
@@ -172,6 +176,19 @@ fun DataScreen(onBack: () -> Unit) {
                 )
             }
 
+            Card("IMPORT WHOOP HISTORY") {
+                Text(
+                    "Bring in your past days from the official app, so trends and your baselines start with that history. " +
+                        "In the WHOOP app, open More, App Settings, Data Export, and choose the zip it sends you. " +
+                        "Days this phone has already recorded from the strap are kept.",
+                    style = body(14.sp, Palette.Dim),
+                )
+                Spacer(Modifier.height(10.dp))
+                SecondaryButton(if (importing) "IMPORTING" else "CHOOSE THE EXPORT FILE", enabled = !importing) {
+                    pickWhoopExport.launch(arrayOf("application/zip", "text/csv", "text/comma-separated-values", "application/octet-stream", "*/*"))
+                }
+            }
+
             Card("RESTORE") {
                 val pending = pendingRestore
                 if (pending == null) {
@@ -180,7 +197,7 @@ fun DataScreen(onBack: () -> Unit) {
                         style = body(14.sp, Palette.Dim),
                     )
                     Spacer(Modifier.height(10.dp))
-                    SecondaryButton("CHOOSE A FILE") { pickRestore.launch(arrayOf("application/json")) }
+                    SecondaryButton("CHOOSE A FILE") { pickRestore.launch(arrayOf("*/*")) }
                 } else {
                     Text(
                         "Restoring replaces all data on this phone with the data in the file. " +
