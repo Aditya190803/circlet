@@ -31,6 +31,8 @@ fun DaySummary.metricValue(kind: MetricKind): Metric<Double> = when (kind) {
     MetricKind.STEPS -> steps.count.mapValue { it.toDouble() }
     MetricKind.CALORIES -> calories.mapValue { it.toDouble() }
     MetricKind.VO2_MAX -> vo2Max.mlPerKgMin.mapValue { it }
+    MetricKind.SKIN_TEMPERATURE -> skinTemperature?.deviation?.mapValue { it }
+        ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA, Confidence.LOW)
 }
 
 private fun <T> Metric<T>.mapValue(transform: (T) -> Double): Metric<Double> {

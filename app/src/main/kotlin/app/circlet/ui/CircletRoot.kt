@@ -287,7 +287,14 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                 }
                 composable(Tab.SLEEP.route) { SleepScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
                 composable(Tab.RECOVERY.route) { RecoveryScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
-                composable(Tab.STRAIN.route) { StrainScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
+                composable(Tab.STRAIN.route) {
+                    StrainScreen(
+                        state,
+                        onBack = { nav.popBackStack() },
+                        onRetry = day::retry,
+                        onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
+                    )
+                }
                 composable(Tab.MORE.route) {
                     val more = moreViewModel(messenger)
                     val strap by more.strapState.collectAsStateWithLifecycle()
@@ -359,7 +366,8 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                         onBack = { nav.popBackStack() },
                         onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
                         onOpenDay = { date ->
-                            day.shift(ChronoUnit.DAYS.between(state.date, date))
+                            val target = minOf(date, state.today)
+                            day.shift(ChronoUnit.DAYS.between(state.date, target))
                             nav.select(Tab.HOME)
                         },
                         onOpenRecap = { nav.navigate(Routes.RECAP) },

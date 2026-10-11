@@ -1,10 +1,14 @@
 package app.circlet.ui.trends
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -13,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +34,7 @@ import app.circlet.ui.design.EmptyState
 import app.circlet.ui.design.ErrorState
 import app.circlet.ui.design.Figure
 import app.circlet.ui.design.Glyph
+import app.circlet.ui.design.Icon
 import app.circlet.ui.design.IconButton
 import app.circlet.ui.design.ListRow
 import app.circlet.ui.design.MonthCell
@@ -45,6 +51,7 @@ import app.circlet.ui.design.dateTitle
 import app.circlet.ui.design.hoursMinutes
 import app.circlet.ui.design.label
 import app.circlet.ui.design.narrowDay
+import app.circlet.ui.design.number
 import app.circlet.ui.state.Loadable
 import app.circlet.ui.state.containerViewModel
 import java.time.DayOfWeek
@@ -67,7 +74,7 @@ fun TrendsScreen(
     val vm = containerViewModel { c, _ -> TrendsViewModel(c.metrics, c.time) }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader("Trends", onBack = onBack)
+        DetailHeader("TRENDS", onBack = onBack)
         when (val calendar = state.calendar) {
             Loadable.Loading -> Card(title = monthTitle(state.month)) {
                 Skeleton(Modifier.fillMaxWidth().height(240.dp))
@@ -92,15 +99,15 @@ fun TrendsScreen(
             }
         }
         when (val rows = state.rows) {
-            Loadable.Loading -> Card(title = "Last 30 days") {
+            Loadable.Loading -> Card(title = "LAST 30 DAYS") {
                 Skeleton(Modifier.fillMaxWidth().height(160.dp))
             }
             is Loadable.Failed -> ErrorState(rows.message)
-            is Loadable.Ready -> Card(title = "Last 30 days") {
+            is Loadable.Ready -> Card(title = "LAST 30 DAYS") {
                 KindList(rows.value, onOpenMetric)
             }
         }
-        Card(title = "Reports") {
+        Card(title = "REPORTS") {
             ListRow(
                 title = "Weekly recap",
                 glyph = Glyph.Document,
@@ -124,7 +131,7 @@ fun MetricTrendScreen(kind: MetricKind, onBack: () -> Unit) {
     LaunchedEffect(kind) { vm.open(kind) }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader(kind.label(), onBack = onBack)
+        DetailHeader(kind.label().uppercase(), onBack = onBack)
         Segmented(
             options = listOf("Week", "Month"),
             selected = if (state.range == TrendRange.WEEK) 0 else 1,
@@ -146,7 +153,7 @@ fun WeeklyRecapScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader("Weekly recap", subtitle = weekLabel(state.weekStart), onBack = onBack)
+        DetailHeader("WEEKLY RECAP", subtitle = weekLabel(state.weekStart), onBack = onBack)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(Glyph.ChevronLeft, "Previous week", onClick = { vm.shiftWeek(-1) })
             Text(
@@ -178,7 +185,7 @@ fun RecordsScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader("Personal records", onBack = onBack)
+        DetailHeader("PERSONAL RECORDS", onBack = onBack)
         when (val content = state.content) {
             Loadable.Loading -> Skeleton(Modifier.fillMaxWidth().height(200.dp))
             is Loadable.Failed -> ErrorState(content.message)
@@ -208,20 +215,39 @@ private fun KindList(rows: List<KindRow>, onOpenMetric: (MetricKind) -> Unit) {
         )
         return
     }
-    rows.forEach { row ->
-        ListRow(
-            title = row.kind.label(),
-            subtitle = row.average?.let { "Average ${row.kind.withUnit(it)}" } ?: "No readings in the last 30 days",
-            value = row.latest?.let { row.kind.withUnit(it) },
-            onClick = { onOpenMetric(row.kind) },
-            trailing = {
-                Sparkline(
-                    values = row.points,
-                    color = Palette.Teal,
-                    modifier = Modifier.width(72.dp).height(28.dp),
-                )
-            },
+    rows.forEach { row -> MetricStatRow(row, onClick = { onOpenMetric(row.kind) }) }
+}
+
+/** A [StatRow] with a sparkline between the name and the value. Names, notes and values follow the stat-row layout. */
+@Composable
+private fun MetricStatRow(row: KindRow, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(row.kind.label().uppercase(), style = label())
+            val note = row.average?.let { "30-DAY AVG ${row.kind.withUnit(it)}" } ?: "NO READINGS IN THE LAST 30 DAYS"
+            Text(note, style = label(10.sp, Palette.Faint), modifier = Modifier.padding(top = 2.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Sparkline(
+            values = row.points,
+            color = row.kind.sparkColor(),
+            modifier = Modifier.width(64.dp).height(28.dp),
         )
+        Spacer(Modifier.width(12.dp))
+        val latest = row.latest
+        if (latest == null) {
+            Text("NO READING", style = label(11.sp, Palette.Faint))
+        } else {
+            Text(row.kind.withUnit(latest), style = number(22.sp, Palette.White))
+        }
+        Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 6.dp))
     }
 }
 
@@ -246,7 +272,10 @@ private fun CalendarGrid(
     values: Map<LocalDate, Double?>,
     onOpenDay: (LocalDate) -> Unit,
 ) {
-    monthGrid(month).chunked(7).forEach { week ->
+    // Only the weeks that reach today or earlier: a month's future weeks would render as empty rows.
+    monthGrid(month).chunked(7)
+        .filter { week -> week.any { date -> date != null && !date.isAfter(today) } }
+        .forEach { week ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             week.forEach { date -> CalendarCell(date, today, values, onOpenDay) }
         }
@@ -299,21 +328,21 @@ private fun TrendBody(kind: MetricKind, trend: MetricTrend) {
             },
         )
     }
-    Card(title = "Summary") {
+    Card(title = "SUMMARY") {
         Row(Modifier.fillMaxWidth()) {
             Figure(
                 value = trend.stats.min?.let { kind.withUnit(it) },
-                caption = "Min",
+                caption = "MIN",
                 modifier = Modifier.weight(1f),
             )
             Figure(
                 value = trend.stats.average?.let { kind.withUnit(it) },
-                caption = "Average",
+                caption = "AVERAGE",
                 modifier = Modifier.weight(1f),
             )
             Figure(
                 value = trend.stats.max?.let { kind.withUnit(it) },
-                caption = "Max",
+                caption = "MAX",
                 alignEnd = true,
                 modifier = Modifier.weight(1f),
             )
@@ -321,7 +350,7 @@ private fun TrendBody(kind: MetricKind, trend: MetricTrend) {
         ChangeLine(kind, trend)
     }
     val withValues = trend.points.filter { it.value != null }.asReversed()
-    Card(title = "Days") {
+    Card(title = "DAYS") {
         if (withValues.isEmpty()) {
             Text("No readings in this period.", style = body(14.sp))
         }
@@ -371,11 +400,10 @@ private fun RecapBody(recap: WeeklyRecap) {
         )
         return
     }
-    Card(title = "Averages") {
+    Card(title = "AVERAGES") {
         StatRow(
             name = "Recovery",
-            value = recap.averageRecovery.value?.decimal(0),
-            unit = "%",
+            value = recap.averageRecovery.value?.let { "${it.decimal(0)}%" },
             confidence = recap.averageRecovery.confidence,
             absent = recap.averageRecovery.absentReason,
         )
@@ -387,8 +415,7 @@ private fun RecapBody(recap: WeeklyRecap) {
         )
         StatRow(
             name = "Sleep performance",
-            value = recap.averageSleepPerformance.value?.decimal(0),
-            unit = "%",
+            value = recap.averageSleepPerformance.value?.let { "${it.decimal(0)}%" },
             confidence = recap.averageSleepPerformance.confidence,
             absent = recap.averageSleepPerformance.absentReason,
         )
@@ -406,7 +433,7 @@ private fun RecapBody(recap: WeeklyRecap) {
             absent = recap.sleepDebt.absentReason,
         )
     }
-    Card(title = "Days") {
+    Card(title = "DAYS") {
         StatRow(
             name = "Days with readings",
             value = recap.days.count { day -> MetricKind.values().any { day.metricValue(it).present } }.toString(),
@@ -425,7 +452,7 @@ private fun RecapBody(recap: WeeklyRecap) {
 
 @Composable
 private fun RecordCard(group: RecordGroup) {
-    Card(title = group.kind.label()) {
+    Card(title = group.kind.label().uppercase()) {
         group.records.forEach { record ->
             ListRow(
                 title = group.kind.withUnit(record.value),
@@ -435,22 +462,27 @@ private fun RecordCard(group: RecordGroup) {
     }
 }
 
-private fun MetricKind.withUnit(value: Double): String =
-    listOf(format(value), unit()).filter { it.isNotEmpty() }.joinToString(" ")
+/** Joins a value and its unit. Percent sits against the number; durations already read as hours and minutes. */
+private fun joinUnit(value: String, unit: String, durationValue: Boolean = false): String = when {
+    durationValue || unit.isEmpty() -> value
+    unit == "%" -> value + unit
+    else -> "$value $unit"
+}
 
-private fun RecordKind.withUnit(value: Double): String =
-    listOf(format(value), unit()).filter { it.isNotEmpty() }.joinToString(" ")
+private fun MetricKind.withUnit(value: Double): String = joinUnit(format(value), unit(), isDuration())
+
+private fun RecordKind.withUnit(value: Double): String = joinUnit(format(value), unit(), isDuration())
 
 private fun signed(value: Double): String = (if (value > 0) "+" else "") + value.decimal(1)
 
 private fun monthTitle(month: YearMonth): String =
-    month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
+    month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())).uppercase()
 
 private fun weekLabel(weekStart: LocalDate): String =
     "${weekStart.shortDate("d MMM")} to ${weekStart.plusDays(6).shortDate("d MMM")}"
 
 private fun windowLabel(window: DayWindow): String =
-    "${window.from.shortDate("d MMM")} to ${window.to.shortDate("d MMM")}"
+    "${window.from.shortDate("d MMM")} to ${window.to.shortDate("d MMM")}".uppercase()
 
 private fun LocalDate.shortDate(pattern: String = "d MMM yyyy"): String =
     format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))

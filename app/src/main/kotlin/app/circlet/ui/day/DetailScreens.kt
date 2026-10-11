@@ -314,7 +314,12 @@ fun DriversCard(drivers: List<RecoveryDriver>) {
 }
 
 @Composable
-fun StrainScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
+fun StrainScreen(
+    state: DayUiState,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onOpenActivity: (String) -> Unit = {},
+) {
     DetailFrame("STRAIN", state, onBack, onRetry, "DAY STRAIN") { day ->
         val format = LocalTimeFormat.current
         val strain = day.strain.score.value
@@ -375,6 +380,7 @@ fun StrainScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                     activity.strain.value?.decimal(), Palette.Strain, activity.sport.label(),
                     format.range(activity.start, activity.end), glyph = activity.sport.glyph(),
                     detail = heart.joinToString(" · ").ifEmpty { null },
+                    onClick = { onOpenActivity(activity.id) },
                 )
             }
         }
