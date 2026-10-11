@@ -227,6 +227,8 @@ internal class ProtocolWire {
             gravity = gravity,
             optical = opticalOf(record),
             rawRecord = raw.toList(),
+            // Zero is the layout-absent sentinel, never a measured count.
+            skinTempCount = record.skinTempCountRaw.takeIf { it > 0 },
         )
     }
 
