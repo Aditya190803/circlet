@@ -27,3 +27,10 @@ Health Connect permission UI belongs in `:app`. The write permissions are the se
 `exportDatabase` writes a `file:` URI under the cache directory (`circlet-*.db`). Sharing that file needs a FileProvider in `:app`.
 
 `DemoData.seed` is debug-only. It writes 21 days of 1 Hz samples through `SampleSink`.
+
+## ui requests (for the integration and features agents)
+
+- `AlarmController` has no way to delete an alarm, so the alarms screen cannot offer it. Add a `remove(id)` (add-only) with storage and strap re-arm, and tell the UI.
+- `DayStress` has no minutes per band (low / medium / high). The stress screen derives them from the timeline as a stand-in. Expose them from analytics.
+- The trends package maps `MetricKind` to `DaySummary` fields itself (`app/.../ui/trends/MetricReading.kt`) because that mapping is private to `FakeCirclet`. Move one public mapping into `:core` (for example `DaySummary.reading(kind): Metric<Double>`), so the fake, the insight engine and the UI share it.
+- The month calendar has no per-day absent reason; blank days show no explanation. Low priority.
