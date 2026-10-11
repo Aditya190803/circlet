@@ -86,7 +86,8 @@ data class DayUiState(
                 strap.link == LinkState.UNPAIRED -> Notice.Unpaired
                 strap.link != LinkState.CONNECTED -> Notice.Searching
                 error != null -> Notice.StrapTrouble(error)
-                strap.sync.draining -> Notice.CatchingUp((strap.sync.samplesPulled / 60).toInt())
+                strap.sync.draining && strap.sync.samplesPulled >= 600 ->
+                    Notice.CatchingUp((strap.sync.samplesPulled / 60).toInt())
                 summary.recovery.calibration == CalibrationStatus.CALIBRATING ->
                     if (nightsRecorded == 0) Notice.FirstNight else Notice.Calibrating(nightsRecorded)
                 summary.wellness.isNotEmpty() -> Notice.Wellness(summary.wellness.first())

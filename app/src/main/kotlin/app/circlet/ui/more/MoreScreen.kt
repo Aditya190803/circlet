@@ -155,25 +155,20 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
     val connected = strap.link == LinkState.CONNECTED
     val idle = connected && busy == null
     Card("STRAP") {
-        StatRow("NAME", strap.name ?: "STRAP", onClick = if (idle) ({ renaming = true }) else null)
-        Divider()
         StatRow(
-            "STATUS",
-            when (strap.link) {
-                LinkState.CONNECTED -> "CONNECTED"
+            "NAME",
+            strap.name ?: "STRAP",
+            note = when (strap.link) {
+                LinkState.CONNECTED -> if (strap.onWrist == false) "CONNECTED · OFF WRIST" else "CONNECTED"
                 LinkState.CONNECTING, LinkState.RECONNECTING -> "SEARCHING"
                 LinkState.DISCONNECTED, LinkState.UNPAIRED -> "OFFLINE"
             },
-            color = if (connected) Palette.Teal else Palette.Dim,
+            onClick = if (idle) ({ renaming = true }) else null,
         )
         Divider()
         StatRow("BATTERY", strap.batteryPercent?.roundToInt()?.toString(), if (strap.charging == true) "% · CHARGING" else "%")
         Divider()
-        StatRow("ON WRIST", strap.onWrist?.let { if (it) "YES" else "NO" })
-        Divider()
         StatRow("LAST SYNC", strap.lastSync?.let { stamp(it) } ?: "NOT YET")
-        Divider()
-        StatRow("FIRMWARE", strap.firmware, note = strap.serial?.let { "Serial $it" })
         strap.error?.let {
             Spacer(Modifier.height(8.dp))
             Text(it.words(), style = body(13.sp, Palette.Warn))

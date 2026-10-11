@@ -12,7 +12,9 @@ import app.circlet.analytics.sleep.finishSleep
 import app.circlet.analytics.sleep.segmentDay
 import app.circlet.analytics.temperature.NightlyTemp
 import app.circlet.analytics.temperature.nightlySkinTemp
+import app.circlet.analytics.motion.estimateSteps
 import app.circlet.analytics.temperature.scoreSkinTemp
+import app.circlet.core.Steps
 import app.circlet.analytics.strain.QUIET_HRR_TRAIT_MIN_MINUTES
 import app.circlet.analytics.strain.dailyQuietWakingHrr
 import app.circlet.analytics.strain.dayLoad
@@ -45,7 +47,7 @@ import kotlin.math.roundToInt
  * First composition of the day packages.
  * Bump this when the maths those packages publish changes what a stored day means.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 1
+const val CIRCLET_ALGORITHM_VERSION: Int = 2
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -85,20 +87,25 @@ class CircletDayEngine : DayEngine {
             sleepEnd = session?.end,
         )
         val resting = heart.resting.bpm.value?.toDouble()
-        val load = dayLoad(
-            samples = input.samples,
-            profile = input.profile,
-            zone = input.zone,
-            date = input.date,
-            now = input.now,
-            restingHeartRateBpm = resting,
-            priorQuietWakingHrr = priorQuiet,
-            priorResting = priorResting,
+        val load = provisionalLoad(
+            dayLoad(
+                samples = input.samples,
+                profile = input.profile,
+                zone = input.zone,
+                date = input.date,
+                now = input.now,
+                restingHeartRateBpm = resting,
+                priorQuietWakingHrr = priorQuiet,
+                priorResting = priorResting,
+            ),
+            input,
+            resting,
         )
         val strainValue = load.strain.score.value
         if (strainValue != null) {
             sleep = finishSleep(segments, history, input.zone, input.date, strainValue)
         }
+        sleep = provisionalSleep(sleep, input)
         // The tail sections only read what is already computed, so a full day
         // runs them concurrently and assembles the results in order. Small
         // inputs stay sequential, with the same failure order as before.
@@ -136,7 +143,7 @@ class CircletDayEngine : DayEngine {
                 skin = fSkin.joinSame(),
             )
         }
-        val recovery = tail.recovery
+        val recovery = provisionalRecovery(tail.recovery, heart, sleep.performance)
         val activities = tail.activities
         val motion = tail.motion
         val stress = tail.stress
@@ -156,7 +163,7 @@ class CircletDayEngine : DayEngine {
             strain = load.strain,
             stress = stress,
             heart = heart,
-            steps = motion.steps,
+            steps = Steps(estimateSteps(input.samples, input.zone, input.date, input.now, input.profile, resting)),
             calories = load.calories,
             activities = activities,
             heartRateByMinute = tail.byMinute,

@@ -71,6 +71,7 @@ internal class StrapLink(
     private var heartOn = false
     private var samplesPulled = 0L
     private var drainAttempt = 0
+    private var drainHeard = false
     private var lastDrainStart: Instant? = null
     private var lastRx: Instant = time.now()
     private var heartListener: (Int?) -> Unit = {}
@@ -427,6 +428,7 @@ internal class StrapLink(
 
     private fun armDrainState() {
         samplesPulled = 0
+        drainHeard = false
         drain.begin()
         lastDrainStart = time.now()
         publish { it.copy(sync = SyncProgress(samplesPulled, draining = true), error = null) }
@@ -454,9 +456,27 @@ internal class StrapLink(
         cancelDrainJobs()
         drain.abortOpen()
         drainAttempt++
-        if (drainAttempt > 3) {
+        // A strap with nothing new to hand over stays silent after the request. Two
+        // unanswered asks on a live link mean it is up to date, which is not a fault.
+        if (!drainHeard && drainAttempt > 1) {
             drain.abandon()
-            publish { it.copy(sync = stateFlow.value.sync.copy(draining = false), error = StrapError.TimedOut) }
+            val alive = Duration.between(lastRx, time.now()) < Duration.ofSeconds(90)
+            val now = time.now()
+            if (alive) scope.launch { ports.prefs.setLastSync(now) }
+            publish {
+                it.copy(
+                    sync = stateFlow.value.sync.copy(draining = false),
+                    lastSync = if (alive) now else it.lastSync,
+                    error = null,
+                )
+            }
+            return
+        }
+        if (drainAttempt > 3) {
+            // A drain that started and then stalled is picked up by the next periodic
+            // drain; the records already committed are kept. It is not shown as an error.
+            drain.abandon()
+            publish { it.copy(sync = stateFlow.value.sync.copy(draining = false), error = null) }
             return
         }
         val wait = Backoff.delay(drainAttempt).toMillis()
@@ -494,6 +514,7 @@ internal class StrapLink(
                 publish { it.copy(name = inbound.name) }
             }
             is Inbound.Sampled -> {
+                drainHeard = true
                 drain.onRecord(inbound.sample, inbound.raw)
                 stallJob?.cancel()
                 armIdle()
@@ -506,6 +527,7 @@ internal class StrapLink(
     }
 
     private suspend fun onMeta(meta: Inbound.Meta) {
+        drainHeard = true
         stallJob?.cancel()
         when (meta.kind) {
             MetaKind.START -> {

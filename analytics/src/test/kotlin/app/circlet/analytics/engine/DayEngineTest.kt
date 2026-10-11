@@ -47,9 +47,12 @@ class DayEngineTest {
         assertTrue(sleep.end > date.atStartOfDay(zone).toInstant())
         assertTrue(sleep.timeAsleep.seconds in 5 * 3600..9 * 3600)
         assertTrue(summary.naps.isEmpty())
-        assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.sleepNeed.duration.absentReason)
+        // No history yet: the consensus adult need stands in, at low confidence.
+        assertEquals(java.time.Duration.ofHours(8), summary.sleepNeed.duration.value)
+        assertEquals(app.circlet.core.Confidence.LOW, summary.sleepNeed.duration.confidence)
         assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.sleepDebt.shortfall.absentReason)
-        assertNull(summary.sleepPerformance.percent.value)
+        assertTrue(summary.sleepPerformance.percent.value!! in 60..100)
+        assertEquals(app.circlet.core.Confidence.LOW, summary.sleepPerformance.percent.confidence)
         assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.sleepConsistency.index.absentReason)
 
         val resting = summary.heart.resting.bpm.value
@@ -61,17 +64,20 @@ class DayEngineTest {
         assertNotNull(summary.heart.averageBpm.value)
         assertTrue(summary.heart.maxBpm.value!! >= 140)
 
-        assertEquals(AbsentReason.CALIBRATING, summary.recovery.score.absentReason)
+        // A provisional score from the night's own readings, still marked as calibrating.
+        assertTrue(summary.recovery.score.value!! in 1..99)
+        assertEquals(app.circlet.core.Confidence.LOW, summary.recovery.score.confidence)
         assertEquals(CalibrationStatus.CALIBRATING, summary.recovery.calibration)
         assertEquals(4, summary.recovery.drivers.size)
-        assertEquals(AbsentReason.CALIBRATING, summary.strain.score.absentReason)
+        assertTrue(summary.strain.score.value!! in 0.0..21.0)
+        assertEquals(app.circlet.core.Confidence.LOW, summary.strain.score.confidence)
         assertTrue(summary.strain.zoneMinutes.total > 0)
-        assertNull(summary.targetStrain.score.value)
         assertNotNull("calories ${summary.calories.absentReason}", summary.calories.value)
         assertNotNull("stress ${summary.stress.score.absentReason}", summary.stress.score.value)
         assertTrue(summary.stress.timeline.isNotEmpty())
 
-        assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.steps.count.absentReason)
+        // The run is the only sustained movement with a raised heart rate, so it carries the estimate.
+        assertTrue("steps ${summary.steps.count.value}", summary.steps.count.value!! in 3_000..12_000)
         assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.vo2Max.mlPerKgMin.absentReason)
         assertTrue(summary.wellness.isEmpty())
 
@@ -168,7 +174,9 @@ class DayEngineTest {
             val now = day.plusDays(1).atStartOfDay(zone).toInstant()
             val summary = engine.computeDay(input(day, daySamples(day, index), now, history.toList()))
             if (index < 14) {
-                assertNull("recovery on day $index", summary.recovery.score.value)
+                // Before the personal baseline exists the score is provisional: present, low confidence, still calibrating.
+                assertNotNull("recovery on day $index", summary.recovery.score.value)
+                assertEquals(app.circlet.core.Confidence.LOW, summary.recovery.score.confidence)
                 assertEquals(CalibrationStatus.CALIBRATING, summary.recovery.calibration)
             }
             if (summary.strain.score.value != null && strainAt == null) strainAt = index
@@ -176,13 +184,10 @@ class DayEngineTest {
             if (summary.recovery.calibration == CalibrationStatus.READY && readyAt == null) readyAt = index
             history += summary
         }
-        assertNotNull("strain never left calibration", strainAt)
-        assertTrue("strain on day $strainAt", strainAt!! >= 3)
-        assertNotNull("recovery never appeared", firstScore)
-        assertTrue("recovery on day $firstScore", firstScore!! >= 14)
-        assertEquals(CalibrationStatus.CALIBRATING, history[firstScore].recovery.calibration)
+        assertEquals("strain shows from the first day", 0, strainAt)
+        assertEquals("recovery shows from the first day", 0, firstScore)
         assertNotNull("calibration never became ready", readyAt)
-        assertTrue(readyAt!! > firstScore)
+        assertTrue(readyAt!! >= 14)
     }
 
     @Test(timeout = 15_000)

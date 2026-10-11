@@ -15,6 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,10 +69,30 @@ private fun ChartNote(text: String) {
     )
 }
 
+/** The five-minute bucket a touch at [fraction] of the chart width falls in, or null with no reading there. */
+internal fun scrubBucket(minutes: List<Int?>, fraction: Float): IntRange? {
+    if (minutes.isEmpty()) return null
+    val minute = (fraction.coerceIn(0f, 1f) * (minutes.size - 1)).toInt()
+    val start = minute - minute % 5
+    val range = start until minOf(start + 5, minutes.size)
+    return if (range.any { minutes[it] != null }) range else null
+}
+
+/** Minute of the day as a clock time. */
+internal fun minuteLabel(minute: Int, twentyFourHour: Boolean): String {
+    val hour = minute / 60
+    val min = minute % 60
+    if (twentyFourHour) return "%02d:%02d".format(hour, min)
+    val h = if (hour % 12 == 0) 12 else hour % 12
+    return "%d:%02d %s".format(h, min, if (hour < 12) "AM" else "PM")
+}
+
 /**
  * A day of heart rate, midnight to midnight.
  * [minutes] holds one entry per minute; null is a minute with no sample and breaks the line.
  * An empty or all-null list draws the grid with [emptyText] over it.
+ * Press and hold, then drag, to read the chart: a vertical line marks the time, a horizontal
+ * line the heart rate, and the readout gives the value with the range inside that five minutes.
  */
 @Composable
 fun HeartRateChart(
@@ -76,35 +103,75 @@ fun HeartRateChart(
     loading: Boolean = false,
 ) {
     val valid = minutes.filterNotNull()
+    val twentyFourHour = LocalTimeFormat.current.twentyFourHour
+    var touch by remember { mutableStateOf<Float?>(null) }
+    val lo = if (valid.isEmpty()) 0f else valid.min() - 5f
+    val hi = if (valid.isEmpty()) 1f else valid.max() + 5f
+    val bucket = touch?.let { scrubBucket(minutes, it) }
     Column(modifier) {
+        // The readout keeps its line whether or not a point is held, so the chart does not jump.
+        Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (bucket != null) {
+                val readings = bucket.mapNotNull { minutes[it] }
+                Text("${readings.average().roundToInt()} BPM", style = number(14.sp, Palette.White))
+                Text(
+                    "  ${minuteLabel(bucket.first, twentyFourHour)}",
+                    style = label(11.sp, Palette.Dim),
+                )
+                Spacer(Modifier.weight(1f))
+                Text("RANGE ${readings.min()}–${readings.max()}", style = label(10.sp, Palette.Faint))
+            } else if (valid.isNotEmpty() && !loading) {
+                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Ghost))
+                Spacer(Modifier.weight(1f))
+                Text("DAY RANGE ${valid.min()}–${valid.max()}", style = label(10.sp, Palette.Faint))
+            }
+        }
         Box(contentAlignment = Alignment.Center) {
             Canvas(
                 Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
+                    .height(120.dp)
+                    .pointerInput(minutes.size) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { touch = it.x / size.width },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                touch = change.position.x / size.width
+                            },
+                            onDragEnd = { touch = null },
+                            onDragCancel = { touch = null },
+                        )
+                    },
             ) {
                 for (i in 0..3) {
                     val y = size.height * i / 3
                     drawLine(Palette.CardLine, Offset(0f, y), Offset(size.width, y), 1f)
                 }
                 if (valid.isEmpty() || loading) return@Canvas
-                val lo = valid.min() - 5f
-                val hi = valid.max() + 5f
                 val path = Path()
                 var pen = false
                 // Five-minute steps keep the path light without losing the day's shape.
                 for (start in minutes.indices step 5) {
-                    val bucket = (start until minOf(start + 5, minutes.size)).mapNotNull { minutes[it] }
-                    if (bucket.isEmpty()) {
+                    val step = (start until minOf(start + 5, minutes.size)).mapNotNull { minutes[it] }
+                    if (step.isEmpty()) {
                         pen = false
                         continue
                     }
                     val x = size.width * start / minutes.size
-                    val y = size.height * (1 - (bucket.average().toFloat() - lo) / (hi - lo))
+                    val y = size.height * (1 - (step.average().toFloat() - lo) / (hi - lo))
                     if (pen) path.lineTo(x, y) else path.moveTo(x, y)
                     pen = true
                 }
                 drawPath(path, color, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                if (bucket != null) {
+                    val readings = bucket.mapNotNull { minutes[it] }
+                    val x = size.width * bucket.first / minutes.size
+                    val y = size.height * (1 - (readings.average().toFloat() - lo) / (hi - lo))
+                    drawLine(Palette.Dim, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+                    drawLine(Palette.Faint, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                    drawCircle(Palette.Card, 6.dp.toPx(), Offset(x, y))
+                    drawCircle(color, 4.dp.toPx(), Offset(x, y))
+                }
             }
             if (loading) Skeleton(Modifier.size(width = 160.dp, height = 14.dp)) else if (valid.isEmpty()) ChartNote(emptyText)
         }

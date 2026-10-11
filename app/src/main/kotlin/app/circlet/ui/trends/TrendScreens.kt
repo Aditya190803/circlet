@@ -2,6 +2,7 @@ package app.circlet.ui.trends
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -318,12 +319,13 @@ private fun CalendarGrid(
     values: Map<LocalDate, Double?>,
     onOpenDay: (LocalDate) -> Unit,
 ) {
-    // Only the weeks that reach today or earlier: a month's future weeks would render as empty rows.
-    monthGrid(month).chunked(7)
-        .filter { week -> week.any { date -> date != null && !date.isAfter(today) } }
-        .forEach { week ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            week.forEach { date -> CalendarCell(date, today, values, onOpenDay) }
+    monthGrid(month).chunked(7).forEach { week ->
+        Row(Modifier.fillMaxWidth()) {
+            week.forEach { date ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    CalendarCell(date, today, values, onOpenDay)
+                }
+            }
         }
     }
 }
@@ -336,8 +338,13 @@ private fun CalendarCell(
     onOpenDay: (LocalDate) -> Unit,
 ) {
     // Blanks, future days and days without a row stay empty rather than showing zero.
-    if (date == null || date.isAfter(today) || !values.containsKey(date)) {
+    if (date == null) {
         Spacer(Modifier.size(Space.touch))
+        return
+    }
+    // Future days and days with nothing recorded show their number, dimmed, so the grid reads as a calendar.
+    if (date.isAfter(today) || !values.containsKey(date)) {
+        MonthCell(day = date.dayOfMonth, fraction = null, color = Palette.Faint, today = date == today, enabled = false, onClick = {})
         return
     }
     val score = values[date]
