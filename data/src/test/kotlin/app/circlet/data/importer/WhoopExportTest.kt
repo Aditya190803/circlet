@@ -33,6 +33,7 @@ class WhoopExportTest {
         assertEquals(14.2, day.heart.respiratoryRate.breathsPerMinute.value!!, 0.0)
         assertEquals(12.4, day.strain.score.value!!, 0.0)
         assertEquals(2310, day.calories.value)
+        assertEquals(33.4, day.skinTemperature!!.importedCelsius!!, 0.0)
         val sleep = day.sleep.value!!
         assertEquals(Duration.ofMinutes(421), sleep.timeAsleep)
         assertEquals(Duration.ofMinutes(465), sleep.timeInBed)

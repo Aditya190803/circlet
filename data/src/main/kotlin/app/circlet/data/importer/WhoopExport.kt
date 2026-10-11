@@ -7,6 +7,8 @@ import app.circlet.core.DaySummary
 import app.circlet.core.Metric
 import app.circlet.core.RespiratoryRate
 import app.circlet.core.RestingHeartRate
+import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
 import app.circlet.core.SleepConsistency
 import app.circlet.core.SleepDebt
 import app.circlet.core.SleepKind
@@ -105,6 +107,7 @@ fun parseWhoopCycles(csv: String): List<DaySummary> {
     val cRecovery = column("recovery score")
     val cResting = column("resting heart rate")
     val cHrv = column("heart rate variability")
+    val cSkin = column("skin temp")
     val cStrain = column("day strain")
     val cEnergy = column("energy burned")
     val cMaxHr = column("max hr")
@@ -158,7 +161,16 @@ fun parseWhoopCycles(csv: String): List<DaySummary> {
         } else {
             null
         }
+        val skinCelsius = number(cSkin)?.takeIf { it in 20.0..45.0 }
         days[date] = base.copy(
+            skinTemperature = skinCelsius?.let {
+                SkinTemperature(
+                    deviation = Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
+                    baselineNights = 0,
+                    flag = SkinTempFlag.NOT_ENOUGH_BASELINE,
+                    importedCelsius = it,
+                )
+            },
             sleep = if (session != null) Metric.of(session, Confidence.MEDIUM) else Metric.absent(AbsentReason.NO_SLEEP),
             recovery = base.recovery.copy(score = metric(recovery)),
             strain = base.strain.copy(score = metric(strain)),

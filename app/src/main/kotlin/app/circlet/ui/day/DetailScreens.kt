@@ -296,7 +296,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
 
 /**
  * Skin temperature for the night, as a deviation in standard deviations of the user's own nights.
- * It never shows degrees: the strap has no calibrated temperature.
+ * Degrees appear only for a night imported from WHOOP, which carries WHOOP's own figure.
  */
 @Composable
 private fun SkinTemperatureCard(skin: SkinTemperature?) {
@@ -306,6 +306,11 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
                 "Skin temperature is not scored for this night. It needs the strap worn through the night.",
                 style = body(13.sp, Palette.Faint),
             )
+            skin.importedCelsius != null -> {
+                StatRow("SKIN TEMPERATURE", skin.importedCelsius?.decimal(1), "°C")
+                Spacer(Modifier.height(6.dp))
+                Text("As scored by WHOOP, from your imported history.", style = body(12.sp, Palette.Faint))
+            }
             skin.flag == SkinTempFlag.NOT_ENOUGH_BASELINE -> Text(
                 "Building your baseline. ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"} so far, " +
                     "so there is nothing to compare yet. Readings are a deviation from your own nights, not a temperature.",
