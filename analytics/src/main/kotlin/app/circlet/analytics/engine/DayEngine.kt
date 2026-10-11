@@ -47,7 +47,7 @@ import kotlin.math.roundToInt
  * First composition of the day packages.
  * Bump this when the maths those packages publish changes what a stored day means.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 2
+const val CIRCLET_ALGORITHM_VERSION: Int = 3
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
