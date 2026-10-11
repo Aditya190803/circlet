@@ -30,6 +30,7 @@ import app.circlet.core.Outcome
 import app.circlet.core.PersonalRecord
 import app.circlet.core.Profile
 import app.circlet.core.ProfileRepository
+import app.circlet.core.reading
 import app.circlet.core.RecordKind
 import app.circlet.core.ScheduledAlarm
 import app.circlet.core.SettingsRepository
@@ -326,6 +327,13 @@ class FakeCirclet(
     override suspend fun disable(id: String): Outcome<Unit> {
         val alarm = alarmState.value.find { it.id == id } ?: return Outcome.Err(CoreError.Invalid("no alarm with that id"))
         alarmState.value = alarmState.value.map { if (it.id == alarm.id) it.copy(enabled = false) else it }
+        publishNext()
+        return Outcome.Ok(Unit)
+    }
+
+    override suspend fun remove(id: String): Outcome<Unit> {
+        if (alarmState.value.none { it.id == id }) return Outcome.Err(CoreError.Invalid("no alarm with that id"))
+        alarmState.value = alarmState.value.filter { it.id != id }
         publishNext()
         return Outcome.Ok(Unit)
     }
@@ -670,30 +678,4 @@ private fun valueOf(day: DaySummary, metric: CorrelationMetric): Double? = when 
     CorrelationMetric.SLEEP_PERFORMANCE -> day.sleepPerformance.percent.value?.toDouble()
 }
 
-private fun read(day: DaySummary, metric: MetricKind): Metric<Double> = when (metric) {
-    MetricKind.SLEEP_PERFORMANCE -> day.sleepPerformance.percent.asDouble()
-    MetricKind.SLEEP_DURATION -> day.sleep.value?.timeAsleep?.let { Metric.of(it.toMinutes().toDouble(), day.sleep.confidence) }
-        ?: Metric.absent(day.sleep.absentReason ?: AbsentReason.NO_SLEEP, day.sleep.confidence)
-    MetricKind.SLEEP_EFFICIENCY -> day.sleep.value?.efficiency?.asDouble()
-        ?: Metric.absent(day.sleep.absentReason ?: AbsentReason.NO_SLEEP, day.sleep.confidence)
-    MetricKind.SLEEP_NEED -> day.sleepNeed.duration.minutes()
-    MetricKind.SLEEP_DEBT -> day.sleepDebt.shortfall.minutes()
-    MetricKind.SLEEP_CONSISTENCY -> day.sleepConsistency.index
-    MetricKind.RECOVERY -> day.recovery.score.asDouble()
-    MetricKind.STRAIN -> day.strain.score
-    MetricKind.STRESS -> day.stress.score
-    MetricKind.RESTING_HEART_RATE -> day.heart.resting.bpm.asDouble()
-    MetricKind.HRV -> day.heart.hrv.rmssdMs
-    MetricKind.RESPIRATORY_RATE -> day.heart.respiratoryRate.breathsPerMinute
-    MetricKind.STEPS -> day.steps.count.asDouble()
-    MetricKind.CALORIES -> day.calories.asDouble()
-    MetricKind.VO2_MAX -> day.vo2Max.mlPerKgMin
-    MetricKind.SKIN_TEMPERATURE -> day.skinTemperature?.deviation
-        ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
-}
-
-private fun Metric<Int>.asDouble(): Metric<Double> =
-    if (value != null) Metric.of(value.toDouble(), confidence) else Metric.absent(checkNotNull(absentReason), confidence)
-
-private fun Metric<Duration>.minutes(): Metric<Double> =
-    if (value != null) Metric.of(value.toMinutes().toDouble(), confidence) else Metric.absent(checkNotNull(absentReason), confidence)
+private fun read(day: DaySummary, metric: MetricKind): Metric<Double> = day.reading(metric)

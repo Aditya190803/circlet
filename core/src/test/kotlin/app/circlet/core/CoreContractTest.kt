@@ -122,6 +122,32 @@ class CoreContractTest {
     }
 
     @Test
+    fun emptyDayReadsAbsentForEveryKind() {
+        val day = emptyDay(LocalDate.of(2026, 10, 10), AbsentReason.NOT_WORN)
+        for (kind in MetricKind.values()) {
+            val reading = day.reading(kind)
+            assertNull("kind $kind", reading.value)
+            val expected = if (kind == MetricKind.SKIN_TEMPERATURE) {
+                AbsentReason.NOT_ENOUGH_DATA
+            } else {
+                AbsentReason.NOT_WORN
+            }
+            assertEquals("kind $kind", expected, reading.absentReason)
+        }
+    }
+
+    @Test
+    fun stressBandsSplitAtThirtyFourAndSixtySeven() {
+        assertEquals(StressBand.LOW, stressBandOf(0.0))
+        assertEquals(StressBand.LOW, stressBandOf(33.9))
+        assertEquals(StressBand.MEDIUM, stressBandOf(34.0))
+        assertEquals(StressBand.MEDIUM, stressBandOf(66.9))
+        assertEquals(StressBand.HIGH, stressBandOf(67.0))
+        assertEquals(StressBand.HIGH, stressBandOf(100.0))
+        assertEquals(0, StressBandMinutes.ZERO.totalMinutes)
+    }
+
+    @Test
     fun nextAlarmSkipsToTheFollowingListedDay() {
         val zone = ZoneId.of("UTC")
         val alarm = StrapAlarm(

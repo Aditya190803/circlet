@@ -224,4 +224,22 @@ class FakeCircletTest {
         assertTrue((correlations as Outcome.Ok).value.any { it.effect.value != null })
         assertNull(fake.live.value)
     }
+
+    @Test
+    fun alarmsRemoveDeletes() = runBlocking {
+        val clock = ManualTimeSource(start, zone)
+        val fake = FakeCirclet(clock, FakeScenario.PAIRED)
+        val alarm = app.circlet.core.StrapAlarm(
+            "early",
+            java.time.LocalTime.of(6, 30),
+            setOf(java.time.DayOfWeek.MONDAY),
+            Duration.ofMinutes(10),
+            true,
+        )
+        assertTrue(fake.set(alarm) is Outcome.Ok)
+        assertTrue(fake.alarms.value.any { it.id == "early" })
+        assertTrue(fake.remove("missing") is Outcome.Err)
+        assertTrue(fake.remove("early") is Outcome.Ok)
+        assertTrue(fake.alarms.value.none { it.id == "early" })
+    }
 }

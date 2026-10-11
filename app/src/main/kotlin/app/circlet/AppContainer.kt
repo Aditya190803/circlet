@@ -36,7 +36,7 @@ class AppContainer(
         @Volatile
         private var instance: AppContainer? = null
 
-        /** The demo the fakes start in. Only read by [bind], and only until the real backend is wired. */
+        /** The demo the fakes start in. Read by [bind] when the process is on the fake backend. */
         @Volatile
         var demo: FakeScenario = FakeScenario.PAIRED
 
@@ -44,11 +44,15 @@ class AppContainer(
             instance ?: synchronized(this) { instance ?: bind(context.applicationContext).also { instance = it } }
 
         /**
-         * The single switch between the fakes and the real modules.
-         * [context] is unused by the fakes and is what the real bindings will need.
+         * Real storage and the strap, unless this is a core-only build or the debug
+         * switch `circlet_debug` / `prefer_fake` is set. That switch defaults to off.
          */
-        @Suppress("UNUSED_PARAMETER")
-        private fun bind(context: Context): AppContainer = of(FakeCirclet(SystemTimeSource, demo), SystemTimeSource)
+        private fun bind(context: Context): AppContainer {
+            if (!AppBootstrap.bindsInApplication || BackendSwitch.preferFake(context)) {
+                return of(FakeCirclet(SystemTimeSource, demo), SystemTimeSource)
+            }
+            return AppBootstrap.openReal(context)
+        }
 
         /** A container over one [FakeCirclet], which implements every core interface. */
         fun of(fake: FakeCirclet, time: TimeSource): AppContainer = AppContainer(

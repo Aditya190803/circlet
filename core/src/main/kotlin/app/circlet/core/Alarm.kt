@@ -49,6 +49,7 @@ data class ScheduledAlarm(
 /**
  * The strap's alarm list.
  * [set] inserts or replaces by id. [disable] leaves the alarm in the list with [StrapAlarm.enabled] false.
+ * [remove] deletes the alarm and re-arms the strap for what remains.
  * [next] is recomputed from [alarms] and the [TimeSource] whenever the list changes.
  */
 interface AlarmController {
@@ -58,6 +59,8 @@ interface AlarmController {
     suspend fun set(alarm: StrapAlarm): Outcome<Unit>
 
     suspend fun disable(id: String): Outcome<Unit>
+
+    suspend fun remove(id: String): Outcome<Unit>
 
     suspend fun setSmartWake(id: String, window: Duration): Outcome<Unit>
 }

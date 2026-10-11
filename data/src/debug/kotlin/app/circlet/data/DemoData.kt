@@ -93,9 +93,15 @@ object DemoData {
             else -> if (mix(seed, epoch, 3) == 0) listOf(700 + mix(seed, epoch, 250)) else emptyList()
         }
         val wobble = (mix(seed, epoch, 7) - 3) / 100f
+        // Wake and workouts flip arm elevation every second. A still vector all day
+        // is one motionless block, and sleep detection then has no night to keep.
         val gravity = when (kind) {
-            Kind.RUN, Kind.WALK, Kind.INTERVALS -> GravityVector(0.2f + wobble, -0.15f, 0.95f)
-            else -> GravityVector(0.02f + wobble / 4f, -0.04f, 0.98f)
+            Kind.SLEEP, Kind.NAP -> GravityVector(0.02f + wobble / 4f, -0.04f, 0.98f)
+            else -> if (epoch % 2L == 0L) {
+                GravityVector(0.35f, 0.2f + wobble, 0.9f)
+            } else {
+                GravityVector(0.35f, -0.2f, -0.9f)
+            }
         }
         val optical = OpticalChannels(
             green = 40_000 + mix(seed, epoch, 20_000),

@@ -184,6 +184,15 @@ internal class AlarmControllerImpl(
         return Outcome.Ok(Unit)
     }
 
+    override suspend fun remove(id: String): Outcome<Unit> {
+        store.ready.await()
+        val found = store.lock.withLock { store.io { store.database.alarms().get(id) != null } }
+        if (!found) return Outcome.Err(CoreError.Invalid("no alarm with that id"))
+        store.lock.withLock { store.io { store.database.alarms().delete(id) } }
+        reload()
+        return Outcome.Ok(Unit)
+    }
+
     override suspend fun setSmartWake(id: String, window: Duration): Outcome<Unit> {
         if (window.isNegative) return Outcome.Err(CoreError.Invalid("smart wake cannot be negative"))
         store.ready.await()

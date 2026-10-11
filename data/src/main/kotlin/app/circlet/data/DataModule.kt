@@ -40,6 +40,8 @@ import app.circlet.data.repo.WorkoutStoreImpl
 import app.circlet.data.repo.applyRetention
 import app.circlet.data.repo.documentStore
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -177,6 +179,59 @@ class CircletData internal constructor(
     internal suspend fun recomputeNow() = pipeline.recomputeDirty()
 
     fun healthWritePermissions(): Set<String> = portabilityImpl.writePermissions()
+
+    /**
+     * Remember the zone the stored days were computed in.
+     * The first call only records [zone]. A later call with a different id marks
+     * every stored day, its neighbours, and every local date the samples now fall
+     * on as dirty, then asks the pipeline to recompute them off the main thread.
+     */
+    suspend fun noteZone(zone: ZoneId) {
+        val changed = store.lock.withLock { store.io { rebaseZone(zone) } }
+        if (changed) pipeline.nudge()
+    }
+
+    /**
+     * Mark [dates] dirty so the pipeline recomputes them with the current clock.
+     * Used when the local date rolls over and no new sample arrives to do it.
+     */
+    suspend fun refreshDates(dates: Collection<LocalDate>) {
+        if (dates.isEmpty()) return
+        store.lock.withLock {
+            store.io { dates.forEach { store.database.dirty().mark(it.toString()) } }
+        }
+        pipeline.nudge()
+    }
+
+    private fun rebaseZone(zone: ZoneId): Boolean {
+        val kv = store.database.kv()
+        val previous = kv.get(Keys.ZONE)
+        kv.put(KvEntity(Keys.ZONE, zone.id))
+        if (previous == null || previous == zone.id) return false
+        val old = runCatching { ZoneId.of(previous) }.getOrNull()
+        val dates = LinkedHashSet<LocalDate>()
+        for (iso in store.database.days().dates()) {
+            val date = runCatching { LocalDate.parse(iso) }.getOrNull() ?: continue
+            dates += date
+            dates += date.minusDays(1)
+            dates += date.plusDays(1)
+        }
+        val first = store.database.samples().earliest()
+        val last = store.database.samples().latest()
+        if (first != null && last != null) {
+            for (candidate in listOfNotNull(old, zone)) {
+                var cursor = Instant.ofEpochSecond(first).atZone(candidate).toLocalDate()
+                val end = Instant.ofEpochSecond(last).atZone(candidate).toLocalDate()
+                while (!cursor.isAfter(end)) {
+                    dates += cursor
+                    cursor = cursor.plusDays(1)
+                }
+            }
+        }
+        if (dates.isEmpty()) return false
+        dates.forEach { store.database.dirty().mark(it.toString()) }
+        return true
+    }
 
     internal suspend fun runDueBackup(): Outcome<Unit> = portabilityImpl.runDueBackup()
 

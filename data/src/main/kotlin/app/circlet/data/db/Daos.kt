@@ -20,6 +20,12 @@ interface SampleDao {
 
     @Query("DELETE FROM samples WHERE epochSecond < :cutoff")
     fun deleteBefore(cutoff: Long)
+
+    @Query("SELECT MIN(epochSecond) FROM samples")
+    fun earliest(): Long?
+
+    @Query("SELECT MAX(epochSecond) FROM samples")
+    fun latest(): Long?
 }
 
 @Dao
@@ -134,6 +140,9 @@ interface AlarmDao {
 
     @Query("UPDATE alarms SET smartWakeMillis = :windowMillis WHERE id = :id")
     fun smartWake(id: String, windowMillis: Long)
+
+    @Query("DELETE FROM alarms WHERE id = :id")
+    fun delete(id: String)
 
     @Query("DELETE FROM alarms")
     fun deleteAll()

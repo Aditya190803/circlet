@@ -275,8 +275,26 @@ class StoreTest {
     }
 
     @Test(timeout = 60_000)
-    fun eveningSampleMarksTwoDays() = runBlocking {
+    fun alarmsRemoveDeletesTheRow() = runBlocking {
         val opened = open()
+        try {
+            val data = opened.data
+            val first = StrapAlarm("one", LocalTime.of(6, 30), setOf(java.time.DayOfWeek.MONDAY), Duration.ZERO, true)
+            val second = StrapAlarm("two", LocalTime.of(7, 30), setOf(java.time.DayOfWeek.MONDAY), Duration.ZERO, true)
+            assertTrue(data.alarms.set(first) is Outcome.Ok)
+            assertTrue(data.alarms.set(second) is Outcome.Ok)
+            assertTrue(data.alarms.remove("missing") is Outcome.Err)
+            assertTrue(data.alarms.remove("one") is Outcome.Ok)
+            assertEquals(listOf("two"), data.alarms.alarms.value.map { it.id })
+            assertEquals(listOf("two"), data.ports.prefs.alarms().map { it.id })
+            assertNull(data.database.alarms().get("one"))
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun eveningSampleMarksTwoDays() = runBlocking {        val opened = open()
         try {
             val date = LocalDate.of(2026, 6, 15)
             val epoch = date.atTime(18, 0).atZone(zone).toEpochSecond()

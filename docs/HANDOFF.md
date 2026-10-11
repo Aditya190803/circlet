@@ -35,6 +35,19 @@ Health Connect permission UI belongs in `:app`. The write permissions are the se
 - The trends package maps `MetricKind` to `DaySummary` fields itself (`app/.../ui/trends/MetricReading.kt`) because that mapping is private to `FakeCirclet`. Move one public mapping into `:core` (for example `DaySummary.reading(kind): Metric<Double>`), so the fake, the insight engine and the UI share it.
 - The month calendar has no per-day absent reason; blank days show no explanation. Low priority.
 
+## integration
+
+Done by the integration agent; UI and data agents, read the first three items.
+
+- `AlarmController.remove(id)` is implemented in core, the fake, the strap (`StrapAlarms`: deletes, persists, re-arms the soonest) and storage (`AlarmControllerImpl`). UI: the alarms screen can offer delete now.
+- `DayStress.bandMinutes` (`StressBandMinutes(lowMinutes, mediumMinutes, highMinutes)`, zero by default) is filled by analytics from the stress timeline with the same rule the stress screen used as a stand-in (each point counts until the next, capped at 10 minutes; bands split at 34/67 via core `stressBandOf`, matching the palette). UI: read the field instead of re-deriving it.
+- `DaySummary.reading(kind)` in `:core` is the one public `MetricKind` mapping, in the units the kind documents. The fake and the insight engine both delegate to it. UI: `MetricReading.kt` can delegate to it too. Behaviour note: the insight trend for sleep duration now carries the sleep confidence, not the efficiency confidence.
+- The day engine fills `DaySummary.skinTemperature` and `DaySummary.references` on every computed day. Tonight's settled mean is rebuilt from the main sleep window's `Sample.skinTempCount`; prior nights come from `DayInput.priorSkinTemp` (see the storage item below). Demo and synthetic samples carry no skin-temp counts, so those nights report `NOT_ENOUGH_BASELINE`.
+
+## integration needs from storage
+
+- `DayInput.priorSkinTemp: Map<LocalDate, Double>` (default empty) carries settled skin-temp means (ADC counts) for nights before the target date. Fill it from stored samples with `nightlySkinTemp` over each prior night's sleep window, going back 21 calendar days, when the recompute pipeline builds the input. Until then the engine scores tonight alone and the flag stays `NOT_ENOUGH_BASELINE`, which is honest but never activates the baseline.
+
 ## features
 
 Skin temperature and reference ranges. Both are computed by the day pipeline and stored on `DaySummary` (`skinTemperature`, `references`); nothing here is wired into the engine yet.

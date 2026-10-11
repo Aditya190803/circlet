@@ -91,6 +91,15 @@ internal class StrapAlarms(
         Outcome.Ok(Unit)
     }
 
+    override suspend fun remove(id: String): Outcome<Unit> = gate.withLock {
+        val current = alarmsState.value
+        if (current.none { it.id == id }) return@withLock invalid("No alarm with that id")
+        alarmsState.value = current.filter { it.id != id }
+        prefs.setAlarms(alarmsState.value)
+        armSoonest()
+        Outcome.Ok(Unit)
+    }
+
     override suspend fun setSmartWake(id: String, window: Duration): Outcome<Unit> = gate.withLock {
         if (window.isNegative) return@withLock invalid("Smart wake cannot be negative")
         val current = alarmsState.value
