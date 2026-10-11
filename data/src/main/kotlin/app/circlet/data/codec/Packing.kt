@@ -53,6 +53,7 @@ internal fun Sample.toEntity(): SampleEntity {
         red = channels?.red,
         infrared = channels?.infrared,
         ambient = channels?.ambient,
+        skinTempCount = skinTempCount,
     )
 }
 
@@ -70,5 +71,6 @@ internal fun SampleEntity.toSample(): Sample {
         gravity = unpackGravity(gravity),
         optical = channels,
         rawRecord = null,
+        skinTempCount = skinTempCount,
     )
 }

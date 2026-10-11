@@ -7,17 +7,25 @@ import app.circlet.core.Confidence
 import app.circlet.core.GravityVector
 import app.circlet.core.HealthKind
 import app.circlet.core.Metric
+import app.circlet.core.MetricKind
+import app.circlet.core.MetricReference
+import app.circlet.core.ReferenceRange
+import app.circlet.core.Sample
 import app.circlet.core.SleepCycle
 import app.circlet.core.SleepEpoch
 import app.circlet.core.SleepKind
 import app.circlet.core.SleepSession
 import app.circlet.core.SleepStage
+import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
 import app.circlet.core.Sport
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.emptyDay
 import app.circlet.data.codec.DayCodec
 import app.circlet.data.codec.packGravity
 import app.circlet.data.codec.packRr
+import app.circlet.data.codec.toEntity
+import app.circlet.data.codec.toSample
 import app.circlet.data.codec.unpackGravity
 import app.circlet.data.codec.unpackRr
 import app.circlet.data.db.CircletDatabase
@@ -72,7 +80,7 @@ class PureTest {
 
     @Test
     fun schemaVersionHasNoMissingMigrations() {
-        assertEquals(1, CircletDatabase.VERSION)
+        assertEquals(2, CircletDatabase.VERSION)
         assertTrue(CircletMigrations.missingSteps().isEmpty())
     }
 
@@ -115,6 +123,56 @@ class PureTest {
             heartRateByMinute = listOf(null, 60, null),
         )
         assertEquals(day, DayCodec.decode(DayCodec.encode(day)))
+    }
+
+    @Test
+    fun dayCodecRoundTripsSkinTemperatureAndReferences() {
+        val day = emptyDay(date, AbsentReason.NOT_ENOUGH_DATA).copy(
+            skinTemperature = SkinTemperature(
+                deviation = Metric.of(0.4, Confidence.MEDIUM),
+                baselineNights = 12,
+                flag = SkinTempFlag.NORMAL,
+            ),
+            references = listOf(
+                MetricReference(
+                    kind = MetricKind.HRV,
+                    personal = ReferenceRange(38.0, 52.0),
+                    personalDays = 12,
+                    ideal = ReferenceRange(19.0, 75.0),
+                    idealLabel = "Typical adult range",
+                    idealSource = "Nunan et al. 2010",
+                    higherIsBetter = true,
+                ),
+                MetricReference(
+                    kind = MetricKind.STRAIN,
+                    personal = null,
+                    personalDays = 3,
+                    ideal = null,
+                    idealLabel = null,
+                    idealSource = null,
+                    higherIsBetter = null,
+                ),
+            ),
+        )
+        assertEquals(day, DayCodec.decode(DayCodec.encode(day)))
+    }
+
+    @Test
+    fun sampleEntityRoundTripsTheSkinTempCount() {
+        val withCount = Sample(
+            epochSecond = 1000,
+            heartRateBpm = 60,
+            rrIntervalsMs = emptyList(),
+            gravity = null,
+            optical = null,
+            rawRecord = null,
+            skinTempCount = 935,
+        )
+        assertEquals(935, withCount.toEntity().skinTempCount)
+        assertEquals(withCount, withCount.toEntity().toSample())
+        val withoutCount = withCount.copy(skinTempCount = null)
+        assertNull(withoutCount.toEntity().skinTempCount)
+        assertNull(withoutCount.toEntity().toSample().skinTempCount)
     }
 
     @Test

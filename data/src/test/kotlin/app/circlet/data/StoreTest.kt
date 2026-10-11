@@ -38,10 +38,14 @@ import app.circlet.core.WeeklyRecap
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.emptyDay
 import app.circlet.data.codec.DayCodec
+import app.circlet.data.db.CircletMigrations
 import app.circlet.data.db.Keys
 import app.circlet.data.db.openMemoryDatabase
 import app.circlet.data.db.openNamedDatabase
 import app.circlet.data.repo.MetricsRepositoryImpl
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -51,6 +55,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -329,8 +334,124 @@ class StoreTest {
     }
 
     @Test(timeout = 60_000)
-    fun storedSleepStageFollowsTheEpoch() = runBlocking {
+    fun replayingABatchReplacesTheSameSecond() = runBlocking {
         val opened = open()
+        try {
+            val epoch = LocalDate.of(2026, 6, 15).atTime(12, 0).atZone(zone).toEpochSecond()
+            opened.data.ports.samples.commit(listOf(sample(epoch, 60, listOf(800))), emptyList())
+            opened.data.ports.samples.commit(listOf(sample(epoch, 72, listOf(900))), emptyList())
+            val rows = opened.data.database.samples().range(epoch, epoch)
+            assertEquals(1, rows.size)
+            assertEquals(72, rows.single().heartRate)
+            assertEquals(2L, opened.data.database.dirty().generation(LocalDate.of(2026, 6, 15).toString()))
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun emptyStoreObservesAnAbsentDay() = runBlocking {
+        val opened = open()
+        try {
+            val day = opened.data.metrics.observeDay(LocalDate.of(2026, 6, 15)).first()
+            assertEquals(AbsentReason.NOT_ENOUGH_DATA, day.sleep.absentReason)
+            assertTrue(day.activities.isEmpty())
+            assertTrue(day.heartRateByMinute.isEmpty())
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun zoneChangeDirtiesTheDaysSamplesCanMoveTo() = runBlocking {
+        val opened = open()
+        try {
+            val date = LocalDate.of(2026, 6, 15)
+            val far = LocalDate.of(2026, 1, 2)
+            val epoch = far.atTime(2, 0).atZone(zone).toEpochSecond()
+            opened.data.ports.samples.commit(listOf(sample(epoch, 60, emptyList())), emptyList())
+            opened.data.database.days().upsert(
+                app.circlet.data.db.DaySummaryEntity(
+                    date.toString(),
+                    1,
+                    time.now().toEpochMilli(),
+                    DayCodec.encode(emptyDay(date, AbsentReason.NOT_ENOUGH_DATA)),
+                ),
+            )
+            for (iso in opened.data.database.dirty().dates()) {
+                val generation = opened.data.database.dirty().generation(iso) ?: continue
+                opened.data.database.dirty().clear(iso, generation)
+            }
+            opened.data.noteZone(ZoneId.of("UTC"))
+            assertTrue(opened.data.database.dirty().dates().isEmpty())
+            assertEquals("UTC", opened.data.database.kv().get(Keys.ZONE))
+            opened.data.noteZone(ZoneId.of("America/New_York"))
+            val dirty = opened.data.database.dirty().dates().toSet()
+            assertTrue(dirty.contains(date.toString()))
+            assertTrue(dirty.contains(date.minusDays(1).toString()))
+            assertTrue(dirty.contains(date.plusDays(1).toString()))
+            assertTrue(dirty.contains(far.toString()))
+            assertTrue(dirty.contains(far.minusDays(1).toString()))
+            val generation = opened.data.database.dirty().generation(date.toString())
+            opened.data.noteZone(ZoneId.of("America/New_York"))
+            assertEquals(generation, opened.data.database.dirty().generation(date.toString()))
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun migrationOneToTwoKeepsSamplesAndAddsTheSkinTempColumn() {
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(null)
+            .callback(object : SupportSQLiteOpenHelper.Callback(1) {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `samples` (`epochSecond` INTEGER PRIMARY KEY NOT NULL, " +
+                            "`heartRate` INTEGER, `rr` BLOB, `gravity` BLOB, `green` INTEGER, " +
+                            "`red` INTEGER, `infrared` INTEGER, `ambient` INTEGER)",
+                    )
+                }
+
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            })
+            .build()
+        val helper = factory.create(config)
+        val db = helper.writableDatabase
+        try {
+            db.execSQL("INSERT INTO samples (epochSecond, heartRate) VALUES (1000, 60)")
+            CircletMigrations.MIGRATION_1_2.migrate(db)
+            val cursor = db.query("SELECT epochSecond, heartRate, skinTempCount FROM samples")
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1000L, cursor.getLong(0))
+            assertEquals(60, cursor.getInt(1))
+            assertTrue(cursor.isNull(2))
+            cursor.close()
+            assertTrue(CircletMigrations.missingSteps().isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun committedSkinTempCountsRoundTrip() = runBlocking {
+        val opened = open()
+        try {
+            val epoch = LocalDate.of(2026, 6, 15).atTime(12, 0).atZone(zone).toEpochSecond()
+            opened.data.ports.samples.commit(listOf(sample(epoch, 60, emptyList()).copy(skinTempCount = 935)), emptyList())
+            val rows = opened.data.database.samples().range(epoch, epoch)
+            assertEquals(935, rows.single().skinTempCount)
+            opened.data.ports.samples.commit(listOf(sample(epoch + 1, 60, emptyList())), emptyList())
+            val missing = opened.data.database.samples().range(epoch + 1, epoch + 1)
+            assertNull(missing.single().skinTempCount)
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun storedSleepStageFollowsTheEpoch() = runBlocking {        val opened = open()
         try {
             val start = time.now().minus(Duration.ofMinutes(20))
             val session = SleepSession(

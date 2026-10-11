@@ -1,6 +1,7 @@
 package app.circlet.data.db
 
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /** Identity row stored in [Keys.SCHEMA]. Restore rejects a file without it. */
 internal const val SCHEMA_IDENTITY = "circlet"
@@ -23,6 +24,7 @@ internal object Keys {
     const val LAST_BACKUP = "last_backup_epoch_ms"
     const val HEALTH_ENABLED = "health_connect_enabled"
     const val EXPORT_DOCUMENT = "export_document_uri"
+    const val ZONE = "time_zone"
 }
 
 /** User tables copied by restore. Room's master table is not one of them. */
@@ -44,11 +46,17 @@ internal val USER_TABLES = listOf(
 
 /**
  * Migrations between published schemas.
- * Version 1 has none. A later version adds one [Migration] per step and
+ * Version 2 adds the skin-temperature count column on samples.
  * [missingSteps] fails the unit test until the chain from 1 is continuous.
  */
 internal object CircletMigrations {
-    val ALL: List<Migration> = emptyList()
+    val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE samples ADD COLUMN skinTempCount INTEGER")
+        }
+    }
+
+    val ALL: List<Migration> = listOf(MIGRATION_1_2)
 
     fun missingSteps(from: Int = 1, to: Int = CircletDatabase.VERSION): List<Pair<Int, Int>> {
         val have = ALL.map { it.startVersion to it.endVersion }.toSet()

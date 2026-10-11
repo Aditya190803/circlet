@@ -16,13 +16,18 @@ import app.circlet.core.HrvSpotCheck
 import app.circlet.core.JournalEntry
 import app.circlet.core.LiveWorkout
 import app.circlet.core.Metric
+import app.circlet.core.MetricKind
+import app.circlet.core.MetricReference
 import app.circlet.core.Profile
 import app.circlet.core.Recovery
 import app.circlet.core.RecoveryDriver
 import app.circlet.core.RecoveryDriverKind
+import app.circlet.core.ReferenceRange
 import app.circlet.core.RespiratoryRate
 import app.circlet.core.RestingHeartRate
 import app.circlet.core.Sex
+import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
 import app.circlet.core.SleepConsistency
 import app.circlet.core.SleepCycle
 import app.circlet.core.SleepDebt
@@ -73,6 +78,8 @@ internal object DayCodec {
         put("targetStrain", metricJson(day.targetStrain.score) { put("value", it) })
         put("vo2Max", metricJson(day.vo2Max.mlPerKgMin) { put("value", it) })
         put("wellness", JSONArray().apply { day.wellness.forEach { put(wellnessJson(it)) } })
+        day.skinTemperature?.let { put("skinTemperature", skinTempJson(it)) }
+        put("references", JSONArray().apply { day.references.forEach { put(referenceJson(it)) } })
     }.toString()
 
     fun decode(payload: String): DaySummary {
@@ -108,6 +115,16 @@ internal object DayCodec {
             targetStrain = TargetStrain(json.readMetric("targetStrain") { getDouble("value") }),
             vo2Max = Vo2Max(json.readMetric("vo2Max") { getDouble("value") }),
             wellness = json.getJSONArray("wellness").objects().map { wellness(it) },
+            skinTemperature = if (json.has("skinTemperature") && !json.isNull("skinTemperature")) {
+                skinTemp(json.getJSONObject("skinTemperature"))
+            } else {
+                null
+            },
+            references = if (json.has("references") && !json.isNull("references")) {
+                json.getJSONArray("references").objects().map { reference(it) }
+            } else {
+                emptyList()
+            },
         )
     }
 }
@@ -432,6 +449,59 @@ private fun wellness(json: JSONObject): WellnessFlag = WellnessFlag(
     confidence = Confidence.valueOf(json.getString("confidence")),
     detail = json.getString("detail"),
 )
+
+private fun skinTempJson(temp: SkinTemperature): JSONObject = JSONObject().apply {
+    put("deviation", metricJson(temp.deviation) { put("value", it) })
+    put("baselineNights", temp.baselineNights)
+    put("flag", temp.flag.name)
+}
+
+private fun skinTemp(json: JSONObject): SkinTemperature = SkinTemperature(
+    deviation = json.readMetric("deviation") { getDouble("value") },
+    baselineNights = json.getInt("baselineNights"),
+    flag = SkinTempFlag.valueOf(json.getString("flag")),
+)
+
+private fun referenceJson(ref: MetricReference): JSONObject = JSONObject().apply {
+    put("kind", ref.kind.name)
+    ref.personal?.let { personal ->
+        put("personal", JSONObject().apply {
+            put("low", personal.low)
+            put("high", personal.high)
+        })
+    }
+    put("personalDays", ref.personalDays)
+    ref.ideal?.let { ideal ->
+        put("ideal", JSONObject().apply {
+            put("low", ideal.low)
+            put("high", ideal.high)
+        })
+    }
+    ref.idealLabel?.let { put("idealLabel", it) }
+    ref.idealSource?.let { put("idealSource", it) }
+    ref.higherIsBetter?.let { put("higherIsBetter", it) }
+}
+
+private fun reference(json: JSONObject): MetricReference {
+    fun range(key: String): ReferenceRange? {
+        if (!json.has(key) || json.isNull(key)) return null
+        val band = json.getJSONObject(key)
+        return ReferenceRange(band.getDouble("low"), band.getDouble("high"))
+    }
+    return MetricReference(
+        kind = MetricKind.valueOf(json.getString("kind")),
+        personal = range("personal"),
+        personalDays = json.getInt("personalDays"),
+        ideal = range("ideal"),
+        idealLabel = json.optString("idealLabel").ifBlank { null },
+        idealSource = json.optString("idealSource").ifBlank { null },
+        higherIsBetter = if (json.has("higherIsBetter") && !json.isNull("higherIsBetter")) {
+            json.getBoolean("higherIsBetter")
+        } else {
+            null
+        },
+    )
+}
 
 private fun zonesJson(zones: ZoneMinutes): JSONArray = JSONArray().apply { zones.minutes.forEach { put(it) } }
 
