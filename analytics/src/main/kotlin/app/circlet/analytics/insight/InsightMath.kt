@@ -158,6 +158,8 @@ internal fun metricValue(day: DaySummary, kind: MetricKind): Metric<Double> = wh
     MetricKind.STEPS -> day.steps.count.map { it.toDouble() }
     MetricKind.CALORIES -> day.calories.map { it.toDouble() }
     MetricKind.VO2_MAX -> day.vo2Max.mlPerKgMin
+    MetricKind.SKIN_TEMPERATURE -> day.skinTemperature?.deviation
+        ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
 }
 
 private fun <T, R> Metric<T>.map(transform: (T) -> R): Metric<R> {
