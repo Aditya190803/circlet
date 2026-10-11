@@ -11,13 +11,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.MetricKind
@@ -65,42 +68,38 @@ fun List<MetricReference>.forKind(kind: MetricKind): MetricReference? = firstOrN
 fun Double.signedDeviation(digits: Int = 1): String = (if (this < 0) "−" else "+") + abs(this).decimal(digits)
 
 /**
- * A bar showing the user's own normal band (teal, top) and an ideal band (sleep blue, below),
- * with a white marker at [value]. Null [value] draws the track alone.
+ * One track holding both bands: the typical band as a wide muted stretch, the user's own
+ * usual band as a solid stretch inside it, and a dot at [value]. Null [value] draws no dot.
  */
 @Composable
 fun RangeBar(value: Double?, personal: ReferenceRange?, ideal: ReferenceRange?, modifier: Modifier = Modifier) {
     val axis = rangeAxis(value, personal, ideal)
-    Canvas(modifier.fillMaxWidth().height(16.dp)) {
-        val track = 10.dp.toPx()
+    Canvas(modifier.fillMaxWidth().height(14.dp)) {
+        val track = 8.dp.toPx()
+        val top = (size.height - track) / 2
         val radius = CornerRadius(track / 2)
         val width = size.width
-        fun at(v: Double): Float = axis.fraction(v) * width
-        drawRoundRect(Palette.Track, Offset.Zero, Size(width, track), radius)
-        personal?.let { band ->
-            val left = at(band.low)
-            drawRoundRect(
-                Palette.Teal.copy(alpha = 0.45f), Offset(left, 0f),
-                Size((at(band.high) - left).coerceAtLeast(2.dp.toPx()), track), radius,
-            )
+        fun band(range: ReferenceRange, color: Color) {
+            val left = axis.fraction(range.low) * width
+            val length = (axis.fraction(range.high) * width - left).coerceAtLeast(track)
+            drawRoundRect(color, Offset(left.coerceAtMost(width - length), top), Size(length, track), radius)
         }
-        ideal?.let { band ->
-            val left = at(band.low)
-            drawRoundRect(
-                Palette.Sleep.copy(alpha = 0.7f), Offset(left, track + 4.dp.toPx()),
-                Size((at(band.high) - left).coerceAtLeast(2.dp.toPx()), 2.dp.toPx()), radius,
-            )
-        }
+        drawRoundRect(Palette.Track, Offset(0f, top), Size(width, track), radius)
+        ideal?.let { band(it, TypicalBand) }
+        personal?.let { band(it, Palette.Teal) }
         if (value != null) {
-            val x = at(value)
-            drawRect(Palette.White, Offset(x - 1.dp.toPx(), -2.dp.toPx()), Size(2.dp.toPx(), track + 4.dp.toPx()))
+            val centre = Offset(axis.fraction(value) * width, size.height / 2)
+            drawCircle(Palette.Card, 7.dp.toPx(), centre)
+            drawCircle(Palette.White, 5.dp.toPx(), centre)
         }
     }
 }
 
+private val TypicalBand = Palette.Sleep.copy(alpha = 0.4f)
+
 /**
- * The line under a [RangeBar]: the user's own band on the left, the published band on
- * the right. [format] turns a band edge into the metric's unit.
+ * The key under a [RangeBar]: the user's own band on the left, the typical band on
+ * the right, each beside the colour it is drawn in. [format] turns a band edge into the metric's unit.
  */
 @Composable
 fun RangeLegend(
@@ -110,18 +109,18 @@ fun RangeLegend(
     format: (Double) -> String,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).background(Palette.Teal.copy(alpha = 0.45f)))
+    Row(modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(Palette.Teal))
         Spacer(Modifier.width(6.dp))
         val text = if (personal != null) {
-            "YOU  ${format(personal.low)} – ${format(personal.high)}"
+            "YOUR USUAL  ${format(personal.low)} – ${format(personal.high)}"
         } else {
-            "YOU  BUILDING · $personalDays DAYS"
+            "YOUR USUAL  BUILDING · $personalDays DAYS"
         }
-        Text(text, style = label(10.sp, Palette.Faint))
+        Text(text, style = label(10.sp, Palette.Dim))
         if (ideal != null) {
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size(8.dp).background(Palette.Sleep.copy(alpha = 0.7f)))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(TypicalBand))
             Spacer(Modifier.width(6.dp))
             Text("TYPICAL  ${format(ideal.low)} – ${format(ideal.high)}", style = label(10.sp, Palette.Faint))
         }

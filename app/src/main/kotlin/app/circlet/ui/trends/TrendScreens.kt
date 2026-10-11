@@ -184,10 +184,6 @@ private fun YourRangeCard(kind: MetricKind, day: DaySummary?) {
             ideal = ref.ideal,
             format = { kind.format(it) },
         )
-        ref.idealSource?.let { source ->
-            Spacer(Modifier.height(8.dp))
-            Text(source, style = label(10.sp, Palette.Faint))
-        }
     }
 }
 
