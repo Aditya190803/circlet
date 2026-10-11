@@ -126,6 +126,9 @@ internal class RecomputePipeline(
                 history = history,
                 manualActivities = manual,
                 now = store.time.now(),
+                priorSkinTemp = history.mapNotNull { day ->
+                    day.skinTemperature?.settledMeanCounts?.let { day.date to it }
+                }.toMap(),
             ),
         )
     }

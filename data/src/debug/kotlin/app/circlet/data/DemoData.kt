@@ -109,7 +109,9 @@ object DemoData {
             infrared = 12_000 + mix(seed, epoch xor 2, 4_000),
             ambient = 80 + mix(seed, epoch xor 4, 40),
         )
-        return Sample(epoch, heart, rr, gravity, optical, rawRecord = null)
+        // A slow night-to-night drift with a little jitter, so the relative skin-temperature path has something to score.
+        val skinTemp = 900 + mix(seed, epoch / 86_400, 12) + mix(seed, epoch, 3)
+        return Sample(epoch, heart, rr, gravity, optical, rawRecord = null).copy(skinTempCount = skinTemp)
     }
 
     private fun mix(seed: Long, epoch: Long, bound: Int): Int {

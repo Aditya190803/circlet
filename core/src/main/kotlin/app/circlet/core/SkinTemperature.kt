@@ -7,11 +7,15 @@ package app.circlet.core
  * count sits from the user's own nights, in standard deviations of those nights.
  * [baselineNights] is how many prior nights were in the window. [flag] stays
  * [SkinTempFlag.NOT_ENOUGH_BASELINE] until that window is long enough to score.
+ * [settledMeanCounts] is this night's own settled mean in raw strap counts, kept so
+ * later nights can use it as baseline; it is null when the night had no usable reading
+ * and is never a temperature.
  */
 data class SkinTemperature(
     val deviation: Metric<Double>,
     val baselineNights: Int,
     val flag: SkinTempFlag,
+    val settledMeanCounts: Double? = null,
 )
 
 /** Whether a night's relative skin temperature is ordinary, high, or not yet comparable. */

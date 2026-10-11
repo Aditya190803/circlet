@@ -193,7 +193,7 @@ private data class TailSections(
  * Tonight's settled mean is rebuilt from the main sleep window's
  * [Sample.skinTempCount][app.circlet.core.Sample.skinTempCount] values with
  * [nightlySkinTemp]; prior nights come from [DayInput.priorSkinTemp], which the
- * caller rebuilds from stored samples. Without stored priors the flag is
+ * caller fills from the settled means stored on earlier summaries. Without priors the flag is
  * honestly [SkinTempFlag.NOT_ENOUGH_BASELINE][app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE],
  * never a substituted temperature.
  */
@@ -206,8 +206,9 @@ private fun skinTemperatureOf(
         if (date < input.date) nights += NightlyTemp(date, mean)
     }
     nights.sortBy { it.date }
-    nights += NightlyTemp(input.date, tonightSkinTemp(input, session))
-    return scoreSkinTemp(nights, luteal = null)
+    val tonight = tonightSkinTemp(input, session)
+    nights += NightlyTemp(input.date, tonight)
+    return scoreSkinTemp(nights, luteal = null).copy(settledMeanCounts = tonight)
 }
 
 /** Tonight's settled skin-temp mean in counts, or null when the night has none. */

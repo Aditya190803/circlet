@@ -454,12 +454,14 @@ private fun skinTempJson(temp: SkinTemperature): JSONObject = JSONObject().apply
     put("deviation", metricJson(temp.deviation) { put("value", it) })
     put("baselineNights", temp.baselineNights)
     put("flag", temp.flag.name)
+    temp.settledMeanCounts?.let { put("settledMeanCounts", it) }
 }
 
 private fun skinTemp(json: JSONObject): SkinTemperature = SkinTemperature(
     deviation = json.readMetric("deviation") { getDouble("value") },
     baselineNights = json.getInt("baselineNights"),
     flag = SkinTempFlag.valueOf(json.getString("flag")),
+    settledMeanCounts = if (json.has("settledMeanCounts")) json.getDouble("settledMeanCounts") else null,
 )
 
 private fun referenceJson(ref: MetricReference): JSONObject = JSONObject().apply {

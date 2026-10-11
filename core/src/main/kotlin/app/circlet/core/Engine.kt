@@ -13,8 +13,8 @@ import java.time.ZoneId
  * the user logged or edited; the result must keep their identity.
  * [now] is the instant the caller considers current. The engine does not read a clock.
  * [priorSkinTemp] holds settled skin-temp means (ADC counts) for nights before
- * [date], rebuilt from stored samples by the caller; empty when the store does
- * not keep them. The engine always scores the target night itself from
+ * [date], taken by the caller from [SkinTemperature.settledMeanCounts] on earlier
+ * summaries; empty when there are none. The engine always scores the target night itself from
  * [samples] and uses these only as the trailing baseline.
  */
 data class DayInput(
