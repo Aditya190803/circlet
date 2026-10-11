@@ -51,7 +51,8 @@ class UiLogicTest {
     @Test
     fun calibratingAndEmptyDaysSaySo() {
         val calibrating = ready(FakeScenario.CALIBRATING)
-        assertEquals(Notice.Calibrating(calibrating.nightsRecorded), calibrating.notice)
+        assertEquals(Notice.Calibrating(calibrating.baselineNights, calibrating.baselineNightsLeft), calibrating.notice)
+        assertEquals(14, calibrating.baselineNights + calibrating.baselineNightsLeft)
         assertEquals(Notice.EmptyDay(today = true, reason = AbsentReason.NOT_ENOUGH_DATA), ready(FakeScenario.NO_DATA_TODAY).notice)
     }
 

@@ -19,6 +19,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 
+private const val HISTORY_DAYS = 60L
+private const val SPARSE_HISTORY_DAYS = 14
+
 internal class RecomputePipeline(
     private val store: Store,
     private val health: HealthConnectGateway,
@@ -101,9 +104,16 @@ internal class RecomputePipeline(
         val zone = store.time.zone()
         val window = sampleWindow(date, zone)
         val samples = store.database.samples().range(window.first, window.last).map { it.toSample() }
-        val historyFrom = date.minusDays(60).toString()
         val historyTo = date.minusDays(1).toString()
-        val historyRows = store.database.days().range(historyFrom, historyTo)
+        val recentRows = store.database.days().range(date.minusDays(HISTORY_DAYS).toString(), historyTo)
+        // With little recent history, older days still say what is normal for this person:
+        // an imported history that ended months ago is better than starting from nothing.
+        val historyRows = if (recentRows.size >= SPARSE_HISTORY_DAYS) {
+            recentRows
+        } else {
+            store.database.days().latestBefore(iso, HISTORY_DAYS.toInt()).asReversed()
+        }
+        val historyFrom = historyRows.firstOrNull()?.date ?: historyTo
         val historyActivities = store.database.activities().range(historyFrom, historyTo).groupBy { it.localDate }
         val history = historyRows.map { row ->
             assemble(LocalDate.parse(row.date), row, historyActivities[row.date].orEmpty())

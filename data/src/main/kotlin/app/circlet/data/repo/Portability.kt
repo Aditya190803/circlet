@@ -132,6 +132,10 @@ internal class DataPortabilityImpl(
                             )
                             imported++
                         }
+                        // Days scored from the strap lean on this history for their baselines.
+                        store.database.days().all()
+                            .filter { it.algorithmVersion != IMPORTED_ALGORITHM_VERSION }
+                            .forEach { store.database.dirty().mark(it.date) }
                     }
                 }
             }
@@ -160,7 +164,7 @@ internal class DataPortabilityImpl(
         }
         if (!status.available) return Outcome.Err(CoreError.Storage("Health Connect is not available"))
         memory.health.value = status.copy(enabled = false)
-        if (status.granted.size < HealthKind.entries.size) {
+        if (status.granted.isEmpty()) {
             return Outcome.Err(CoreError.Invalid("Health Connect write permission missing"))
         }
         store.io { store.database.kv().put(KvEntity(Keys.HEALTH_ENABLED, "true")) }

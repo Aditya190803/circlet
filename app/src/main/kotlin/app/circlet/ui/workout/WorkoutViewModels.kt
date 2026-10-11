@@ -126,6 +126,11 @@ class ActivityDetailViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Loadable.Loading)
 
+    /** The day's heart rate by minute, for the chart of the workout itself. */
+    val dayHeartRate: StateFlow<List<Int?>> = target.flatMapLatest { open ->
+        if (open == null) flowOf(emptyList()) else metrics.observeDay(open.second).map { it.heartRateByMinute }.catch { emit(emptyList()) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun open(id: String, date: LocalDate) {
         target.value = id to date
     }

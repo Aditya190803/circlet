@@ -416,7 +416,7 @@ private fun Components() {
     }
     val notices = listOf(
         Notice.NeedsPermission, Notice.Unpaired, Notice.BluetoothOff, Notice.Searching, Notice.StrapTrouble(StrapError.BondFailed),
-        Notice.CatchingUp(92), Notice.FirstNight, Notice.Calibrating(2),
+        Notice.CatchingUp(92), Notice.FirstNight, Notice.Calibrating(2, 14 - 2),
         Notice.Wellness(WellnessFlag(WellnessKind.ILLNESS, Confidence.LOW, "Resting heart rate is up and HRV is down")),
         Notice.Wellness(WellnessFlag(WellnessKind.OVERREACHING, Confidence.MEDIUM, "Recovery is low after a hard day")),
         Notice.EmptyDay(today = true, AbsentReason.STRAP_NOT_SYNCED), Notice.EmptyDay(today = false, AbsentReason.NOT_WORN),

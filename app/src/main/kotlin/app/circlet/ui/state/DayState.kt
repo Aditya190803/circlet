@@ -41,6 +41,9 @@ sealed interface Loadable<out T> {
 val <T> Loadable<T>.valueOrNull: T? get() = (this as? Loadable.Ready<T>)?.value
 
 /** The one thing the day screens need to tell the user right now, if anything. */
+/** Scored nights the recovery baseline needs before it stops being provisional. */
+const val BASELINE_NIGHTS = 14
+
 sealed interface Notice {
     data object NeedsPermission : Notice
     data object Unpaired : Notice
@@ -49,7 +52,7 @@ sealed interface Notice {
     data class StrapTrouble(val error: StrapError) : Notice
     data class CatchingUp(val minutes: Int) : Notice
     data object FirstNight : Notice
-    data class Calibrating(val nights: Int) : Notice
+    data class Calibrating(val nights: Int, val left: Int) : Notice
     data class Wellness(val flag: WellnessFlag) : Notice
     data class EmptyDay(val today: Boolean, val reason: AbsentReason) : Notice
 }
@@ -73,6 +76,11 @@ data class DayUiState(
 
     val nightsRecorded: Int get() = history.count { it.sleep.present }
 
+    /** Earlier nights that carry a recovery score: what the personal baseline is built from. */
+    val baselineNights: Int get() = earlier.count { it.recovery.score.present }.coerceAtMost(BASELINE_NIGHTS)
+
+    val baselineNightsLeft: Int get() = BASELINE_NIGHTS - baselineNights
+
     val notice: Notice?
         get() {
             val summary = day.valueOrNull ?: return null
@@ -89,7 +97,7 @@ data class DayUiState(
                 strap.sync.draining && strap.sync.samplesPulled >= 600 ->
                     Notice.CatchingUp((strap.sync.samplesPulled / 60).toInt())
                 summary.recovery.calibration == CalibrationStatus.CALIBRATING ->
-                    if (nightsRecorded == 0) Notice.FirstNight else Notice.Calibrating(nightsRecorded)
+                    if (nightsRecorded == 0) Notice.FirstNight else Notice.Calibrating(baselineNights, baselineNightsLeft)
                 summary.wellness.isNotEmpty() -> Notice.Wellness(summary.wellness.first())
                 !summary.hasData -> Notice.EmptyDay(today = true, reason = summary.emptyReason)
                 else -> null

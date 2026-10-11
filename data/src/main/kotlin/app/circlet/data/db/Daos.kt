@@ -66,6 +66,9 @@ interface DayDao {
     @Query("SELECT * FROM day_summaries ORDER BY date")
     fun all(): List<DaySummaryEntity>
 
+    @Query("SELECT * FROM day_summaries WHERE date < :before ORDER BY date DESC LIMIT :limit")
+    fun latestBefore(before: String, limit: Int): List<DaySummaryEntity>
+
     @Query("SELECT date FROM day_summaries")
     fun dates(): List<String>
 }

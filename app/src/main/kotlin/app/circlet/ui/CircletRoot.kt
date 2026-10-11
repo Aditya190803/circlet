@@ -206,6 +206,7 @@ private fun NavHostController.select(tab: Tab) {
 @Composable
 private fun Shell(container: AppContainer, messenger: Messenger) {
     val context = LocalContext.current
+    val liveWorkout by container.workouts.live.collectAsStateWithLifecycle()
     val nav = rememberNavController()
     val start = remember { if (container.onboarding.completed.value) Tab.HOME.route else Routes.ONBOARDING }
     val entry by nav.currentBackStackEntryAsState()
@@ -282,6 +283,9 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                         onStrap = { nav.select(Tab.MORE) },
                         onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
                         onOpenAllActivities = { nav.navigate(Routes.workouts(state.date)) },
+                        live = liveWorkout,
+                        onStartWorkout = { nav.navigate(Routes.START_WORKOUT) },
+                        onOpenLive = { nav.navigate(Routes.LIVE_WORKOUT) },
                         onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
                     )
                 }
@@ -400,7 +404,9 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                         date,
                         onBack = { nav.popBackStack() },
                         onOpenActivity = { id -> nav.navigate(Routes.workout(id, date)) },
-                        onStartWorkout = { nav.navigate(Routes.START_WORKOUT) },
+                        onStartWorkout = {
+                            nav.navigate(if (liveWorkout != null) Routes.LIVE_WORKOUT else Routes.START_WORKOUT)
+                        },
                     )
                 }
                 composable(

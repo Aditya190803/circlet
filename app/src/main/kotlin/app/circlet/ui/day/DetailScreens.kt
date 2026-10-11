@@ -59,6 +59,8 @@ import app.circlet.ui.design.label
 import app.circlet.ui.design.number
 import app.circlet.ui.design.signedDeviation
 import app.circlet.ui.design.words
+import app.circlet.ui.design.ProgressSteps
+import app.circlet.ui.state.BASELINE_NIGHTS
 import app.circlet.ui.state.DayUiState
 import app.circlet.ui.state.Loadable
 import kotlin.math.abs
@@ -242,8 +244,12 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
         )
         if (calibrating) {
             Card("BASELINE") {
-                StatRow("NIGHTS RECORDED", state.nightsRecorded.toString())
-                Spacer(Modifier.height(6.dp))
+                StatRow(
+                    "NIGHTS", "${state.baselineNights} OF $BASELINE_NIGHTS",
+                    note = if (state.baselineNightsLeft == 1) "1 more night" else "${state.baselineNightsLeft} more nights",
+                )
+                ProgressSteps(state.baselineNights, BASELINE_NIGHTS, Palette.Teal)
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "Each night with the strap on adds to your baseline. Until it is ready the score is provisional: it is worked out from this night and typical adult values, and it sharpens as your own normal takes shape.",
                     style = body(13.sp, Palette.Faint),

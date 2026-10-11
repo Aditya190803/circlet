@@ -1,5 +1,6 @@
 package app.circlet.ui.workout
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,6 +39,10 @@ import app.circlet.ui.design.Card
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.ErrorState
 import app.circlet.ui.design.Figure
+import app.circlet.ui.design.HeroDial
+import app.circlet.ui.design.StatRow
+import app.circlet.ui.design.glyph
+import app.circlet.ui.design.hoursMinutes
 import app.circlet.ui.design.LocalTimeFormat
 import app.circlet.ui.design.Palette
 import app.circlet.ui.design.PrimaryButton
@@ -53,6 +62,7 @@ import app.circlet.ui.design.TextEntry
 import app.circlet.ui.design.words
 import app.circlet.ui.state.Loadable
 import app.circlet.ui.state.containerViewModel
+import java.time.Duration
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -60,6 +70,7 @@ import kotlinx.coroutines.launch
 fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit) {
     val vm = containerViewModel { container, _ -> ActivityDetailViewModel(container.metrics, container.workouts) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val dayHeartRate by vm.dayHeartRate.collectAsStateWithLifecycle()
     val messenger = LocalMessenger.current
     val format = LocalTimeFormat.current
     val today = LocalDate.now(format.zone)
@@ -82,7 +93,11 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
                     Skeleton(Modifier.fillMaxWidth(0.6f).height(14.dp))
                 }
                 is Loadable.Failed -> ErrorState(current.message, onRetry = null)
-                is Loadable.Ready<Activity> -> ActivityBody(activity = current.value, format = format)
+                is Loadable.Ready<Activity> -> ActivityBody(
+                    activity = current.value,
+                    heartRate = workoutMinutes(dayHeartRate, current.value, date, format),
+                    format = format,
+                )
             }
             if (ready != null) {
                 SecondaryButton("CHANGE SPORT") { changingSport = true }
@@ -128,45 +143,83 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
 }
 
 @Composable
-private fun ActivityBody(activity: Activity, format: TimeFormat) {
-    Card("SUMMARY") {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Figure(value = activity.strain.value?.decimal(), caption = "STRAIN", absent = activity.strain.absentReason)
-            Figure(value = activity.calories.value?.grouped(), caption = "KCAL", absent = activity.calories.absentReason)
+private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: TimeFormat) {
+    HeroDial(
+        caption = "${activity.sport.label().uppercase()} STRAIN",
+        glyph = activity.sport.glyph(),
+        color = Palette.Strain,
+        value = activity.strain.value?.decimal(),
+        unit = "",
+        fraction = activity.strain.value?.div(21.0)?.toFloat(),
+        message = "${format.range(activity.start, activity.end)}  ·  ${source(activity)}",
+    )
+    Card {
+        Row(Modifier.fillMaxWidth()) {
+            Figure(
+                value = Duration.between(activity.start, activity.end).hoursMinutes(),
+                caption = "DURATION", modifier = Modifier.weight(1f),
+            )
+            Figure(
+                value = activity.calories.value?.grouped(), caption = "KCAL",
+                absent = activity.calories.absentReason, modifier = Modifier.weight(1f),
+            )
+            Figure(
+                value = activity.averageHeartRateBpm.value?.toString(), caption = "AVG BPM",
+                absent = activity.averageHeartRateBpm.absentReason, alignEnd = true, modifier = Modifier.weight(1f),
+            )
         }
-        Divider()
-        Text(
-            "${timeRange(activity.start, activity.end, format)}, ${durationText(activity.start, activity.end)}",
-            style = body(14.sp, Palette.Dim),
-        )
-        Text(
-            "${source(activity)}, ${activity.sport.label()}",
-            style = label(12.sp, Palette.Faint),
-        )
     }
     Card("HEART RATE") {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Figure(value = activity.averageHeartRateBpm.value?.toString(), caption = "AVERAGE BPM", absent = activity.averageHeartRateBpm.absentReason)
-            Figure(value = activity.maxHeartRateBpm.value?.toString(), caption = "MAX BPM", absent = activity.maxHeartRateBpm.absentReason)
+        if (heartRate.count { it != null } >= 2) {
+            WorkoutHeartChart(heartRate)
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(format.time(activity.start), style = label(10.sp, Palette.Faint))
+                Text(format.time(activity.end), style = label(10.sp, Palette.Faint))
+            }
+            Spacer(Modifier.height(8.dp))
         }
-        // A null recovery means the minute after the activity was not sampled.
-        val drop = activity.heartRateRecovery?.dropBpm
+        StatRow("AVERAGE", activity.averageHeartRateBpm.value?.toString(), "BPM", absent = activity.averageHeartRateBpm.absentReason)
         Divider()
-        Figure(
-            value = drop?.value?.toString(),
-            caption = "RECOVERY DROP BPM",
-            absent = if (drop == null) AbsentReason.NOT_ENOUGH_DATA else drop.absentReason,
-        )
+        StatRow("MAX", activity.maxHeartRateBpm.value?.toString(), "BPM", absent = activity.maxHeartRateBpm.absentReason)
+        // A null recovery means the minute after the activity was not sampled.
+        activity.heartRateRecovery?.dropBpm?.value?.let { drop ->
+            Divider()
+            StatRow("DROP IN THE MINUTE AFTER", drop.toString(), "BPM")
+        }
     }
     Card("TIME IN ZONES") {
         ZoneBars(activity.zoneMinutes)
+    }
+}
+
+/** The slice of a day's per-minute heart rate that falls inside [activity]. */
+private fun workoutMinutes(day: List<Int?>, activity: Activity, date: LocalDate, format: TimeFormat): List<Int?> {
+    val dayStart = date.atStartOfDay(format.zone).toInstant()
+    val from = (Duration.between(dayStart, activity.start).toMinutes().toInt()).coerceIn(0, day.size)
+    val to = (Duration.between(dayStart, activity.end).toMinutes().toInt() + 1).coerceIn(from, day.size)
+    return day.subList(from, to)
+}
+
+/** Heart rate across the workout as a filled line. Gaps where the strap had no reading are left open. */
+@Composable
+private fun WorkoutHeartChart(minutes: List<Int?>) {
+    val valid = minutes.filterNotNull()
+    val low = valid.min() - 5f
+    val high = valid.max() + 5f
+    Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+        val step = size.width / (minutes.size - 1).coerceAtLeast(1)
+        fun y(bpm: Int) = size.height * (1f - (bpm - low) / (high - low))
+        val line = Path()
+        var open = false
+        minutes.forEachIndexed { i, bpm ->
+            if (bpm == null) {
+                open = false
+            } else {
+                if (open) line.lineTo(i * step, y(bpm)) else line.moveTo(i * step, y(bpm))
+                open = true
+            }
+        }
+        drawPath(line, Palette.Strain, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 

@@ -15,6 +15,18 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.semantics.Role
+import app.circlet.ui.design.LiveDot
+import app.circlet.ui.design.SecondaryButton
+import app.circlet.ui.design.Icon
+import app.circlet.ui.state.BASELINE_NIGHTS
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -23,6 +35,7 @@ import app.circlet.core.AbsentReason
 import app.circlet.core.Confidence
 import app.circlet.core.DaySummary
 import app.circlet.core.LinkState
+import app.circlet.core.LiveWorkout
 import app.circlet.core.MetricKind
 import app.circlet.core.SkinTempFlag
 import app.circlet.core.StrapState
@@ -81,6 +94,9 @@ fun HomeScreen(
     onOpenActivity: (String) -> Unit = {},
     onOpenAllActivities: () -> Unit = {},
     onOpenMetric: (MetricKind) -> Unit = {},
+    live: LiveWorkout? = null,
+    onStartWorkout: () -> Unit = {},
+    onOpenLive: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize()) {
         TopBar(state.date, state.today, state.strap, onShift, onProfile, onStrap)
@@ -102,6 +118,7 @@ fun HomeScreen(
             ScreenColumn {
                 val summary = state.day.valueOrNull
                 val loading = state.day is Loadable.Loading
+                if (live != null) LiveWorkoutCard(live, onOpenLive)
                 Dials(summary, loading, onOpen)
                 when (val day = state.day) {
                     is Loadable.Failed -> ErrorState(day.message, onRetry)
@@ -109,7 +126,10 @@ fun HomeScreen(
                 }
                 HeartCard(state, summary, loading)
                 PlanCard(state, summary, loading)
-                MyDayCard(summary, loading, onOpen, onOpenActivity, onOpenAllActivities)
+                MyDayCard(
+                    summary, loading, onOpen, onOpenActivity, onOpenAllActivities,
+                    onStartWorkout = onStartWorkout.takeIf { state.isToday && live == null },
+                )
                 KeyStatistics(state, summary, loading, onOpenMetric)
             }
         }
@@ -173,8 +193,8 @@ fun DayNotice(notice: Notice, onAction: () -> Unit) {
         )
         is Notice.Calibrating -> NoticeCard(
             Glyph.Pulse, "Learning your baseline",
-            "${notice.nights} ${if (notice.nights == 1) "night" else "nights"} recorded so far. " +
-                "Recovery appears once Circlet knows what is normal for you.",
+            "${notice.nights} of $BASELINE_NIGHTS nights recorded, ${notice.left} to go. " +
+                "Until then recovery is an early estimate against typical adult values.",
         )
         is Notice.Wellness -> NoticeCard(
             Glyph.Heart,
@@ -265,6 +285,7 @@ private fun MyDayCard(
     onOpen: (DayScreen) -> Unit,
     onOpenActivity: (String) -> Unit,
     onOpenAllActivities: () -> Unit,
+    onStartWorkout: (() -> Unit)?,
 ) {
     val format = LocalTimeFormat.current
     Card("MY DAY") {
@@ -297,7 +318,48 @@ private fun MyDayCard(
             ) { onOpenActivity(activity.id) }
         }
         Divider()
+        if (onStartWorkout != null) {
+            Spacer(Modifier.height(10.dp))
+            SecondaryButton("START A WORKOUT") { onStartWorkout() }
+        }
         QuietButton("ALL ACTIVITIES") { onOpenAllActivities() }
+    }
+}
+
+/** The workout being recorded, shown above everything else on Home. Tapping it opens the live page. */
+@Composable
+private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
+    val now by produceState(Instant.now(), live.startedAt) {
+        while (true) {
+            value = Instant.now()
+            delay(1_000)
+        }
+    }
+    val seconds = Duration.between(live.startedAt, now).seconds.coerceAtLeast(0)
+    Card {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button, onClickLabel = "Open the live workout", onClick = onOpen),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LiveDot(color = Palette.Teal, active = true)
+                    Spacer(Modifier.width(8.dp))
+                    Text("${live.sport.label().uppercase()} IN PROGRESS", style = label(12.sp, Palette.Teal))
+                }
+                Text(
+                    "%d:%02d:%02d".format(seconds / 3600, seconds % 3600 / 60, seconds % 60),
+                    style = number(34.sp, Palette.White),
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(live.heartRateBpm?.toString() ?: "–", style = number(26.sp, Palette.White))
+                Text("BPM", style = label(10.sp, Palette.Faint))
+            }
+            Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 8.dp))
+        }
     }
 }
 

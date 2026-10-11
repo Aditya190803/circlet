@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.ExportResult
+import androidx.health.connect.client.PermissionController
 import app.circlet.core.HealthKind
 import app.circlet.ui.LocalMessenger
 import app.circlet.ui.day.DetailHeader
@@ -65,6 +66,11 @@ fun DataScreen(onBack: () -> Unit) {
     val export by vm.export.collectAsState()
     val exporting by vm.exporting.collectAsState()
     var pendingRestore by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // The platform sheet lists each kind of value; whatever is allowed there is what gets written.
+    val askHealth = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
+        vm.setHealthConnect(true)
+    }
 
     val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         val source = export
@@ -112,7 +118,7 @@ fun DataScreen(onBack: () -> Unit) {
                     checked = health.enabled,
                     description = "Write measured values to Health Connect",
                     enabled = health.available,
-                ) { vm.setHealthConnect(it) }
+                ) { on -> if (on) askHealth.launch(HEALTH_WRITE_PERMISSIONS) else vm.setHealthConnect(false) }
                 Spacer(Modifier.height(8.dp))
                 Text("WRITTEN", style = label(12.sp, Palette.Dim))
                 Text(
@@ -223,6 +229,17 @@ fun DataScreen(onBack: () -> Unit) {
         }
     }
 }
+
+/** The write permissions the data module declares, one per kind of value Circlet exports. */
+private val HEALTH_WRITE_PERMISSIONS = setOf(
+    "android.permission.health.WRITE_SLEEP",
+    "android.permission.health.WRITE_RESTING_HEART_RATE",
+    "android.permission.health.WRITE_HEART_RATE_VARIABILITY",
+    "android.permission.health.WRITE_RESPIRATORY_RATE",
+    "android.permission.health.WRITE_ACTIVE_CALORIES_BURNED",
+    "android.permission.health.WRITE_EXERCISE",
+    "android.permission.health.WRITE_STEPS",
+)
 
 private fun HealthKind.words(): String = name.replace('_', ' ')
 
