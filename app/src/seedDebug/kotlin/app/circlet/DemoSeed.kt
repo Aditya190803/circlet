@@ -23,7 +23,7 @@ object DemoSeed {
         if (prefs.getBoolean(KEY_SEEDED, false)) return
         if (ports.prefs.pairedAddress() != null) return
         val zone = ZoneId.systemDefault()
-        DemoData.seed(ports.samples, SEED, zone, LocalDate.now(zone))
+        DemoData.seed(ports.samples, SEED, zone, LocalDate.now(zone), System.currentTimeMillis() / 1000)
         prefs.edit().putBoolean(KEY_SEEDED, true).apply()
     }
 }

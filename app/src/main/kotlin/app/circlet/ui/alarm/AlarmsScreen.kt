@@ -138,6 +138,15 @@ fun AlarmsScreen(onBack: () -> Unit) {
                 twentyFourHour = twentyFourHour,
                 onSave = { alarm -> vm.save(alarm) { editing = null } },
             )
+            if (!e.isNew) {
+                // Deleting takes two taps: the first arms the button, the second removes the alarm.
+                var armed by remember(e.alarm.id) { mutableStateOf(false) }
+                if (armed) {
+                    PrimaryButton(text = "DELETE THIS ALARM", danger = true, onClick = { vm.remove(e.alarm.id) { editing = null } })
+                } else {
+                    QuietButton(text = "DELETE ALARM", color = Palette.Danger, onClick = { armed = true })
+                }
+            }
         }
     }
 }

@@ -29,8 +29,12 @@ class DemoDataTest {
         val sleep = epoch(0, 3, 0)
         val first = DemoData.sampleOrNull(4L, zone, end, sleep)!!
         assertEquals(first, DemoData.sampleOrNull(4L, zone, end, sleep))
-        assertTrue(first.heartRateBpm!! in 46..55)
-        assertEquals(2, first.rrIntervalsMs.size)
+        assertTrue(first.heartRateBpm!! in 42..60)
+        // Over a minute the beat intervals add up to about a minute, as a real heart's do.
+        val minute = (0 until 60).mapNotNull { DemoData.sampleOrNull(4L, zone, end, sleep + it) }
+        val beats = minute.sumOf { it.rrIntervalsMs.size }
+        assertTrue("beats $beats", beats in 42..60)
+        assertTrue(minute.sumOf { it.rrIntervalsMs.sum() } in 55_000..65_000)
         assertNotNull(first.gravity)
         assertNotNull(first.optical)
 
@@ -43,11 +47,11 @@ class DemoDataTest {
         assertEquals(0, DemoData.sampleOrNull(4L, zone, end, epoch(0, 7, 10))!!.heartRateBpm)
         assertNull(DemoData.sampleOrNull(4L, zone, end, epoch(0, 7, 10))!!.gravity)
         assertNull(DemoData.sampleOrNull(4L, zone, end, epoch(0, 15, 10)))
-        assertTrue(DemoData.sampleOrNull(4L, zone, end, epoch(0, 8, 10))!!.heartRateBpm!! >= 148)
-        assertTrue(DemoData.sampleOrNull(4L, zone, end, epoch(1, 17, 20))!!.heartRateBpm!! in 98..120)
-        assertTrue(DemoData.sampleOrNull(4L, zone, end, epoch(1, 13, 40))!!.heartRateBpm!! in 50..58)
+        assertTrue(DemoData.sampleOrNull(4L, zone, end, epoch(0, 8, 10))!!.heartRateBpm!! >= 145)
+        assertTrue(DemoData.sampleOrNull(4L, zone, end, epoch(1, 17, 20))!!.heartRateBpm!! in 95..112)
+        assertTrue(DemoData.sampleOrNull(4L, zone, end, epoch(1, 13, 40))!!.heartRateBpm!! in 50..62)
         val intervals = DemoData.sampleOrNull(4L, zone, end, epoch(2, 18, 45))!!.heartRateBpm
-        assertTrue(intervals == 102 || intervals == 156)
+        assertTrue(intervals == 112 || intervals == 158)
         assertEquals(0, DemoData.sampleOrNull(4L, zone, end, epoch(4, 12, 0))!!.heartRateBpm)
     }
 

@@ -78,6 +78,9 @@ class AlarmViewModel(
         report("Alarm saved.", onSaved) { alarms.set(alarm) }
 
     /** Switches an alarm on (re-saved enabled) or off (through disable). */
+    fun remove(id: String, onRemoved: () -> Unit) =
+        report("Alarm deleted.", onRemoved) { alarms.remove(id) }
+
     fun toggle(alarm: StrapAlarm, on: Boolean) =
         report(null) { if (on) alarms.set(alarm.copy(enabled = true)) else alarms.disable(alarm.id) }
 

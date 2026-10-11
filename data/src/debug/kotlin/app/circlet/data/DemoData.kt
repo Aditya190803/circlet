@@ -35,13 +35,14 @@ object DemoData {
         return sample(seed, epochSecond, kind)
     }
 
-    suspend fun seed(sink: SampleSink, seed: Long, zone: ZoneId, endDate: LocalDate) {
+    suspend fun seed(sink: SampleSink, seed: Long, zone: ZoneId, endDate: LocalDate, nowEpochSecond: Long = Long.MAX_VALUE) {
         val startDate = endDate.minusDays((DAY_COUNT - 1).toLong())
         var date = startDate
         while (!date.isAfter(endDate)) {
             val batch = ArrayList<Sample>(BATCH)
             val from = date.atStartOfDay(zone).toEpochSecond()
-            val until = date.plusDays(1).atStartOfDay(zone).toEpochSecond()
+            // Never write samples from the future: the last day stops at the present second.
+            val until = minOf(date.plusDays(1).atStartOfDay(zone).toEpochSecond(), nowEpochSecond)
             var epoch = from
             while (epoch < until) {
                 val sample = sampleOrNull(seed, zone, endDate, epoch)
@@ -78,19 +79,29 @@ object DemoData {
         if (kind == Kind.OFF_WRIST) {
             return Sample(epoch, heartRateBpm = 0, rrIntervalsMs = emptyList(), gravity = null, optical = null, rawRecord = null)
         }
+        // Heart rate drifts slowly and differs a little from day to day, as a worn strap reports it.
+        val day = mix(seed, epoch / 86_400, 7) - 3
+        val drift = (4.0 * kotlin.math.sin(epoch / 1_800.0)).toInt()
         val heart = when (kind) {
-            Kind.SLEEP -> 46 + mix(seed, epoch, 10)
-            Kind.NAP -> 50 + mix(seed, epoch, 8)
-            Kind.RUN -> 148 + mix(seed, epoch, 18)
-            Kind.WALK -> 98 + mix(seed, epoch, 14)
-            Kind.INTERVALS -> if (((epoch / 60) % 2L) == 0L) 156 else 102
-            Kind.DAILY -> 64 + mix(seed, epoch, 18)
+            Kind.SLEEP -> 50 + day + drift + mix(seed, epoch, 2)
+            Kind.NAP -> 56 + day + mix(seed, epoch, 2)
+            Kind.RUN -> 152 + drift + mix(seed, epoch, 4)
+            Kind.WALK -> 102 + drift + mix(seed, epoch, 4)
+            Kind.INTERVALS -> if (((epoch / 60) % 2L) == 0L) 158 else 112
+            Kind.DAILY -> 68 + day + 2 * drift + mix(seed, epoch, 3)
             Kind.OFF_WRIST -> 0
         }
-        val rr = when (kind) {
-            Kind.SLEEP, Kind.NAP -> listOf(860 + mix(seed, epoch, 220), 840 + mix(seed, epoch xor 3, 220))
-            Kind.RUN, Kind.INTERVALS -> listOf(360 + mix(seed, epoch, 80))
-            else -> if (mix(seed, epoch, 3) == 0) listOf(700 + mix(seed, epoch, 250)) else emptyList()
+        // Beats land where the heart rate puts them, and each interval breathes with a
+        // respiratory rhythm (about 13 a minute) plus a few milliseconds of jitter.
+        val beats = ((epoch + 1) * heart / 60 - epoch * heart / 60).toInt()
+        val depth = when (kind) {
+            Kind.SLEEP, Kind.NAP -> 0.05 + day * 0.004
+            Kind.RUN, Kind.INTERVALS, Kind.WALK -> 0.01
+            else -> 0.025
+        }
+        val breath = kotlin.math.sin(epoch * 2 * Math.PI / 4.6)
+        val rr = List(beats) { beat ->
+            (60_000.0 / heart * (1 + depth * breath)).toInt() + mix(seed, epoch * 4 + beat, 11) - 5
         }
         val wobble = (mix(seed, epoch, 7) - 3) / 100f
         // Wake and workouts flip arm elevation every second. A still vector all day
