@@ -52,9 +52,9 @@ fun rangeAxis(value: Double?, vararg bands: ReferenceRange?): RangeAxis {
 fun positionTag(value: Double?, band: ReferenceRange?): String? {
     if (value == null || band == null) return null
     return when {
-        value < band.low -> "BELOW YOUR RANGE"
-        value > band.high -> "ABOVE YOUR RANGE"
-        else -> "IN YOUR RANGE"
+        value < band.low -> "BELOW RANGE"
+        value > band.high -> "ABOVE RANGE"
+        else -> "IN RANGE"
     }
 }
 
@@ -116,9 +116,9 @@ fun RangeLegend(
             Box(Modifier.size(8.dp).background(Palette.Teal.copy(alpha = 0.45f)))
             Spacer(Modifier.width(8.dp))
             val text = if (personal != null) {
-                "YOUR NORMAL ${format(personal.low)} TO ${format(personal.high)} · $personalDays DAYS"
+                "YOUR NORMAL  ${format(personal.low)} – ${format(personal.high)}"
             } else {
-                "YOUR NORMAL IS STILL BUILDING · $personalDays DAYS SO FAR"
+                "YOUR NORMAL  BUILDING · $personalDays DAYS"
             }
             Text(text, style = label(10.sp, Palette.Faint))
         }
@@ -127,12 +127,13 @@ fun RangeLegend(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(Palette.Sleep.copy(alpha = 0.7f)))
                 Spacer(Modifier.width(8.dp))
-                val text = when {
-                    ideal != null && idealLabel != null -> "${idealLabel.uppercase()} ${format(ideal.low)} TO ${format(ideal.high)}"
-                    ideal != null -> "IDEAL ${format(ideal.low)} TO ${format(ideal.high)}"
-                    else -> idealLabel.orEmpty().uppercase()
-                }
-                Text(text, style = label(10.sp, Palette.Faint))
+                Text(
+                    if (ideal != null) "TYPICAL  ${format(ideal.low)} – ${format(ideal.high)}" else "TYPICAL",
+                    style = label(10.sp, Palette.Faint),
+                )
+            }
+            if (idealLabel != null) {
+                Text(idealLabel, style = body(11.sp, Palette.Faint), modifier = Modifier.padding(start = 16.dp, top = 2.dp))
             }
         }
     }

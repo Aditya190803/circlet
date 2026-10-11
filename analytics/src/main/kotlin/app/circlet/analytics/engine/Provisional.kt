@@ -11,6 +11,7 @@ import app.circlet.core.Metric
 import app.circlet.core.Recovery
 import app.circlet.core.SleepNeed
 import app.circlet.core.SleepPerformance
+import app.circlet.core.Vo2Max
 import app.circlet.core.ageOn
 import java.time.Duration
 import kotlin.math.ln
@@ -81,4 +82,18 @@ internal fun provisionalRecovery(recovery: Recovery, heart: DayHeart, performanc
     if (resting != null) score -= 10.0 * ((resting - NORM_RESTING_BPM) / NORM_RESTING_SD).coerceIn(-2.0, 2.0)
     if (sleepPercent != null) score += (sleepPercent - 85) * 0.2
     return recovery.copy(score = Metric.of(score.roundToInt().coerceIn(1, 99), Confidence.LOW))
+}
+
+/**
+ * VO2max from the heart-rate ratio (Uth, Sorensen, Overgaard and Pedersen 2004):
+ * 15.3 x maximum heart rate / resting heart rate. It stands in while there is no
+ * paced run with a known speed to measure from, which a strap without GPS never has.
+ * The maximum is usually estimated from age, so the figure stays at LOW confidence.
+ */
+internal fun ratioVo2Max(measured: Vo2Max, restingBpm: Double?, maxBpm: Double?): Vo2Max {
+    if (measured.mlPerKgMin.present) return measured
+    if (restingBpm == null || maxBpm == null || restingBpm < 30 || maxBpm <= restingBpm) return measured
+    val estimate = 15.3 * maxBpm / restingBpm
+    if (estimate !in 15.0..90.0) return measured
+    return Vo2Max(Metric.of(estimate, Confidence.LOW))
 }

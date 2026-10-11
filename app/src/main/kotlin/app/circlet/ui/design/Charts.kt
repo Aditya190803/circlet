@@ -69,6 +69,36 @@ private fun ChartNote(text: String) {
     )
 }
 
+/**
+ * Press and hold, then drag, to read a chart. Reports the touch as a fraction of the
+ * chart width, and null when the finger lifts. Waiting for the hold leaves a plain
+ * vertical swipe to the page scroll.
+ */
+fun Modifier.scrub(key: Any?, onChange: (Float?) -> Unit): Modifier = pointerInput(key) {
+    detectDragGesturesAfterLongPress(
+        onDragStart = { onChange((it.x / size.width).coerceIn(0f, 1f)) },
+        onDrag = { change, _ ->
+            change.consume()
+            onChange((change.position.x / size.width).coerceIn(0f, 1f))
+        },
+        onDragEnd = { onChange(null) },
+        onDragCancel = { onChange(null) },
+    )
+}
+
+/** The line above a chart that shows what is under the finger, or a quiet hint when nothing is held. */
+@Composable
+private fun ScrubReadout(value: String?, detail: String?, idle: String?) {
+    Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (value != null) {
+            Text(value, style = number(14.sp, Palette.White))
+            if (detail != null) Text("  $detail", style = label(11.sp, Palette.Dim))
+        } else if (idle != null) {
+            Text(idle, style = label(10.sp, Palette.Ghost))
+        }
+    }
+}
+
 /** The five-minute bucket a touch at [fraction] of the chart width falls in, or null with no reading there. */
 internal fun scrubBucket(minutes: List<Int?>, fraction: Float): IntRange? {
     if (minutes.isEmpty()) return null
@@ -131,17 +161,7 @@ fun HeartRateChart(
                 Modifier
                     .fillMaxWidth()
                     .height(120.dp)
-                    .pointerInput(minutes.size) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { touch = it.x / size.width },
-                            onDrag = { change, _ ->
-                                change.consume()
-                                touch = change.position.x / size.width
-                            },
-                            onDragEnd = { touch = null },
-                            onDragCancel = { touch = null },
-                        )
-                    },
+                    .scrub(minutes.size) { touch = it },
             ) {
                 for (i in 0..3) {
                     val y = size.height * i / 3
@@ -188,10 +208,23 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
     val cycleStyle = label(9.sp, Palette.Faint)
     val span = Duration.between(session.start, session.end).seconds.coerceAtLeast(1).toFloat()
     val cycles = session.cycles
+    val timeFormat = LocalTimeFormat.current
+    var touch by remember(session.id) { mutableStateOf<Float?>(null) }
+    val touchedAt = touch?.let { session.start.plusSeconds((span * it).toLong()) }
+    val touched = touchedAt?.let { at ->
+        session.epochs.lastOrNull { !it.start.isAfter(at) && at.isBefore(it.start.plus(it.duration)) }
+    }
+    Column(modifier) {
+    ScrubReadout(
+        value = touched?.let { stageWords(it.stage) },
+        detail = touchedAt?.takeIf { touched != null }?.let { timeFormat.time(it) },
+        idle = if (session.epochs.isEmpty()) null else "HOLD AND DRAG TO READ",
+    )
     Canvas(
-        modifier
+        Modifier
             .fillMaxWidth()
             .height(if (cycles.isEmpty()) 96.dp else 116.dp)
+            .scrub(session.id) { touch = it }
             .semantics { contentDescription = "Sleep stages across the night, ${cycles.size} cycles" },
     ) {
         fun x(at: Instant) = size.width * Duration.between(session.start, at).seconds / span
@@ -220,7 +253,19 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
                 CornerRadius(3f, 3f),
             )
         }
+        touch?.let {
+            val line = size.width * it
+            drawLine(Palette.Dim, Offset(line, top), Offset(line, size.height), 1.dp.toPx())
+        }
     }
+    }
+}
+
+private fun stageWords(stage: SleepStage): String = when (stage) {
+    SleepStage.AWAKE -> "AWAKE"
+    SleepStage.LIGHT -> "LIGHT"
+    SleepStage.DEEP -> "SWS (DEEP)"
+    SleepStage.REM -> "REM"
 }
 
 /**
@@ -238,26 +283,40 @@ fun WeekBars(
     loading: Boolean = false,
 ) {
     val flat = loading || values.all { it == null }
+    var touch by remember(values.size) { mutableStateOf<Float?>(null) }
+    val held = touch?.let { (it * values.size).toInt().coerceIn(0, values.lastIndex) }
     Row(
         Modifier
             .fillMaxWidth()
-            .height(if (flat) 44.dp else 150.dp),
+            .height(if (flat) 44.dp else 150.dp)
+            .scrub(values.size) { touch = it },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
         values.forEachIndexed { i, v ->
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(38.dp)) {
-                Text(if (loading) "" else captions[i], style = label(10.sp, Palette.White), textAlign = TextAlign.Center, maxLines = 1)
+                Text(
+                    if (loading) "" else captions[i],
+                    style = label(10.sp, if (held != null && held != i) Palette.Ghost else Palette.White),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
                 Spacer(Modifier.height(4.dp))
                 Box(
                     Modifier
                         .width(14.dp)
                         .height(if (v == null || loading) 3.dp else (100 * (v / max).coerceIn(0.03f, 1f)).dp)
                         .clip(Shapes.bar)
-                        .background(if (v == null || loading) Palette.Ghost else colors[i]),
+                        .background(
+                            when {
+                                v == null || loading -> Palette.Ghost
+                                held != null && held != i -> colors[i].copy(alpha = 0.3f)
+                                else -> colors[i]
+                            },
+                        ),
                 )
                 Spacer(Modifier.height(6.dp))
-                Text(labels[i], style = label(10.sp, if (i == selected) Palette.White else Palette.Faint))
+                Text(labels[i], style = label(10.sp, if (i == (held ?: selected)) Palette.White else Palette.Faint))
             }
         }
     }
@@ -305,12 +364,24 @@ private val RoundBar = androidx.compose.foundation.shape.RoundedCornerShape(5.dp
  */
 @Composable
 fun StressTimeline(points: List<StressPoint>, dayStart: Instant, emptyText: String, modifier: Modifier = Modifier) {
+    val twentyFourHour = LocalTimeFormat.current.twentyFourHour
+    var touch by remember(dayStart) { mutableStateOf<Float?>(null) }
+    val hour = touch?.let { (it * 24).toInt().coerceIn(0, 23) }
+    val inHour = hour?.let { h ->
+        points.filter { Duration.between(dayStart, it.at).seconds in h * 3600L until (h + 1) * 3600L }
+    }.orEmpty()
     Column(modifier) {
+        ScrubReadout(
+            value = if (inHour.isEmpty()) null else "STRESS ${inHour.map { it.score }.average().roundToInt()}",
+            detail = hour?.takeIf { inHour.isNotEmpty() }?.let { minuteLabel(it * 60, twentyFourHour) },
+            idle = if (points.isEmpty()) null else "HOLD AND DRAG TO READ",
+        )
         Box(contentAlignment = Alignment.Center) {
             Canvas(
                 Modifier
                     .fillMaxWidth()
-                    .height(96.dp),
+                    .height(96.dp)
+                    .scrub(dayStart) { touch = it },
             ) {
                 for (i in 0..2) {
                     val y = size.height * i / 2
@@ -322,8 +393,9 @@ fun StressTimeline(points: List<StressPoint>, dayStart: Instant, emptyText: Stri
                     val hours = Duration.between(dayStart, point.at).seconds / 3600f
                     if (hours < 0f || hours >= 24f) continue
                     val height = size.height * (point.score / 100.0).toFloat().coerceIn(0.04f, 1f)
+                    val dim = hour != null && hours.toInt() != hour
                     drawRoundRect(
-                        Palette.stress(point.score),
+                        if (dim) Palette.stress(point.score).copy(alpha = 0.3f) else Palette.stress(point.score),
                         Offset(hours * slot + (slot - bar) / 2, size.height - height),
                         Size(bar, height),
                         CornerRadius(3f, 3f),

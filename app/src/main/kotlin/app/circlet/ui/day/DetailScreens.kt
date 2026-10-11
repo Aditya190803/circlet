@@ -247,7 +247,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 StatRow("NIGHTS RECORDED", state.nightsRecorded.toString())
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Each night with the strap on adds to your baseline. The numbers below are real from the first night; the score waits until they can be compared with what is normal for you.",
+                    "Each night with the strap on adds to your baseline. Until it is ready the score is provisional: it is worked out from this night and typical adult values, and it sharpens as your own normal takes shape.",
                     style = body(13.sp, Palette.Faint),
                 )
             }

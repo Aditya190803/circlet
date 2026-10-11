@@ -76,7 +76,7 @@ fun AlarmsScreen(onBack: () -> Unit) {
                 }
                 is AlarmUiState.Ready -> {
                     val next = s.next
-                    Card(title = "NEXT ALARM") {
+                    if (next != null || s.alarms.isNotEmpty()) Card(title = "NEXT ALARM") {
                         if (next != null) {
                             Text(formatAlarmTime(next.alarm.time, twentyFourHour), style = number(34.sp, Palette.Teal))
                             Text(describeDays(next.alarm.weekdays), style = body(13.sp, Palette.Dim))

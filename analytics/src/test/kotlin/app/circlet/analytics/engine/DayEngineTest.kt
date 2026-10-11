@@ -78,7 +78,9 @@ class DayEngineTest {
 
         // The run is the only sustained movement with a raised heart rate, so it carries the estimate.
         assertTrue("steps ${summary.steps.count.value}", summary.steps.count.value!! in 3_000..12_000)
-        assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.vo2Max.mlPerKgMin.absentReason)
+        // No paced run to measure from, so the heart-rate-ratio estimate stands in at low confidence.
+        assertTrue(summary.vo2Max.mlPerKgMin.value!! in 30.0..80.0)
+        assertEquals(app.circlet.core.Confidence.LOW, summary.vo2Max.mlPerKgMin.confidence)
         assertTrue(summary.wellness.isEmpty())
 
         assertEquals(1440, summary.heartRateByMinute.size)

@@ -18,16 +18,16 @@ import kotlin.math.roundToInt
 // A stride (1.4 to 2.5 Hz) cannot be counted from one motion sample a second, so
 // this does not count steps. It finds minutes that look like walking or running,
 // wrist movement above the strap's resting noise together with a heart rate raised
-// above rest, in bouts of at least two minutes, and gives each a typical cadence
+// above rest, in bouts of at least three minutes, and gives each a typical cadence
 // for that effort. Requiring the raised heart rate is what keeps seated hand
 // movement out; OpenStrap dropped a movement-only conversion for over-counting.
 // The result is always LOW confidence and the app labels it an estimate.
 
 /** Gen 4 resting accelerometer noise sits near 0.03 g (p90 0.058 g, OpenStrap device.dart). */
-private const val MOVING_DYN_G = 0.06
-private const val MOVING_RESERVE = 0.18
+private const val MOVING_DYN_G = 0.08
+private const val MOVING_RESERVE = 0.22
 private const val RUNNING_RESERVE = 0.50
-private const val MIN_BOUT_MINUTES = 2
+private const val MIN_BOUT_MINUTES = 3
 
 private fun cadence(reserve: Double): Double = if (reserve < RUNNING_RESERVE) {
     90.0 + 35.0 * ((reserve - MOVING_RESERVE) / (RUNNING_RESERVE - MOVING_RESERVE))

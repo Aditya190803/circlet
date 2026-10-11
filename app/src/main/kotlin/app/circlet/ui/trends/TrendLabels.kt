@@ -33,12 +33,12 @@ fun MetricKind.unit(): String = when (this) {
     MetricKind.SLEEP_PERFORMANCE, MetricKind.SLEEP_EFFICIENCY, MetricKind.SLEEP_CONSISTENCY, MetricKind.RECOVERY -> "%"
     MetricKind.SLEEP_DURATION, MetricKind.SLEEP_NEED, MetricKind.SLEEP_DEBT -> "min"
     MetricKind.STRAIN, MetricKind.STRESS -> ""
-    MetricKind.RESTING_HEART_RATE -> "bpm"
-    MetricKind.HRV -> "ms"
-    MetricKind.RESPIRATORY_RATE -> "br/min"
-    MetricKind.STEPS -> "steps"
-    MetricKind.CALORIES -> "kcal"
-    MetricKind.VO2_MAX -> "ml/kg/min"
+    MetricKind.RESTING_HEART_RATE -> "BPM"
+    MetricKind.HRV -> "MS"
+    MetricKind.RESPIRATORY_RATE -> "RPM"
+    MetricKind.STEPS -> ""
+    MetricKind.CALORIES -> "KCAL"
+    MetricKind.VO2_MAX -> "ML/KG/MIN"
     MetricKind.SKIN_TEMPERATURE -> "SD"
 }
 

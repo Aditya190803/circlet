@@ -53,11 +53,11 @@ class RangesTest {
     @Test
     fun positionTagBelowInAndAbove() {
         val band = ReferenceRange(40.0, 60.0)
-        assertEquals("BELOW YOUR RANGE", positionTag(39.9, band))
-        assertEquals("IN YOUR RANGE", positionTag(40.0, band))
-        assertEquals("IN YOUR RANGE", positionTag(50.0, band))
-        assertEquals("IN YOUR RANGE", positionTag(60.0, band))
-        assertEquals("ABOVE YOUR RANGE", positionTag(60.1, band))
+        assertEquals("BELOW RANGE", positionTag(39.9, band))
+        assertEquals("IN RANGE", positionTag(40.0, band))
+        assertEquals("IN RANGE", positionTag(50.0, band))
+        assertEquals("IN RANGE", positionTag(60.0, band))
+        assertEquals("ABOVE RANGE", positionTag(60.1, band))
     }
 
     @Test

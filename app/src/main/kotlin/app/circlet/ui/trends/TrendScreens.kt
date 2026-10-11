@@ -292,7 +292,11 @@ private fun MetricStatRow(row: KindRow, onClick: () -> Unit) {
         if (latest == null) {
             Text("NO READING", style = label(11.sp, Palette.Faint))
         } else {
-            Text(row.kind.withUnit(latest), style = number(22.sp, Palette.White))
+            Text(row.kind.format(latest) + if (row.kind.unit() == "%") "%" else "", style = number(22.sp, Palette.White))
+            val unit = row.kind.unit()
+            if (unit.isNotEmpty() && unit != "%" && !row.kind.isDuration()) {
+                Text(" $unit", style = label(11.sp, Palette.Faint))
+            }
         }
         Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 6.dp))
     }

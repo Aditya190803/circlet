@@ -172,7 +172,7 @@ class CircletDayEngine : DayEngine {
             sleepPerformance = sleep.performance,
             sleepConsistency = sleep.consistency,
             targetStrain = targetStrain(recovery.score.value),
-            vo2Max = vo2,
+            vo2Max = ratioVo2Max(vo2, resting, maxHr),
             wellness = emptyList(),
             skinTemperature = tail.skin,
             references = references(input.profile, input.date, history),
