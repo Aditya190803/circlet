@@ -37,7 +37,7 @@ fun liveAnchors(days: List<DaySummary>, profile: Profile): LiveAnchors {
     val quiet = personalQuietWakingHrr(prior.mapNotNull { quietWakingHrr(it, profile) })
     return LiveAnchors(
         restingHeartRateBpm = today?.heart?.resting?.bpm?.value?.toDouble(),
-        quietWakingHrr = quiet.value?.hrr,
+        quietWakingHrr = quiet.value?.hrr ?: today?.let { quietWakingHrr(it, profile) },
         quietSettled = quiet.value?.settled == true,
         priorResting = prior.mapNotNull { it.heart.resting.bpm.value?.toDouble() },
     )

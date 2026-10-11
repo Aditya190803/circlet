@@ -57,11 +57,11 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
                     "NO WORKOUT RUNNING",
                     "Start a workout from the workouts page. Its time, heart rate, strain and calories appear here while you record it.",
                 )
-                is LiveUi.Recording -> Recording(live = current.live, elapsedText = elapsedText(current.elapsed))
+                is LiveUi.Recording -> {
+                    Recording(live = current.live, elapsedText = elapsedText(current.elapsed))
+                    PrimaryButton("STOP WORKOUT") { vm.stop() }
+                }
             }
-        }
-        if (state is LiveUi.Recording) {
-            PrimaryButton("STOP WORKOUT") { vm.stop() }
         }
     }
 }

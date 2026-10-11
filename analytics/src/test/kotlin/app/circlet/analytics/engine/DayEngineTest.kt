@@ -93,7 +93,8 @@ class DayEngineTest {
         assertEquals(Sport.OTHER, run.sport)
         val runSeconds = java.time.Duration.between(run.start, run.end).seconds
         assertTrue("run length $runSeconds", runSeconds in 44 * 60..46 * 60)
-        assertEquals(AbsentReason.CALIBRATING, run.strain.absentReason)
+        // No prior days yet, so the run is scored against today's own quiet waking level.
+        assertTrue("run strain ${run.strain.value}", run.strain.value!! in 4.0..21.0)
         assertTrue(run.averageHeartRateBpm.value!! >= 140)
     }
 

@@ -47,7 +47,7 @@ import kotlin.math.roundToInt
  * First composition of the day packages.
  * Bump this when the maths those packages publish changes what a stored day means.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 4
+const val CIRCLET_ALGORITHM_VERSION: Int = 5
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -101,6 +101,8 @@ class CircletDayEngine : DayEngine {
             input,
             resting,
         )
+        // Until three prior days give a personal quiet level, workouts are scored against today's own.
+        val activityQuiet = quiet ?: load.quietWakingHrr
         val strainValue = load.strain.score.value
         if (strainValue != null) {
             sleep = finishSleep(segments, history, input.zone, input.date, strainValue)
@@ -112,7 +114,7 @@ class CircletDayEngine : DayEngine {
         val tail = if (input.samples.size < PARALLEL_TAIL_SAMPLES) {
             TailSections(
                 recovery = computeRecovery(heart, sleep.performance, history),
-                activities = activitiesOf(input, resting, quiet, quietSettled, priorResting),
+                activities = activitiesOf(input, resting, activityQuiet, quietSettled, priorResting),
                 motion = movementMinutes(
                     input.samples, input.zone, input.date, input.now, null, history.size,
                 ),
@@ -124,7 +126,7 @@ class CircletDayEngine : DayEngine {
             val pool = workerPool
             val fRecovery = pool.submit<Recovery> { computeRecovery(heart, sleep.performance, history) }
             val fActivities = pool.submit<List<Activity>> {
-                activitiesOf(input, resting, quiet, quietSettled, priorResting)
+                activitiesOf(input, resting, activityQuiet, quietSettled, priorResting)
             }
             val fMotion = pool.submit<MotionDay> {
                 movementMinutes(input.samples, input.zone, input.date, input.now, null, history.size)
