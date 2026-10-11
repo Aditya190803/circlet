@@ -58,7 +58,6 @@ import app.circlet.ui.day.StrainScreen
 import app.circlet.ui.design.BatteryGlyph
 import app.circlet.ui.design.Card
 import app.circlet.ui.design.Chip
-import app.circlet.ui.design.ConfidenceMark
 import app.circlet.ui.design.DivergingBar
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.EmptyState
@@ -318,23 +317,21 @@ private fun Components() {
     var sheet by remember { mutableStateOf(false) }
     Card("DIALS") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MetricDial("SLEEP", Glyph.Moon, Palette.Sleep, "81", "%", 0.81f, Confidence.HIGH) {}
-            MetricDial("RECOVERY", Glyph.Pulse, Palette.RecoveryMid, "52", "%", 0.52f, Confidence.MEDIUM) {}
-            MetricDial("STRAIN", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f, Confidence.LOW) {}
+            MetricDial("SLEEP", Glyph.Moon, Palette.Sleep, "81", "%", 0.81f) {}
+            MetricDial("RECOVERY", Glyph.Pulse, Palette.RecoveryMid, "52", "%", 0.52f) {}
+            MetricDial("STRAIN", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f) {}
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             MetricDial("ABSENT", Glyph.Moon, Palette.Sleep, null, "%", null) {}
             MetricDial("LOADING", Glyph.Pulse, Palette.Sleep, null, "%", null, loading = true) {}
-            MetricDial("LOW", Glyph.Pulse, Palette.RecoveryLow, "21", "%", 0.21f, Confidence.HIGH) {}
+            MetricDial("LOW", Glyph.Pulse, Palette.RecoveryLow, "21", "%", 0.21f) {}
         }
-        HeroDial("DAY STRAIN", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f, "Hero dial with a target notch.", Confidence.MEDIUM, marker = 0.72f)
+        HeroDial("DAY STRAIN", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f, "Hero dial with a target notch.", marker = 0.72f)
     }
     Card("STAT ROWS") {
-        for (confidence in Confidence.entries) {
-            StatRow(confidence.words().uppercase(), "52", "MS", note = "7-day avg 49", confidence = confidence)
-            Divider()
-        }
-        StatRow("STEPS", "8,412", tag = "ESTIMATE", confidence = Confidence.LOW)
+        StatRow("HRV", "52", "MS", note = "7-day avg 49")
+        Divider()
+        StatRow("STEPS", "8,412", tag = "ESTIMATE")
         Divider()
         StatRow("LOADING", null, loading = true)
         for (reason in AbsentReason.entries) {
@@ -342,14 +339,11 @@ private fun Components() {
             StatRow(reason.name.replace('_', ' '), null, "MS", absent = reason)
         }
         Divider()
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (confidence in Confidence.entries) ConfidenceMark(confidence)
-            Tag("ESTIMATE")
-        }
+        Tag("ESTIMATE")
     }
     Card("FIGURES") {
         Row(Modifier.fillMaxWidth()) {
-            Figure("6:16", "HOURS OF SLEEP", confidence = Confidence.HIGH, modifier = Modifier.weight(1f))
+            Figure("6:16", "HOURS OF SLEEP", modifier = Modifier.weight(1f))
             Figure(null, "SLEEP NEEDED", Palette.Sleep, absent = AbsentReason.CALIBRATING, alignEnd = true, modifier = Modifier.weight(1f))
         }
     }

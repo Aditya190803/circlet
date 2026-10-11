@@ -72,7 +72,6 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
                             } else {
                                 "Higher means more stress on your body today."
                             },
-                            confidence = if (value == null) null else score.confidence,
                         )
                     }
 

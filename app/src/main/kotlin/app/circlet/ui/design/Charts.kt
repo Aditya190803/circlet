@@ -218,7 +218,7 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
     ScrubReadout(
         value = touched?.let { stageWords(it.stage) },
         detail = touchedAt?.takeIf { touched != null }?.let { timeFormat.time(it) },
-        idle = if (session.epochs.isEmpty()) null else "HOLD AND DRAG TO READ",
+        idle = null,
     )
     Canvas(
         Modifier
@@ -374,7 +374,7 @@ fun StressTimeline(points: List<StressPoint>, dayStart: Instant, emptyText: Stri
         ScrubReadout(
             value = if (inHour.isEmpty()) null else "STRESS ${inHour.map { it.score }.average().roundToInt()}",
             detail = hour?.takeIf { inHour.isNotEmpty() }?.let { minuteLabel(it * 60, twentyFourHour) },
-            idle = if (points.isEmpty()) null else "HOLD AND DRAG TO READ",
+            idle = null,
         )
         Box(contentAlignment = Alignment.Center) {
             Canvas(

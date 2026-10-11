@@ -182,7 +182,6 @@ private fun YourRangeCard(kind: MetricKind, day: DaySummary?) {
             personal = ref.personal,
             personalDays = ref.personalDays,
             ideal = ref.ideal,
-            idealLabel = ref.idealLabel,
             format = { kind.format(it) },
         )
         ref.idealSource?.let { source ->
@@ -385,25 +384,14 @@ private fun TrendBody(kind: MetricKind, trend: MetricTrend) {
             },
         )
     }
-    Card(title = "SUMMARY") {
+    val unit = kind.unit().takeIf { it.isNotEmpty() && it != "%" && !kind.isDuration() }
+    Card(title = if (unit == null) "SUMMARY" else "SUMMARY · $unit") {
         Row(Modifier.fillMaxWidth()) {
-            Figure(
-                value = trend.stats.min?.let { kind.withUnit(it) },
-                caption = "MIN",
-                modifier = Modifier.weight(1f),
-            )
-            Figure(
-                value = trend.stats.average?.let { kind.withUnit(it) },
-                caption = "AVERAGE",
-                modifier = Modifier.weight(1f),
-            )
-            Figure(
-                value = trend.stats.max?.let { kind.withUnit(it) },
-                caption = "MAX",
-                alignEnd = true,
-                modifier = Modifier.weight(1f),
-            )
+            SummaryFigure(trend.stats.min, "LOW", kind, Alignment.Start, Modifier.weight(1f))
+            SummaryFigure(trend.stats.average, "AVERAGE", kind, Alignment.CenterHorizontally, Modifier.weight(1f))
+            SummaryFigure(trend.stats.max, "HIGH", kind, Alignment.End, Modifier.weight(1f))
         }
+        Spacer(Modifier.height(10.dp))
         ChangeLine(kind, trend)
     }
     val withValues = trend.points.filter { it.value != null }.asReversed()
@@ -417,6 +405,16 @@ private fun TrendBody(kind: MetricKind, trend: MetricTrend) {
                 value = point.value?.let { kind.withUnit(it) },
             )
         }
+    }
+}
+
+/** One of the three summary numbers. The unit sits in the card title, so the number stays short. */
+@Composable
+private fun SummaryFigure(value: Double?, caption: String, kind: MetricKind, align: Alignment.Horizontal, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = align) {
+        val text = value?.let { kind.format(it) + if (kind.unit() == "%") "%" else "" }
+        Text(text ?: "–", style = number(26.sp, if (text == null) Palette.Faint else Palette.White), maxLines = 1)
+        Text(caption, style = label(10.sp, Palette.Faint))
     }
 }
 
@@ -461,32 +459,27 @@ private fun RecapBody(recap: WeeklyRecap) {
         StatRow(
             name = "Recovery",
             value = recap.averageRecovery.value?.let { "${it.decimal(0)}%" },
-            confidence = recap.averageRecovery.confidence,
             absent = recap.averageRecovery.absentReason,
         )
         StatRow(
             name = "Strain",
             value = recap.averageStrain.value?.decimal(1),
-            confidence = recap.averageStrain.confidence,
             absent = recap.averageStrain.absentReason,
         )
         StatRow(
             name = "Sleep performance",
             value = recap.averageSleepPerformance.value?.let { "${it.decimal(0)}%" },
-            confidence = recap.averageSleepPerformance.confidence,
             absent = recap.averageSleepPerformance.absentReason,
         )
         StatRow(
             name = "HRV",
             value = recap.averageHrvMs.value?.decimal(0),
             unit = "ms",
-            confidence = recap.averageHrvMs.confidence,
             absent = recap.averageHrvMs.absentReason,
         )
         StatRow(
             name = "Sleep debt",
             value = recap.sleepDebt.value?.hoursMinutes(),
-            confidence = recap.sleepDebt.confidence,
             absent = recap.sleepDebt.absentReason,
         )
     }

@@ -104,7 +104,7 @@ private fun DetailFrame(
 private fun RangeBlock(ref: MetricReference?, value: Double?, format: (Double) -> String) {
     if (ref == null) return
     RangeBar(value, ref.personal, ref.ideal)
-    RangeLegend(ref.personal, ref.personalDays, ref.ideal, ref.idealLabel, format)
+    RangeLegend(ref.personal, ref.personalDays, ref.ideal, format)
 }
 
 /** "Avg of last 12 days" over the days before the selected one, or null with fewer than two. */
@@ -131,17 +131,16 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 percent >= 70 -> "You got most of the sleep you needed. A little more will help your recovery."
                 else -> "You fell well short of your sleep need. Try to get to bed earlier tonight."
             },
-            confidence = performance.confidence,
         )
         Card("HOURS VS. NEEDED") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(
                     sleep?.timeAsleep?.hoursMinutes(), "HOURS OF SLEEP",
-                    absent = day.sleep.absentReason, confidence = day.sleep.confidence, modifier = Modifier.weight(1f),
+                    absent = day.sleep.absentReason, modifier = Modifier.weight(1f),
                 )
                 Figure(
                     day.sleepNeed.duration.value?.hoursMinutes(), if (sleep != null) "SLEEP NEEDED" else "NEEDED TONIGHT", Palette.Sleep,
-                    absent = day.sleepNeed.duration.absentReason, confidence = day.sleepNeed.duration.confidence, alignEnd = true,
+                    absent = day.sleepNeed.duration.absentReason, alignEnd = true,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -240,7 +239,6 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 score >= 34 -> "You are adequately recovered and can handle a moderate amount of strain."
                 else -> "Your body is run down. Prioritise rest and keep strain light today."
             },
-            confidence = recovery.score.confidence,
         )
         if (calibrating) {
             Card("BASELINE") {
@@ -282,7 +280,6 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             Divider()
             StatRow(
                 "LF / HF", day.heart.hrv.frequency?.lfHfRatio?.decimal(2),
-                note = day.heart.hrv.frequency?.let { "LF ${it.lfMs2.decimal(0)} · HF ${it.hfMs2.decimal(0)} ms²" },
                 absent = if (day.heart.hrv.frequency == null) day.heart.hrv.rmssdMs.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
             )
         }
@@ -319,7 +316,6 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
                 StatRow(
                     "DEVIATION", deviation?.signedDeviation(), "SD",
                     color = if (skin.flag == SkinTempFlag.ELEVATED) Palette.Warn else Palette.White,
-                    confidence = skin.deviation.confidence.takeIf { deviation != null },
                     absent = if (deviation == null) skin.deviation.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
                 )
                 Spacer(Modifier.height(6.dp))
@@ -400,7 +396,6 @@ fun StrainScreen(
                 strain >= 10 -> "Moderate strain. Enough to maintain your fitness."
                 else -> "Light strain. A restorative day for your body."
             },
-            confidence = day.strain.score.confidence,
             marker = target.value?.div(21.0)?.toFloat(),
         )
         Card(if (state.isToday) "TODAY'S TARGET" else "TARGET") {
@@ -408,7 +403,7 @@ fun StrainScreen(
                 Figure(strain?.decimal(), "DAY STRAIN", absent = day.strain.score.absentReason, modifier = Modifier.weight(1f))
                 Figure(
                     target.value?.decimal(), "TARGET", Palette.Strain,
-                    absent = target.absentReason, confidence = target.confidence, alignEnd = true, modifier = Modifier.weight(1f),
+                    absent = target.absentReason, alignEnd = true, modifier = Modifier.weight(1f),
                 )
             }
             RangeBlock(day.references.forKind(MetricKind.STRAIN), strain) { it.decimal() }

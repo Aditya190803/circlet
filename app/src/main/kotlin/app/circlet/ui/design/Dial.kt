@@ -117,34 +117,6 @@ fun RingValue(value: String, unit: String, size: TextUnit, color: Color = Palett
     }
 }
 
-/** Three rising steps. One, two or three are lit for low, medium and high confidence. */
-@Composable
-fun ConfidenceMark(confidence: Confidence, modifier: Modifier = Modifier) {
-    val lit = when (confidence) {
-        Confidence.HIGH -> 3
-        Confidence.MEDIUM -> 2
-        Confidence.LOW -> 1
-    }
-    val description = confidence.words()
-    Canvas(
-        modifier
-            .size(width = 13.dp, height = 10.dp)
-            .semantics { contentDescription = description },
-    ) {
-        val bar = 3.dp.toPx()
-        val gap = 2.dp.toPx()
-        for (step in 0 until 3) {
-            val height = size.height * (step + 2) / 4f
-            drawRoundRect(
-                if (step < lit) Palette.Faint else Palette.Track,
-                Offset(step * (bar + gap), size.height - height),
-                Size(bar, height),
-                CornerRadius(1.dp.toPx()),
-            )
-        }
-    }
-}
-
 /** A home-screen dial: ring, value, and the metric's name underneath. */
 @Composable
 fun MetricDial(
@@ -154,7 +126,6 @@ fun MetricDial(
     value: String?,
     unit: String,
     fraction: Float?,
-    confidence: Confidence? = null,
     loading: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -169,12 +140,7 @@ fun MetricDial(
             when {
                 loading -> Unit
                 value == null -> Icon(glyph, Palette.Faint, 28.dp)
-                else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // The spacer mirrors the mark so the value stays optically centred.
-                    if (confidence != null) Spacer(Modifier.height(12.dp))
-                    RingValue(value, unit, 30.sp)
-                    if (confidence != null) ConfidenceMark(confidence, Modifier.padding(top = 2.dp))
-                }
+                else -> RingValue(value, unit, 30.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -195,7 +161,6 @@ fun HeroDial(
     unit: String,
     fraction: Float?,
     message: String,
-    confidence: Confidence? = null,
     loading: Boolean = false,
     marker: Float? = null,
 ) {
@@ -212,13 +177,7 @@ fun HeroDial(
                     else -> RingValue(value, unit, 64.sp)
                 }
                 if (!loading) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(caption, style = label(12.sp))
-                        if (confidence != null && value != null) {
-                            Spacer(Modifier.width(8.dp))
-                            ConfidenceMark(confidence)
-                        }
-                    }
+                    Text(caption, style = label(12.sp))
                 }
             }
         }

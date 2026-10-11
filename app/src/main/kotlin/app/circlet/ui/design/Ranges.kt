@@ -99,42 +99,31 @@ fun RangeBar(value: Double?, personal: ReferenceRange?, ideal: ReferenceRange?, 
 }
 
 /**
- * The words under a [RangeBar]: the user's own band with how many days it is built from,
- * and the ideal band or its label. [format] turns a band edge into the metric's unit.
+ * The line under a [RangeBar]: the user's own band on the left, the published band on
+ * the right. [format] turns a band edge into the metric's unit.
  */
 @Composable
 fun RangeLegend(
     personal: ReferenceRange?,
     personalDays: Int,
     ideal: ReferenceRange?,
-    idealLabel: String?,
     format: (Double) -> String,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).background(Palette.Teal.copy(alpha = 0.45f)))
-            Spacer(Modifier.width(8.dp))
-            val text = if (personal != null) {
-                "YOUR NORMAL  ${format(personal.low)} – ${format(personal.high)}"
-            } else {
-                "YOUR NORMAL  BUILDING · $personalDays DAYS"
-            }
-            Text(text, style = label(10.sp, Palette.Faint))
+    Row(modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(Palette.Teal.copy(alpha = 0.45f)))
+        Spacer(Modifier.width(6.dp))
+        val text = if (personal != null) {
+            "YOU  ${format(personal.low)} – ${format(personal.high)}"
+        } else {
+            "YOU  BUILDING · $personalDays DAYS"
         }
-        if (ideal != null || idealLabel != null) {
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).background(Palette.Sleep.copy(alpha = 0.7f)))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (ideal != null) "TYPICAL  ${format(ideal.low)} – ${format(ideal.high)}" else "TYPICAL",
-                    style = label(10.sp, Palette.Faint),
-                )
-            }
-            if (idealLabel != null) {
-                Text(idealLabel, style = body(11.sp, Palette.Faint), modifier = Modifier.padding(start = 16.dp, top = 2.dp))
-            }
+        Text(text, style = label(10.sp, Palette.Faint))
+        if (ideal != null) {
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.size(8.dp).background(Palette.Sleep.copy(alpha = 0.7f)))
+            Spacer(Modifier.width(6.dp))
+            Text("TYPICAL  ${format(ideal.low)} – ${format(ideal.high)}", style = label(10.sp, Palette.Faint))
         }
     }
 }

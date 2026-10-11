@@ -31,7 +31,6 @@ import app.circlet.ui.LocalMessenger
 import app.circlet.ui.day.DetailHeader
 import app.circlet.ui.day.ScreenColumn
 import app.circlet.ui.design.Card
-import app.circlet.ui.design.ConfidenceMark
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.ErrorState
 import app.circlet.ui.design.Figure
@@ -136,8 +135,8 @@ private fun ActivityBody(activity: Activity, format: TimeFormat) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Figure(value = activity.strain.value?.decimal(), caption = "STRAIN", absent = activity.strain.absentReason, confidence = activity.strain.confidence)
-            Figure(value = activity.calories.value?.grouped(), caption = "KCAL", absent = activity.calories.absentReason, confidence = activity.calories.confidence)
+            Figure(value = activity.strain.value?.decimal(), caption = "STRAIN", absent = activity.strain.absentReason)
+            Figure(value = activity.calories.value?.grouped(), caption = "KCAL", absent = activity.calories.absentReason)
         }
         Divider()
         Text(
@@ -148,15 +147,14 @@ private fun ActivityBody(activity: Activity, format: TimeFormat) {
             "${source(activity)}, ${activity.sport.label()}",
             style = label(12.sp, Palette.Faint),
         )
-        activity.sportConfidence?.let { ConfidenceMark(it) }
     }
     Card("HEART RATE") {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Figure(value = activity.averageHeartRateBpm.value?.toString(), caption = "AVERAGE BPM", absent = activity.averageHeartRateBpm.absentReason, confidence = activity.averageHeartRateBpm.confidence)
-            Figure(value = activity.maxHeartRateBpm.value?.toString(), caption = "MAX BPM", absent = activity.maxHeartRateBpm.absentReason, confidence = activity.maxHeartRateBpm.confidence)
+            Figure(value = activity.averageHeartRateBpm.value?.toString(), caption = "AVERAGE BPM", absent = activity.averageHeartRateBpm.absentReason)
+            Figure(value = activity.maxHeartRateBpm.value?.toString(), caption = "MAX BPM", absent = activity.maxHeartRateBpm.absentReason)
         }
         // A null recovery means the minute after the activity was not sampled.
         val drop = activity.heartRateRecovery?.dropBpm
@@ -165,7 +163,6 @@ private fun ActivityBody(activity: Activity, format: TimeFormat) {
             value = drop?.value?.toString(),
             caption = "RECOVERY DROP BPM",
             absent = if (drop == null) AbsentReason.NOT_ENOUGH_DATA else drop.absentReason,
-            confidence = drop?.confidence,
         )
     }
     Card("TIME IN ZONES") {

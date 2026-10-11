@@ -168,7 +168,7 @@ fun AboutScreen(version: String, notice: String?, noticeMissing: Boolean, onBack
             Card("HOW SCORES ARE MADE") {
                 Text(
                     "Sleep, recovery and strain are calculated on this phone from the heart rate, beat-to-beat and movement data your strap records. " +
-                        "Each number carries a confidence mark, and a number that cannot be supported is left empty with the reason. " +
+                        "A number that cannot be supported is left empty with the reason. " +
                         "They are independent estimates and not medical advice.",
                     style = body(14.sp),
                 )

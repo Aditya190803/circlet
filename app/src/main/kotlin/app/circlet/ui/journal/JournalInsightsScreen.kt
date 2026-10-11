@@ -19,7 +19,6 @@ import app.circlet.core.CorrelationMetric
 import app.circlet.ui.day.DetailHeader
 import app.circlet.ui.day.ScreenColumn
 import app.circlet.ui.design.Card
-import app.circlet.ui.design.ConfidenceMark
 import app.circlet.ui.design.DivergingBar
 import app.circlet.ui.design.EmptyState
 import app.circlet.ui.design.ErrorState
@@ -89,7 +88,6 @@ private fun InsightsBody(ready: InsightsState.Ready, metric: CorrelationMetric) 
                         "${signedEffect(row.effect)} ${metric.unit()}",
                         style = number(15.sp, Palette.White),
                     )
-                    ConfidenceMark(correlation.effect.confidence, Modifier.padding(start = 8.dp))
                 }
                 Spacer(Modifier.height(8.dp))
                 DivergingBar(

@@ -102,7 +102,6 @@ fun Tag(text: String, color: Color = Palette.Faint) {
 /**
  * One named value.
  * A null [value] draws the dash, and [absent] says why underneath the name.
- * [confidence] draws the quiet three-step mark before the value.
  */
 @Composable
 fun StatRow(
@@ -111,7 +110,6 @@ fun StatRow(
     unit: String = "",
     color: Color = Palette.White,
     note: String? = null,
-    confidence: Confidence? = null,
     absent: AbsentReason? = null,
     tag: String? = null,
     loading: Boolean = false,
@@ -148,10 +146,6 @@ fun StatRow(
             loading -> Skeleton(Modifier.size(width = 48.dp, height = 16.dp))
             value == null -> AbsentDash()
             else -> {
-                if (confidence != null) {
-                    ConfidenceMark(confidence)
-                    Spacer(Modifier.width(8.dp))
-                }
                 Text(value, style = number(22.sp, color))
             }
         }
@@ -160,7 +154,7 @@ fun StatRow(
     }
 }
 
-/** [StatRow] fed straight from a core [Metric]: value, confidence and absent reason in one. */
+/** [StatRow] fed straight from a core [Metric]: value and absent reason in one. */
 @Composable
 fun <T : Any> MetricRow(
     name: String,
@@ -178,7 +172,6 @@ fun <T : Any> MetricRow(
         unit = unit,
         color = color,
         note = note,
-        confidence = metric.confidence.takeIf { metric.present },
         absent = metric.absentReason,
         tag = tag,
         onClick = onClick,
@@ -195,7 +188,6 @@ fun Figure(
     caption: String,
     color: Color = Palette.White,
     absent: AbsentReason? = null,
-    confidence: Confidence? = null,
     alignEnd: Boolean = false,
     loading: Boolean = false,
     modifier: Modifier = Modifier,
@@ -206,13 +198,7 @@ fun Figure(
             value == null -> AbsentDash(Modifier.padding(vertical = 19.dp).size(width = 30.dp, height = 4.dp))
             else -> Text(value, style = number(34.sp, color))
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(caption, style = label(11.sp))
-            if (confidence != null && value != null && !loading) {
-                Spacer(Modifier.width(6.dp))
-                ConfidenceMark(confidence)
-            }
-        }
+        Text(caption, style = label(11.sp))
         if (value == null && absent != null && !loading) {
             Text(absent.words(), style = body(12.sp, Palette.Faint), modifier = Modifier.padding(top = 2.dp))
         }

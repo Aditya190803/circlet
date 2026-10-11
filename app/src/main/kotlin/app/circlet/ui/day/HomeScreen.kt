@@ -127,17 +127,17 @@ private fun Dials(summary: DaySummary?, loading: Boolean, onOpen: (DayScreen) ->
         val sleep = summary?.sleepPerformance?.percent
         MetricDial(
             "SLEEP", Glyph.Moon, Palette.Sleep, sleep?.value?.toString(), "%", sleep?.value?.div(100f),
-            sleep?.confidence, loading,
+            loading,
         ) { onOpen(DayScreen.SLEEP) }
         val recovery = summary?.recovery?.score
         MetricDial(
             "RECOVERY", Glyph.Pulse, Palette.recovery(recovery?.value), recovery?.value?.toString(), "%", recovery?.value?.div(100f),
-            recovery?.confidence, loading,
+            loading,
         ) { onOpen(DayScreen.RECOVERY) }
         val strain = summary?.strain?.score
         MetricDial(
             "STRAIN", Glyph.Bolt, Palette.Strain, strain?.value?.decimal(), "", strain?.value?.div(21.0)?.toFloat(),
-            strain?.confidence, loading,
+            loading,
         ) { onOpen(DayScreen.STRAIN) }
     }
 }
@@ -241,12 +241,12 @@ private fun PlanCard(state: DayUiState, summary: DaySummary?, loading: Boolean) 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Figure(
                 target?.value?.decimal(), "STRAIN TARGET", Palette.Strain,
-                absent = target?.absentReason, confidence = target?.confidence, loading = loading,
+                absent = target?.absentReason, loading = loading,
                 modifier = Modifier.weight(1f),
             )
             Figure(
                 need?.duration?.value?.hoursMinutes(), if (state.isToday) "SLEEP NEED TONIGHT" else "SLEEP NEED", Palette.Sleep,
-                absent = need?.duration?.absentReason, confidence = need?.duration?.confidence, alignEnd = true, loading = loading,
+                absent = need?.duration?.absentReason, alignEnd = true, loading = loading,
                 modifier = Modifier.weight(1f),
             )
         }

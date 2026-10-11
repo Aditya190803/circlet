@@ -151,7 +151,6 @@ private fun ActivityRow(
             value = activity.strain.value?.decimal(),
             caption = "STRAIN",
             absent = activity.strain.absentReason,
-            confidence = activity.strain.confidence,
             alignEnd = true,
         )
         Spacer(Modifier.width(Space.xs))
