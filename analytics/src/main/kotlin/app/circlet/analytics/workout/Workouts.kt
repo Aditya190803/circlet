@@ -46,11 +46,19 @@ fun detectActivities(
     priorResting: List<Double> = emptyList(),
     saved: List<Pair<Instant, Instant>> = emptyList(),
 ): List<Activity> {
-    val worn = samples.filter { it.epochSecond <= now.epochSecond && it.on(date, zone) && it.measured() != null }
+    val nowSec = now.epochSecond
+    val range = dayRange(date, zone)
+    val worn = ArrayList<Sample>()
+    for (sample in samples) {
+        val epoch = sample.epochSecond
+        if (epoch > nowSec || epoch !in range) continue
+        if (sample.measured() == null) continue
+        worn.add(sample)
+    }
     if (worn.isEmpty()) return emptyList()
     val hrTs = worn.map { it.epochSecond.toInt() }
     val hrBpm = worn.map { it.measured()!! }
-    val motion = motionOf(samples.filter { it.epochSecond <= now.epochSecond && it.on(date, zone) })
+    val motion = motionOf(samples, nowSec, range)
     val savedSpans = saved.map { SavedSpan(it.first.epochSecond.toInt(), it.second.epochSecond.toInt()) }
     val maxHr = resolveMaxHr(profile, date)?.roundToInt()
     val found = AutoWorkoutDetector.detect(
@@ -266,8 +274,13 @@ private fun perMinuteIn(samples: List<Sample>): List<Double> {
     }
 }
 
-private fun motionOf(samples: List<Sample>): List<MotionPoint> {
-    val withG = samples.filter { it.gravity != null }.sortedBy { it.epochSecond }
+private fun motionOf(samples: List<Sample>, nowSec: Long, range: LongRange): List<MotionPoint> {
+    val withG = ArrayList<Sample>()
+    for (sample in samples) {
+        if (sample.epochSecond > nowSec || sample.epochSecond !in range) continue
+        if (sample.gravity == null) continue
+        withG.add(sample)
+    }
     if (withG.isEmpty()) return emptyList()
     return AutoWorkoutDetector.motionPoints(
         withG.map { it.epochSecond.toInt() },
@@ -277,13 +290,21 @@ private fun motionOf(samples: List<Sample>): List<MotionPoint> {
     )
 }
 
-private fun Sample.on(date: LocalDate, zone: ZoneId): Boolean =
-    Instant.ofEpochSecond(epochSecond).atZone(zone).toLocalDate() == date
-
 private fun Sample.measured(): Int? {
     val bpm = heartRateBpm ?: return null
     if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) return null
     return bpm
+}
+
+/**
+ * Epoch seconds of one local day. Exactly the instants whose local date is
+ * [date], daylight-saving transitions included, so filtering by range is the
+ * same as comparing local dates one sample at a time.
+ */
+private fun dayRange(date: LocalDate, zone: ZoneId): LongRange {
+    val start = date.atStartOfDay(zone).toEpochSecond()
+    val end = date.plusDays(1).atStartOfDay(zone).toEpochSecond()
+    return start until end
 }
 
 internal fun sportFromLabel(label: String): Sport = when (label.lowercase()) {

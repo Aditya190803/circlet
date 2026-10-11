@@ -1,5 +1,6 @@
 package app.circlet.core
 
+import java.time.Duration
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 
@@ -37,6 +38,39 @@ data class DaySummary(
     val skinTemperature: SkinTemperature? = null,
     val references: List<MetricReference> = emptyList(),
 )
+
+/**
+ * One public [MetricKind] to [DaySummary] field mapping, in the units the kind
+ * documents. The fake backend, the insight engine, and the UI share this; an
+ * absent source metric stays absent here.
+ */
+fun DaySummary.reading(kind: MetricKind): Metric<Double> = when (kind) {
+    MetricKind.SLEEP_PERFORMANCE -> sleepPerformance.percent.asDouble()
+    MetricKind.SLEEP_DURATION -> sleep.value?.timeAsleep?.let { Metric.of(it.toMinutes().toDouble(), sleep.confidence) }
+        ?: Metric.absent(sleep.absentReason ?: AbsentReason.NO_SLEEP, sleep.confidence)
+    MetricKind.SLEEP_EFFICIENCY -> sleep.value?.efficiency?.asDouble()
+        ?: Metric.absent(sleep.absentReason ?: AbsentReason.NO_SLEEP, sleep.confidence)
+    MetricKind.SLEEP_NEED -> sleepNeed.duration.minutes()
+    MetricKind.SLEEP_DEBT -> sleepDebt.shortfall.minutes()
+    MetricKind.SLEEP_CONSISTENCY -> sleepConsistency.index
+    MetricKind.RECOVERY -> recovery.score.asDouble()
+    MetricKind.STRAIN -> strain.score
+    MetricKind.STRESS -> stress.score
+    MetricKind.RESTING_HEART_RATE -> heart.resting.bpm.asDouble()
+    MetricKind.HRV -> heart.hrv.rmssdMs
+    MetricKind.RESPIRATORY_RATE -> heart.respiratoryRate.breathsPerMinute
+    MetricKind.STEPS -> steps.count.asDouble()
+    MetricKind.CALORIES -> calories.asDouble()
+    MetricKind.VO2_MAX -> vo2Max.mlPerKgMin
+    MetricKind.SKIN_TEMPERATURE -> skinTemperature?.deviation
+        ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
+}
+
+private fun Metric<Int>.asDouble(): Metric<Double> =
+    if (value != null) Metric.of(value.toDouble(), confidence) else Metric.absent(checkNotNull(absentReason), confidence)
+
+private fun Metric<Duration>.minutes(): Metric<Double> =
+    if (value != null) Metric.of(value.toMinutes().toDouble(), confidence) else Metric.absent(checkNotNull(absentReason), confidence)
 
 /**
  * A day with every metric absent for the same [reason].

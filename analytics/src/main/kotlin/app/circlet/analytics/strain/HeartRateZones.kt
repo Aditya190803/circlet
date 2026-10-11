@@ -103,7 +103,8 @@ internal object HeartRateZones {
     }
 
     fun timeInZone(hr: List<HrPoint>, zoneSet: HeartRateZoneSet): TimeInHeartRateZone? {
-        val sorted = hr.sortedBy { it.tsMs }
+        // Day points arrive chronological; sorting them again is pure waste.
+        val sorted = if (hr.isOrdered()) hr else hr.sortedBy { it.tsMs }
         val zoneSeconds = DoubleArray(5)
         var below = 0.0
         val tailSeconds = sampleCadenceSeconds(sorted.map { it.tsMs / 1000.0 }) ?: return null
@@ -124,5 +125,13 @@ internal object HeartRateZones {
     private fun boundedGapSeconds(gapMs: Double, fallbackSeconds: Double): Double {
         val gapSeconds = gapMs / 1000.0
         return if (gapSeconds > 0) min(gapSeconds, fallbackSeconds) else fallbackSeconds
+    }
+
+    /** True when no point precedes an earlier one; such an input sorts to itself. */
+    private fun List<HrPoint>.isOrdered(): Boolean {
+        for (i in 1 until size) {
+            if (this[i].tsMs < this[i - 1].tsMs) return false
+        }
+        return true
     }
 }

@@ -45,8 +45,22 @@ fun computeHeart(
     profile: Profile,
     sleepStart: Instant? = null,
     sleepEnd: Instant? = null,
+): DayHeart = computeHeart(samples, alignSamples(samples, now), zone, date, now, profile, sleepStart, sleepEnd)
+
+/**
+ * [computeHeart] over an already-aligned series. The day engine aligns once
+ * and shares the series with sleep, instead of sorting the day twice.
+ */
+internal fun computeHeart(
+    samples: List<Sample>,
+    series: app.circlet.analytics.sleep.AlignedSeries,
+    zone: ZoneId,
+    date: LocalDate,
+    now: Instant,
+    profile: Profile,
+    sleepStart: Instant? = null,
+    sleepEnd: Instant? = null,
 ): DayHeart {
-    val series = alignSamples(samples, now)
     val dayRates = dayRates(samples, zone, date, now)
     val average = rateMetric(dayRates, ::averageOf)
     val max = rateMetric(dayRates, ::maxOf)
@@ -221,7 +235,13 @@ private fun spectrum(
     refused: Boolean,
 ): FrequencyDomain? {
     if (refused || nn.size < 16) return null
-    val freq = hrvFreq(nn, times, artifact).value ?: return null
+    // Above the HF gate hrvFreq withholds HF, and without HF there is no
+    // ratio — so this is null either way, without running the Welch averages.
+    if (artifact > HF_ARTIFACT_GATE_DEFAULT) return null
+    // ULF and VLF never reach DayHeart; their long Welch segments are most of
+    // the work, so only LF and HF are averaged. The bands are independent, so
+    // these are the values the full call would return.
+    val freq = hrvFreqBands(nn, times, artifact, wantUlf = false, wantVlf = false).value ?: return null
     val lf = freq.lf ?: return null
     val hf = freq.hf ?: return null
     val ratio = freq.lfhf ?: return null
@@ -242,15 +262,26 @@ private fun sdnnField(value: Double?, present: Boolean, note: String?, confidenc
 
 private fun dayRates(samples: List<Sample>, zone: ZoneId, date: LocalDate, now: Instant): List<Int> {
     val nowSec = now.epochSecond
+    val range = dayRange(date, zone)
     val rates = ArrayList<Int>()
     for (sample in samples) {
-        if (sample.epochSecond > nowSec) continue
-        val local = Instant.ofEpochSecond(sample.epochSecond).atZone(zone).toLocalDate()
-        if (local != date) continue
+        val epoch = sample.epochSecond
+        if (epoch > nowSec || epoch !in range) continue
         val bpm = sample.heartRateBpm ?: continue
         if (bpm > 0) rates.add(bpm)
     }
     return rates
+}
+
+/**
+ * Epoch seconds of one local day. Exactly the instants whose local date is
+ * [date], daylight-saving transitions included, so filtering by range is the
+ * same as comparing local dates one sample at a time.
+ */
+private fun dayRange(date: LocalDate, zone: ZoneId): LongRange {
+    val start = date.atStartOfDay(zone).toEpochSecond()
+    val end = date.plusDays(1).atStartOfDay(zone).toEpochSecond()
+    return start until end
 }
 
 private fun rateMetric(rates: List<Int>, reduce: (List<Int>) -> Int): Metric<Int> {

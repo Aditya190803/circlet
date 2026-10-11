@@ -12,6 +12,7 @@ import app.circlet.analytics.foundations.inverseVarianceFuse
 import app.circlet.analytics.foundations.lombScargle
 import app.circlet.analytics.foundations.median
 import app.circlet.analytics.foundations.olsFit
+import app.circlet.analytics.foundations.orderedMap
 import app.circlet.analytics.foundations.round6
 import app.circlet.analytics.foundations.sampleCadenceSeconds
 import kotlin.math.abs
@@ -133,53 +134,39 @@ fun rsaRespRate(
     val peaks = ArrayList<Double>()
     val peakHz = ArrayList<Double>()
     val peakPwr = ArrayList<Double>()
+    // Sub-windows are independent; they are scored in order and folded below
+    // exactly as the sequential loop did.
+    val bounds = ArrayList<Pair<Int, Int>>()
+    var s = tSec.first()
+    while (s + segSec <= tSec.last() + 1e-9) {
+        bounds.add(lowerBound(tSec, s) to lowerBound(tSec, s + segSec))
+        s += segSec / 2.0
+    }
+    val outcomes = orderedMap(bounds.size, minTotal = 8) { b ->
+        scoreRsaWindow(tSec, nnMs, segSec, bounds[b].first, bounds[b].second)
+    }
     var atCeiling = 0
     var ceilingLo = Double.POSITIVE_INFINITY
     var ceilingHi = 0.0
     var belowBand = 0
     var thin = 0
     var gappy = 0
-    var s = tSec.first()
-    while (s + segSec <= tSec.last() + 1e-9) {
-        val lo = lowerBound(tSec, s)
-        val hi = lowerBound(tSec, s + segSec)
-        val k = hi - lo
-        var coveredMs = 0.0
-        for (i in lo until hi) coveredMs += nnMs[i]
-        val coveredSec = coveredMs / 1000.0
-        if (coveredSec < segSec * 0.8) {
-            gappy++
-        } else if (k < 30) {
-            thin++
-        } else {
-            val segT = ArrayList<Double>(k)
-            val segNn = ArrayList<Double>(k)
-            for (i in lo until hi) {
-                segT.add(tSec[i])
-                segNn.add(nnMs[i])
+    for (outcome in outcomes) {
+        when (outcome) {
+            is RsaOutcome.Peak -> {
+                peaks.add(outcome.brpm)
+                peakHz.add(outcome.peakHz)
+                peakPwr.add(outcome.power)
             }
-            val segSpan = segT.last() - segT.first()
-            val segHi = rsaCeilingHz(median(segNn)!! / 1000.0)
-            if (segHi < rsaHiHz) {
-                belowBand++
-            } else {
-                val gridN = max(64, ceil((segHi - rsaLoHz) * 4.0 * segSpan).toInt())
-                val ls = lombScargle(segT, segNn, freqGrid(rsaLoHz, segHi, gridN))
-                val pk = ls?.peakFreq(rsaLoHz, segHi)
-                if (ls == null || pk == null) {
-                    thin++
-                } else if (pk >= segHi - (segHi - rsaLoHz) / (gridN - 1)) {
-                    atCeiling++
-                    ceilingLo = minOf(ceilingLo, segHi * 60.0)
-                    ceilingHi = maxOf(ceilingHi, segHi * 60.0)
-                } else {
-                    peaks.add(pk * 60.0)
-                    peakHz.add(pk)
-                    peakPwr.add(powerAt(ls, pk))
-                }
+            RsaOutcome.Gappy -> gappy++
+            RsaOutcome.Thin -> thin++
+            RsaOutcome.BelowBand -> belowBand++
+            is RsaOutcome.Ceiling -> {
+                atCeiling++
+                ceilingLo = minOf(ceilingLo, outcome.loBrpm)
+                ceilingHi = maxOf(ceilingHi, outcome.hiBrpm)
             }
         }
-        s += segSec / 2.0
     }
     val dropped = atCeiling + belowBand + thin + gappy
     val total = peaks.size + dropped
@@ -329,6 +316,46 @@ fun riivRespRate(
         note = "RIIV band-pass (0.1–0.5 Hz) on 1 Hz green ADC; coarse intensity " +
             "proxy (not 419 Hz waveform); 1 Hz Nyquist caps rate at 30 br/min",
     )
+}
+
+/** One RSA sub-window's verdict, folded in window order by [rsaRespRate]. */
+private sealed interface RsaOutcome {
+    data class Peak(val brpm: Double, val peakHz: Double, val power: Double) : RsaOutcome
+    data class Ceiling(val loBrpm: Double, val hiBrpm: Double) : RsaOutcome
+    data object Gappy : RsaOutcome
+    data object Thin : RsaOutcome
+    data object BelowBand : RsaOutcome
+}
+
+private fun scoreRsaWindow(
+    tSec: DoubleArray,
+    nnMs: List<Double>,
+    segSec: Double,
+    lo: Int,
+    hi: Int,
+): RsaOutcome {
+    val k = hi - lo
+    var coveredMs = 0.0
+    for (i in lo until hi) coveredMs += nnMs[i]
+    if (coveredMs / 1000.0 < segSec * 0.8) return RsaOutcome.Gappy
+    if (k < 30) return RsaOutcome.Thin
+    val segT = ArrayList<Double>(k)
+    val segNn = ArrayList<Double>(k)
+    for (i in lo until hi) {
+        segT.add(tSec[i])
+        segNn.add(nnMs[i])
+    }
+    val segSpan = segT.last() - segT.first()
+    val segHi = rsaCeilingHz(median(segNn)!! / 1000.0)
+    if (segHi < rsaHiHz) return RsaOutcome.BelowBand
+    val gridN = max(64, ceil((segHi - rsaLoHz) * 4.0 * segSpan).toInt())
+    val ls = lombScargle(segT, segNn, freqGrid(rsaLoHz, segHi, gridN))
+    val pk = ls?.peakFreq(rsaLoHz, segHi)
+    if (ls == null || pk == null) return RsaOutcome.Thin
+    if (pk >= segHi - (segHi - rsaLoHz) / (gridN - 1)) {
+        return RsaOutcome.Ceiling(segHi * 60.0, segHi * 60.0)
+    }
+    return RsaOutcome.Peak(pk * 60.0, pk, powerAt(ls, pk))
 }
 
 /** Fused respiratory rate and the Karlen SD-gate decision. */

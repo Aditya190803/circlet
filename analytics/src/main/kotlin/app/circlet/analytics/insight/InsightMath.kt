@@ -14,6 +14,7 @@ import app.circlet.core.PersonalRecord
 import app.circlet.core.RecordKind
 import app.circlet.core.TrendPoint
 import app.circlet.core.TrendRange
+import app.circlet.core.reading
 import app.circlet.core.WeeklyRecap
 import java.time.Duration
 import java.time.LocalDate
@@ -134,33 +135,7 @@ private fun lowest(
     return record
 }
 
-internal fun metricValue(day: DaySummary, kind: MetricKind): Metric<Double> = when (kind) {
-    MetricKind.SLEEP_PERFORMANCE -> day.sleepPerformance.percent.map { it.toDouble() }
-    MetricKind.SLEEP_DURATION -> {
-        val session = day.sleep.value
-        if (session == null) Metric.absent(day.sleep.absentReason ?: AbsentReason.NO_SLEEP)
-        else Metric.of(session.timeAsleep.toMinutes().toDouble(), session.efficiency.confidence)
-    }
-    MetricKind.SLEEP_EFFICIENCY -> {
-        val session = day.sleep.value
-        if (session == null) Metric.absent(day.sleep.absentReason ?: AbsentReason.NO_SLEEP)
-        else session.efficiency.map { it.toDouble() }
-    }
-    MetricKind.SLEEP_NEED -> day.sleepNeed.duration.map { it.toMinutes().toDouble() }
-    MetricKind.SLEEP_DEBT -> day.sleepDebt.shortfall.map { it.toMinutes().toDouble() }
-    MetricKind.SLEEP_CONSISTENCY -> day.sleepConsistency.index
-    MetricKind.RECOVERY -> day.recovery.score.map { it.toDouble() }
-    MetricKind.STRAIN -> day.strain.score
-    MetricKind.STRESS -> day.stress.score
-    MetricKind.RESTING_HEART_RATE -> day.heart.resting.bpm.map { it.toDouble() }
-    MetricKind.HRV -> day.heart.hrv.rmssdMs
-    MetricKind.RESPIRATORY_RATE -> day.heart.respiratoryRate.breathsPerMinute
-    MetricKind.STEPS -> day.steps.count.map { it.toDouble() }
-    MetricKind.CALORIES -> day.calories.map { it.toDouble() }
-    MetricKind.VO2_MAX -> day.vo2Max.mlPerKgMin
-    MetricKind.SKIN_TEMPERATURE -> day.skinTemperature?.deviation
-        ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
-}
+internal fun metricValue(day: DaySummary, kind: MetricKind): Metric<Double> = day.reading(kind)
 
 private fun <T, R> Metric<T>.map(transform: (T) -> R): Metric<R> {
     val v = value ?: return Metric.absent(absentReason ?: AbsentReason.NOT_ENOUGH_DATA, confidence)

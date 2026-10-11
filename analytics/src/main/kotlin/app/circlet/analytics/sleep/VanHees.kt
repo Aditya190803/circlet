@@ -9,9 +9,12 @@ import app.circlet.analytics.foundations.Tier
 import app.circlet.analytics.foundations.median
 import app.circlet.analytics.foundations.roundHalfAwayFromZero
 import app.circlet.analytics.foundations.sampleCadenceSeconds
+import java.util.Arrays
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -123,26 +126,38 @@ fun immobilityMask(
     for (i in 1 until n) {
         dAng[i] = abs(ang[i] - ang[i - 1])
     }
+    // First invalid index at or after i, so the gap test is O(1).
+    val nextBad = IntArray(n + 1)
+    var nb = n
+    for (i in n - 1 downTo 0) {
+        if (!accel[i].valid) nb = i
+        nextBad[i] = nb
+    }
+    nextBad[n] = n
+    // Sliding maximum of dAng over each row's (i, range) window. A row stops at
+    // its first invalid sample exactly as the direct scan's break does, and NaN
+    // deltas never win a comparison, so the still verdicts match bit for bit.
+    // Each index enters and leaves the deque once: O(n), not O(n · win).
+    val deque = ArrayDeque<Int>()
+    var rangeEnd = 0
     val immobile = ArrayList<Boolean>(n)
     val immobileUnknown = ArrayList<Boolean>(n)
     for (i in 0 until n) {
         val hi = min(n, i + winSamples)
-        var maxd = 0.0
-        var gap = !accel[i].valid
-        var k = i + 1
-        while (k < hi) {
-            if (!accel[k].valid) {
-                gap = true
-                break
+        val stop = min(hi, nextBad[i])
+        while (rangeEnd < stop) {
+            val v = dAng[rangeEnd]
+            if (!v.isNaN()) {
+                while (deque.isNotEmpty() && dAng[deque.last()] <= v) deque.removeLast()
+                deque.addLast(rangeEnd)
             }
-            if (dAng[k] > maxd) {
-                maxd = dAng[k]
-                if (maxd >= angleThresholdDeg) break
-            }
-            k++
+            rangeEnd++
         }
+        while (deque.isNotEmpty() && deque.first() <= i) deque.removeFirst()
+        val maxd = if (deque.isNotEmpty()) dAng[deque.first()] else 0.0
         val still = maxd < angleThresholdDeg
         val fullWindow = hi - i >= winSamples
+        val gap = nextBad[i] < hi
         immobile.add(still && fullWindow && !gap)
         immobileUnknown.add(still && (!fullWindow || gap))
     }
@@ -170,13 +185,28 @@ fun vanHeesSleepWindow(
     smoothSec: Int = 5,
 ): OsMetric<SleepWindow> {
     val inputs = listOf("accel_1hz")
-    val n = accel.size
     val mask = immobilityMask(
         accel,
         angleThresholdDeg = angleThresholdDeg,
         sustainedMin = sustainedMin,
         smoothSec = smoothSec,
     )
+    return pickVanHeesWindow(accel, mask, bridgeGapMin, inputs, sustainedMin)
+}
+
+/**
+ * The longest sustained-inactivity block of a precomputed [mask].
+ * The day pipeline shares one mask between the night window and nap
+ * detection instead of scanning the day twice.
+ */
+internal fun pickVanHeesWindow(
+    accel: List<AccelSample>,
+    mask: ImmobilityMask,
+    bridgeGapMin: Int = 30,
+    inputs: List<String> = listOf("accel_1hz"),
+    sustainedMin: Int = 5,
+): OsMetric<SleepWindow> {
+    val n = accel.size
     val cadence = mask.cadenceSec
     if (cadence == null) {
         return OsMetric.absent(
@@ -281,15 +311,31 @@ private fun rollingMedian(x: DoubleArray, w: Int): DoubleArray {
     if (w <= 1) return x.copyOf()
     val half = w / 2
     val out = DoubleArray(n) { Double.NaN }
+    // Small fixed windows sort a primitive buffer in place: the same
+    // interpolation as median() with none of the boxed copies.
+    val buf = DoubleArray(w)
     for (i in 0 until n) {
         if (x[i].isNaN()) continue
         val lo = max(0, i - half)
         val hi = min(n - 1, i + half)
-        val seg = ArrayList<Double>()
+        var m = 0
         for (k in lo..hi) {
-            if (!x[k].isNaN()) seg.add(x[k])
+            if (!x[k].isNaN()) buf[m++] = x[k]
         }
-        out[i] = median(seg)!!
+        if (m == 0) continue
+        Arrays.sort(buf, 0, m)
+        out[i] = percentileSortedBuffer(buf, m)
     }
     return out
+}
+
+/** Median of an ascending buffer prefix: the percentile() interpolation at p=50. */
+private fun percentileSortedBuffer(sorted: DoubleArray, size: Int): Double {
+    if (size == 1) return sorted[0]
+    val rank = 0.5 * (size - 1)
+    val lo = floor(rank).toInt()
+    val hi = ceil(rank).toInt()
+    if (lo == hi) return sorted[lo]
+    val frac = rank - lo
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 }

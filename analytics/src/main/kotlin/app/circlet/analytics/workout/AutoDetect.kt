@@ -62,7 +62,11 @@ internal object AutoWorkoutDetector {
     fun motionPoints(gravTs: List<Int>, gx: List<Double>, gy: List<Double>, gz: List<Double>): List<MotionPoint> {
         val n = gravTs.size
         if (n == 0) return emptyList()
-        val idx = gravTs.indices.sortedBy { gravTs[it] }
+        // Day data arrives chronological; the permutation is the identity then.
+        val idx = if (isAscending(gravTs)) IntArray(n) { it } else {
+            val order = gravTs.indices.sortedBy { gravTs[it] }
+            IntArray(n) { order[it] }
+        }
         val out = ArrayList<MotionPoint>(n)
         var px: Double? = null
         var py = 0.0
@@ -96,7 +100,11 @@ internal object AutoWorkoutDetector {
     ): List<DetectedWorkout> {
         val n = hrTs.size
         if (n == 0) return emptyList()
-        val order = hrTs.indices.sortedBy { hrTs[it] }
+        // Day data arrives chronological; the permutation is the identity then.
+        val order = if (isAscending(hrTs)) IntArray(n) { it } else {
+            val sorted = hrTs.indices.sortedBy { hrTs[it] }
+            IntArray(n) { sorted[it] }
+        }
         val ts = IntArray(n) { hrTs[order[it]] }
         val bpm = IntArray(n) { hrBpm[order[it]] }
         val rhr = restingBpm ?: DEFAULT_RESTING_HR
@@ -194,6 +202,14 @@ internal object AutoWorkoutDetector {
 
     private fun overlaps(aStart: Int, aEnd: Int, bStart: Int, bEnd: Int): Boolean =
         aStart <= bEnd && bStart <= aEnd
+
+    /** True when no element precedes an earlier one; such an input sorts to itself. */
+    private fun isAscending(xs: List<Int>): Boolean {
+        for (i in 1 until xs.size) {
+            if (xs[i] < xs[i - 1]) return false
+        }
+        return true
+    }
 
     private fun meanBpmInRange(ts: IntArray, bpm: IntArray, lo: Int, hi: Int): Double? {
         var sum = 0

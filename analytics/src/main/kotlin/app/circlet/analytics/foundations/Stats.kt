@@ -12,6 +12,7 @@ import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.ln
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
@@ -104,6 +105,21 @@ private const val CADENCE_MIN_MODE_FRACTION = 0.5
  */
 fun sampleCadenceSeconds(tsSec: List<Double>): Double? {
     if (tsSec.size < 2) return null
+    // Constant-cadence fast path: the day pipeline feeds 1 Hz clocks, and a
+    // constant stream needs no sort. All gaps equal and positive means the
+    // median is that gap and it describes every gap, which is exactly what
+    // the check below would conclude.
+    val first = tsSec[1] - tsSec[0]
+    if (first > 0.0 && first <= MAX_SUPPORTED_CADENCE_SEC) {
+        var constant = true
+        for (i in 2 until tsSec.size) {
+            if (tsSec[i] - tsSec[i - 1] != first) {
+                constant = false
+                break
+            }
+        }
+        if (constant) return first
+    }
     val gaps = ArrayList<Double>(tsSec.size - 1)
     for (i in 1 until tsSec.size) {
         val g = tsSec[i] - tsSec[i - 1]
@@ -265,6 +281,18 @@ class LombScargle(val spectrum: List<LsPoint>) {
  * Returns null if fewer than 4 points, zero variance, or zero time span.
  * Density is the unnormalised periodogram times 2·Δt (Δt = mean sample interval),
  * so integrating it recovers variance rather than a dimensionless power.
+ *
+ * Each frequency takes one sin/cos pair per point: the double angle gives the
+ * tau sums and the angle-subtraction form gives the power sums, which is the
+ * same estimator as the four-trigonometric-call form to a few ulp. The clock
+ * is re-anchored at the first beat; the periodogram is translation-invariant,
+ * and small arguments keep the products accurate.
+ *
+ * A uniform grid (every caller builds one with [freqGrid]) additionally runs
+ * the frequencies by complex rotation instead of fresh trigonometry per pair:
+ * the same estimator with phasor drift around 1e-13. A non-uniform,
+ * non-finite, or singleton grid takes the pairwise form, so arbitrary inputs
+ * evaluate exactly where they asked.
  */
 fun lombScargle(t: List<Double>, y: List<Double>, freqsHz: List<Double>): LombScargle? {
     val n = t.size
@@ -285,8 +313,39 @@ fun lombScargle(t: List<Double>, y: List<Double>, freqsHz: List<Double>): LombSc
     val span = tMax - tMin
     if (span <= 0.0) return null
     val psdScale = 2.0 * span / (n - 1)
+    val u = DoubleArray(n) { t[it] - tMin }
 
+    if (freqsHz.size == 1 || freqsHz.any { !it.isFinite() }) {
+        return directLomb(u, yc, psdScale, freqsHz)
+    }
+    val f0 = freqsHz.first()
+    val df = (freqsHz.last() - f0) / (freqsHz.size - 1)
+    var uniform = true
+    for (k in freqsHz.indices) {
+        val expect = f0 + df * k
+        if (abs(freqsHz[k] - expect) > LS_SNAP_TOL * max(1.0, abs(expect))) {
+            uniform = false
+            break
+        }
+    }
+    return if (uniform) rotatedLomb(u, yc, psdScale, freqsHz, f0, df)
+    else directLomb(u, yc, psdScale, freqsHz)
+}
+
+/** Relative grid tolerance below which a grid counts as the uniform one it was built as. */
+private const val LS_SNAP_TOL = 1e-9
+
+/** The pairwise form: two trigonometric calls per (frequency, point). */
+private fun directLomb(
+    u: DoubleArray,
+    yc: DoubleArray,
+    psdScale: Double,
+    freqsHz: List<Double>,
+): LombScargle {
+    val n = u.size
     val out = ArrayList<LsPoint>(freqsHz.size)
+    val cs = DoubleArray(n)
+    val sn = DoubleArray(n)
     for (fHz in freqsHz) {
         val w = 2.0 * PI * fHz
         if (w == 0.0) {
@@ -295,30 +354,107 @@ fun lombScargle(t: List<Double>, y: List<Double>, freqsHz: List<Double>): LombSc
         }
         var sin2 = 0.0
         var cos2 = 0.0
-        for (ti in t) {
-            sin2 += sin(2.0 * w * ti)
-            cos2 += cos(2.0 * w * ti)
-        }
-        val tau = atan2(sin2, cos2) / (2.0 * w)
-
-        var cNum = 0.0
-        var cDen = 0.0
-        var sNum = 0.0
-        var sDen = 0.0
         for (i in 0 until n) {
-            val arg = w * (t[i] - tau)
-            val c = cos(arg)
-            val s = sin(arg)
-            cNum += yc[i] * c
-            cDen += c * c
-            sNum += yc[i] * s
-            sDen += s * s
+            val a = w * u[i]
+            val c = cos(a)
+            val s = sin(a)
+            cs[i] = c
+            sn[i] = s
+            sin2 += 2.0 * s * c
+            cos2 += c * c - s * s
         }
-        val term1 = if (cDen == 0.0) 0.0 else (cNum * cNum) / cDen
-        val term2 = if (sDen == 0.0) 0.0 else (sNum * sNum) / sDen
-        out.add(LsPoint(fHz, 0.5 * (term1 + term2) * psdScale))
+        out.add(powerAt(yc, cs, sn, w, sin2, cos2, psdScale, fHz))
     }
     return LombScargle(out)
+}
+
+/**
+ * The rotated form for a uniform grid from [f0] in steps of [df].
+ * Per-point phasors start at the first frequency and rotate one grid step per
+ * bin, so a bin costs arithmetic instead of trigonometry. Bins report the
+ * requested frequencies.
+ */
+private fun rotatedLomb(
+    u: DoubleArray,
+    yc: DoubleArray,
+    psdScale: Double,
+    freqsHz: List<Double>,
+    f0: Double,
+    df: Double,
+): LombScargle {
+    val n = u.size
+    val w0 = 2.0 * PI * f0
+    val dw = 2.0 * PI * df
+    val cosStep = DoubleArray(n)
+    val sinStep = DoubleArray(n)
+    val cc = DoubleArray(n)
+    val ss = DoubleArray(n)
+    for (i in 0 until n) {
+        val a0 = w0 * u[i]
+        cc[i] = cos(a0)
+        ss[i] = sin(a0)
+        val ad = dw * u[i]
+        cosStep[i] = cos(ad)
+        sinStep[i] = sin(ad)
+    }
+    val out = ArrayList<LsPoint>(freqsHz.size)
+    for (k in freqsHz.indices) {
+        // The skip decision uses the requested frequency, exactly as the
+        // pairwise form does; the snapped arithmetic is only for the spectrum.
+        if (2.0 * PI * freqsHz[k] == 0.0) {
+            out.add(LsPoint(freqsHz[k], 0.0))
+        } else {
+            val w = w0 + dw * k
+            var sin2 = 0.0
+            var cos2 = 0.0
+            for (i in 0 until n) {
+                val c = cc[i]
+                val s = ss[i]
+                sin2 += 2.0 * s * c
+                cos2 += c * c - s * s
+            }
+            out.add(powerAt(yc, cc, ss, w, sin2, cos2, psdScale, freqsHz[k]))
+        }
+        for (i in 0 until n) {
+            val c = cc[i]
+            val s = ss[i]
+            cc[i] = c * cosStep[i] - s * sinStep[i]
+            ss[i] = s * cosStep[i] + c * sinStep[i]
+        }
+    }
+    return LombScargle(out)
+}
+
+/** One bin's scaled power from its phasors and tau sums. */
+private fun powerAt(
+    yc: DoubleArray,
+    cs: DoubleArray,
+    sn: DoubleArray,
+    w: Double,
+    sin2: Double,
+    cos2: Double,
+    psdScale: Double,
+    fHz: Double,
+): LsPoint {
+    val tau = atan2(sin2, cos2) / (2.0 * w)
+    val phi = w * tau
+    val cosPhi = cos(phi)
+    val sinPhi = sin(phi)
+    var cNum = 0.0
+    var cDen = 0.0
+    var sNum = 0.0
+    var sDen = 0.0
+    for (i in yc.indices) {
+        val c = cs[i] * cosPhi + sn[i] * sinPhi
+        val s = sn[i] * cosPhi - cs[i] * sinPhi
+        cNum += yc[i] * c
+        cDen += c * c
+        sNum += yc[i] * s
+        sDen += s * s
+    }
+    val term1 = if (cDen == 0.0) 0.0 else (cNum * cNum) / cDen
+    val term2 = if (sDen == 0.0) 0.0 else (sNum * sNum) / sDen
+    return LsPoint(fHz, 0.5 * (term1 + term2) * psdScale)
 }
 
 /** Linear frequency grid from [loHz] to [hiHz] with [n] points, inclusive. */

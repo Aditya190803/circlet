@@ -5,6 +5,7 @@ package app.circlet.analytics.sleep
 
 import app.circlet.analytics.foundations.AccelSample
 import app.circlet.analytics.foundations.RobustScale
+import app.circlet.analytics.foundations.fillOrdered
 import app.circlet.analytics.foundations.lombScargle
 import app.circlet.analytics.foundations.freqGrid
 import app.circlet.analytics.foundations.mad
@@ -15,7 +16,10 @@ import app.circlet.analytics.foundations.percentileSorted
 import app.circlet.analytics.foundations.roundHalfAwayFromZero
 import app.circlet.analytics.foundations.sampleCadenceSeconds
 import app.circlet.analytics.foundations.stddev
+import java.util.Arrays
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -230,11 +234,16 @@ fun cardioStager(
     val gRefWinSec = 300
     val gRefHalf = max(1, roundHalfAwayFromZero(gRefWinSec / cadenceSec).toInt()) / 2
     val gRefByEpoch = DoubleArray(nEpoch) { 1.0 }
+    // Reused sort buffer: the medians interpolate exactly like median(), only
+    // without sorting a boxed copy per epoch.
+    val gRefBuf = DoubleArray(min(n, 2 * gRefHalf + perEpoch).coerceAtLeast(1))
     for (e in 0 until nEpoch) {
         val es = e * perEpoch
         val lo = max(0, es - gRefHalf)
         val hi = min(n, es + perEpoch + gRefHalf)
-        gRefByEpoch[e] = median(mag.slice(lo until hi)) ?: 1.0
+        var m = 0
+        for (k in lo until hi) gRefBuf[m++] = mag[k]
+        gRefByEpoch[e] = if (m == 0) 1.0 else percentileSortedArray(gRefBuf, m, 50.0)
     }
 
     val motion = DoubleArray(nEpoch)
@@ -245,7 +254,11 @@ fun cardioStager(
     val lfhf = DoubleArray(nEpoch) { Double.NaN }
     val rk = DoubleArray(nEpoch) { Double.NaN }
 
-    for (e in 0 until nEpoch) {
+    // Epochs are independent: motion, HR, RMSSD, SDNN and the REM window only
+    // read shared inputs and write their own slot, so this runs in parallel
+    // with the slots assembled in order. RMSSD and SDNN share one beat
+    // cleaning pass; it takes the same window they both took before.
+    fillOrdered(nEpoch, minTotal = 64) { e ->
         val s = e * perEpoch
         val t = min(s + perEpoch, n)
         val gRefE = gRefByEpoch[e]
@@ -261,8 +274,9 @@ fun cardioStager(
         }
         if (hv.isNotEmpty()) hr[e] = mean(hv)!!
         if (hv.size >= 2) hrSd[e] = stddev(hv) ?: 0.0
-        rmssd[e] = windowRmssd(rrMs, rrTsMs, accel, s, t)
-        sdnn[e] = windowSdnn(rrMs, rrTsMs, accel, s, t)
+        val clean = cleanBeatsInWindow(rrMs, rrTsMs, accel, s, t)
+        rmssd[e] = rmssdOf(clean)
+        sdnn[e] = sdnnOf(clean)
         val rem = windowRemFeatures(rrMs, rrTsMs, accel, s, t)
         if (rem.lfhf != null) lfhf[e] = rem.lfhf
         if (rem.rk != null) rk[e] = rem.rk
@@ -359,12 +373,13 @@ fun classifyCardioEpochs(
             if (still(k) && !hr[k].isNaN()) win.add(hr[k])
         }
         val sd = stddev(win)
-        win.sort()
-        val m = percentileSorted(win, 50.0)
+        val sorted = DoubleArray(win.size) { win[it] }
+        Arrays.sort(sorted)
+        val m = if (sorted.isEmpty()) null else percentileSortedArray(sorted, sorted.size, 50.0)
         if (m != null) {
             hrMedLocal[e] = m
             hrArousalLocal[e] = m + max(6.0, sd ?: 6.0)
-            hrP25Local[e] = percentileSorted(win, 25.0) ?: m
+            hrP25Local[e] = percentileSortedArray(sorted, sorted.size, 25.0)
         }
     }
     if (profile != null && pw > 0.0) {
@@ -514,6 +529,17 @@ fun classifyCardioEpochs(
     )
 }
 
+/** Sort-buffer percentile: the percentileSorted() interpolation on an ascending prefix. */
+private fun percentileSortedArray(sorted: DoubleArray, size: Int, p: Double): Double {
+    if (size == 1) return sorted[0]
+    val rank = (p / 100.0) * (size - 1)
+    val lo = floor(rank).toInt()
+    val hi = ceil(rank).toInt()
+    if (lo == hi) return sorted[lo]
+    val frac = rank - lo
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
+}
+
 private fun abstain(epochSec: Int): CardioStagerResult = CardioStagerResult(
     StagerResult(
         stages = emptyList(),
@@ -538,8 +564,9 @@ private fun windowRmssd(
     accel: List<AccelSample>,
     s: Int,
     t: Int,
-): Double {
-    val win = cleanBeatsInWindow(rrMs, rrTsMs, accel, s, t)
+): Double = rmssdOf(cleanBeatsInWindow(rrMs, rrTsMs, accel, s, t))
+
+private fun rmssdOf(win: CleanBeats): Double {
     val beats = win.beats
     if (beats.size < 5) return Double.NaN
     var ss = 0.0
@@ -559,8 +586,10 @@ private fun windowSdnn(
     accel: List<AccelSample>,
     s: Int,
     t: Int,
-): Double {
-    val beats = cleanBeatsInWindow(rrMs, rrTsMs, accel, s, t).beats
+): Double = sdnnOf(cleanBeatsInWindow(rrMs, rrTsMs, accel, s, t))
+
+private fun sdnnOf(win: CleanBeats): Double {
+    val beats = win.beats
     if (beats.size < 5) return Double.NaN
     return stddev(beats) ?: Double.NaN
 }

@@ -58,8 +58,33 @@ fun computeSleep(
     history: List<DaySummary>,
     dayStrain: Double? = null,
 ): SleepDay {
+    val segments = segmentDay(alignSamples(samples, now), zone, date, profile, history)
+    return finishSleep(segments, history, zone, date, dayStrain)
+}
+
+/**
+ * The expensive half of [computeSleep]: alignment is the caller's, and the
+ * output stops at the staged sessions. The day engine runs this once, then
+ * [finishSleep] with the strain once the load is known, instead of staging
+ * the night twice. Only the strain-fed need changes between the two calls.
+ */
+internal data class SleepSegments(
+    val series: AlignedSeries,
+    val main: Metric<CoreSession>,
+    val naps: List<CoreSession>,
+)
+
+internal fun segmentDay(
+    series: AlignedSeries,
+    zone: ZoneId,
+    date: LocalDate,
+    profile: Profile,
+    history: List<DaySummary>,
+): SleepSegments {
     profile.hashCode()
-    val series = alignSamples(samples, now)
+    if (!series.worn || series.accel.isEmpty()) {
+        return SleepSegments(series, Metric.absent(AbsentReason.NOT_WORN), emptyList())
+    }
     val offsets = zoneOffsets(zone)
     val blocks = history.mapNotNull { day ->
         val session = day.sleep.value ?: return@mapNotNull null
@@ -69,34 +94,41 @@ fun computeSleep(
             dayKey = day.date.toString(),
         )
     }
-    val segmentation = if (!series.worn || series.accel.isEmpty()) {
-        null
-    } else {
-        segmentSleep(
-            accel = series.accel,
-            hr1hz = series.hr,
-            rrMs = series.rrMs,
-            rrTsMs = series.rrTsMs,
-            habitualMidsleepSec = habitualMidsleepSecFromHistory(blocks, tzOffsetResolver = offsets),
-            tzOffsetResolver = offsets,
-        )
-    }
+    // One immobility mask for the night window and the naps. It covers the
+    // same samples with the same settings both would compute, so sharing it
+    // only skips the second scan.
+    val mask = immobilityMask(series.accel)
+    val segmentation = segmentSleep(
+        accel = series.accel,
+        hr1hz = series.hr,
+        rrMs = series.rrMs,
+        rrTsMs = series.rrTsMs,
+        habitualMidsleepSec = habitualMidsleepSecFromHistory(blocks, tzOffsetResolver = offsets),
+        tzOffsetResolver = offsets,
+        vanHeesMask = mask,
+    )
     val main = when {
-        !series.worn -> Metric.absent(AbsentReason.NOT_WORN)
-        segmentation == null || !segmentation.present || segmentation.tstSec == null ->
+        !segmentation.present || segmentation.tstSec == null ->
             Metric.absent<CoreSession>(AbsentReason.NO_SLEEP)
         else -> coreValue(mainSession(date, segmentation, series), segmentation.confidence)
     }
-    val naps = if (series.worn && segmentation != null) {
-        napSessions(date, series, segmentation)
-    } else {
-        emptyList()
-    }
+    val naps = napSessions(date, series, segmentation, mask)
+    return SleepSegments(series, main, naps)
+}
+
+/** The cheap half of [computeSleep]: need, debt, performance and consistency. */
+internal fun finishSleep(
+    segments: SleepSegments,
+    history: List<DaySummary>,
+    zone: ZoneId,
+    date: LocalDate,
+    dayStrain: Double? = null,
+): SleepDay {
     val debt = debtOf(history)
-    val need = needOf(debt, naps, dayStrain, history, zone, date)
-    val performance = performanceOf(main, need)
-    val consistency = consistencyOf(history, date, zone, main, naps, series.worn)
-    return SleepDay(main, naps, need, debt, performance, consistency)
+    val need = needOf(debt, segments.naps, dayStrain, history, zone, date)
+    val performance = performanceOf(segments.main, need)
+    val consistency = consistencyOf(history, date, zone, segments.main, segments.naps, segments.series.worn)
+    return SleepDay(segments.main, segments.naps, need, debt, performance, consistency)
 }
 
 private fun mainSession(date: LocalDate, segmentation: SleepSegmentation, series: AlignedSeries): CoreSession {
@@ -203,10 +235,15 @@ private fun wakeEvents(onsetSec: Long, stages4: List<String>): List<WakeEvent> {
     return events
 }
 
-private fun napSessions(date: LocalDate, series: AlignedSeries, segmentation: SleepSegmentation): List<CoreSession> {
+private fun napSessions(
+    date: LocalDate,
+    series: AlignedSeries,
+    segmentation: SleepSegmentation,
+    mask: ImmobilityMask,
+): List<CoreSession> {
     val span = segmentation.window?.let { SleepWindowSpan(it.onsetIdx, it.offsetIdx) }
     val wristOff = offWristSpans(series)
-    val detected = detectNaps(series.accel, series.hr, mainSleep = span, wristOff = wristOff)
+    val detected = detectNapsWithMask(series.accel, series.hr, mask, mainSleep = span, wristOff = wristOff)
     val naps = detected.value ?: return emptyList()
     val origin = if (series.accel.isEmpty()) 0L else (series.accel.first().tsMs / 1000.0).toLong()
     return naps.mapIndexed { index, nap ->

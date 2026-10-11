@@ -23,7 +23,10 @@ internal data class AlignedSeries(
 
 internal fun alignSamples(samples: List<Sample>, now: Instant): AlignedSeries {
     val nowSec = now.epochSecond
-    val ordered = samples.filter { it.epochSecond <= nowSec }.sortedBy { it.epochSecond }
+    val filtered = samples.filter { it.epochSecond <= nowSec }
+    // Day data arrives chronological; sorting it again is pure waste. The check
+    // is one pass, and a chronological input sorts to itself, so this is exact.
+    val ordered = if (filtered.isEpochOrdered()) filtered else filtered.sortedBy { it.epochSecond }
     val accel = ArrayList<AccelSample>(ordered.size)
     val hr = ArrayList<Double>(ordered.size)
     val rrMs = ArrayList<Double>()
@@ -59,6 +62,14 @@ internal fun alignSamples(samples: List<Sample>, now: Instant): AlignedSeries {
 
 internal fun zoneOffsets(zone: ZoneId): (Int) -> Int = { epochSec ->
     zone.rules.getOffset(Instant.ofEpochSecond(epochSec.toLong())).totalSeconds
+}
+
+/** True when no record precedes an earlier one; such an input sorts to itself. */
+private fun List<Sample>.isEpochOrdered(): Boolean {
+    for (i in 1 until size) {
+        if (this[i].epochSecond < this[i - 1].epochSecond) return false
+    }
+    return true
 }
 
 internal fun coreConfidence(openStrap: Double): Confidence = when {

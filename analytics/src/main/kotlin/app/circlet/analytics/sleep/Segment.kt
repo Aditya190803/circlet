@@ -224,6 +224,14 @@ fun segmentSleep(
     tzOffsetSec: Int? = null,
     tzOffsetResolver: ((Int) -> Int)? = null,
     bandSleepState: List<Int>? = null,
+    /**
+     * Precomputed [immobilityMask] over `accel` with the default settings.
+     * The day pipeline shares one mask between the night window and nap
+     * detection; when null the mask is computed here. Anything else must
+     * leave this null: a mask over different samples would stage the wrong
+     * night.
+     */
+    vanHeesMask: ImmobilityMask? = null,
 ): SleepSegmentation {
     val n = min(accel.size, hr1hz.size)
     if (forcedWindow == null && n < MIN_QUALIFYING_SLEEP_SEC) return SleepSegmentation.absent
@@ -232,7 +240,8 @@ fun segmentSleep(
     val trimmedAccel = accel.subList(0, n)
     val trimmedHr = hr1hz.subList(0, n)
     val wm: OsMetric<SleepWindow> = if (forcedWindow == null) {
-        vanHeesSleepWindow(trimmedAccel)
+        if (vanHeesMask != null) pickVanHeesWindow(trimmedAccel, vanHeesMask)
+        else vanHeesSleepWindow(trimmedAccel)
     } else {
         OsMetric.absent(tier = Tier.ESTIMATE, inputsUsed = listOf("forced_window"))
     }

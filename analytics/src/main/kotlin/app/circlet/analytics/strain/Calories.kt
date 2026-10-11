@@ -130,7 +130,11 @@ internal object Calories {
         val effRest = if (usedDefault) 60.0 else restingHr!!
         val threshold = activeGateHr(effMax, effRest)!!
         val restingRate = restingKcalPerS(coeffs, weightKg, heightCm, age)
-        val order = hrTsSec.indices.sortedBy { hrTsSec[it] }
+        // Bout samples arrive chronological; the permutation is the identity then.
+        val order = if (isAscending(hrTsSec)) IntArray(hrTsSec.size) { it } else {
+            val sorted = hrTsSec.indices.sortedBy { hrTsSec[it] }
+            IntArray(hrTsSec.size) { sorted[it] }
+        }
         var total = 0.0
         for (k in order.indices) {
             val b = hrBpm[order[k]]
@@ -150,6 +154,14 @@ internal object Calories {
         "male" -> male
         "female" -> female
         else -> nonbinary
+    }
+
+    /** True when no element precedes an earlier one; such an input sorts to itself. */
+    private fun isAscending(xs: List<Int>): Boolean {
+        for (i in 1 until xs.size) {
+            if (xs[i] < xs[i - 1]) return false
+        }
+        return true
     }
 
     private fun restingKcalPerS(c: CalorieCoeffs, weightKg: Double, heightCm: Double, age: Double): Double {

@@ -12,6 +12,10 @@ import java.time.ZoneId
  * oldest first, and does not include [date]. [manualActivities] are workouts
  * the user logged or edited; the result must keep their identity.
  * [now] is the instant the caller considers current. The engine does not read a clock.
+ * [priorSkinTemp] holds settled skin-temp means (ADC counts) for nights before
+ * [date], rebuilt from stored samples by the caller; empty when the store does
+ * not keep them. The engine always scores the target night itself from
+ * [samples] and uses these only as the trailing baseline.
  */
 data class DayInput(
     val date: LocalDate,
@@ -21,6 +25,7 @@ data class DayInput(
     val history: List<DaySummary>,
     val manualActivities: List<Activity>,
     val now: Instant,
+    val priorSkinTemp: Map<LocalDate, Double> = emptyMap(),
 )
 
 /**

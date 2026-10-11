@@ -168,11 +168,13 @@ object AdvancedSleepStager {
         bandSleepState: List<List<Int>> = emptyList(),
     ): List<SleepSession> {
         fun tzAt(ts: Int): Int = tzOffsetResolver?.invoke(ts) ?: tzOffsetSec
-        val grav = gravity.sortedWith(compareBy { it.ts })
+        // Day data arrives chronological; sorting it again is pure waste. The
+        // check is one pass, and a chronological input sorts to itself.
+        val grav = if (gravity.isTsOrdered { it.ts }) gravity else gravity.sortedWith(compareBy { it.ts })
         if (grav.size < 2) return emptyList()
-        val hrS = hr.sortedWith(compareBy { it.ts })
-        val rrS = rr.sortedWith(compareBy { it.ts })
-        val respS = resp.sortedWith(compareBy { it.ts })
+        val hrS = if (hr.isTsOrdered { it.ts }) hr else hr.sortedWith(compareBy { it.ts })
+        val rrS = if (rr.isTsOrdered { it.ts }) rr else rr.sortedWith(compareBy { it.ts })
+        val respS = if (resp.isTsOrdered { it.ts }) resp else resp.sortedWith(compareBy { it.ts })
 
         val baseline = hrBaseline(hrS)
         val sparse = isGravitySparse(grav, hrS)
@@ -407,6 +409,14 @@ object AdvancedSleepStager {
         return median(hr.map { it.bpm })
     }
 
+    /** True when no element precedes an earlier one; such an input sorts to itself. */
+    private fun <T> List<T>.isTsOrdered(tsOf: (T) -> Int): Boolean {
+        for (i in 1 until size) {
+            if (tsOf(this[i]) < tsOf(this[i - 1])) return false
+        }
+        return true
+    }
+
     private fun hrSleepBandAcross(a: Int, b: Int, hr: List<HrTs>, baseline: Double?): Boolean {
         if (baseline == null || b <= a || b - a > sparseBridgeGapMin * 60) return false
         val seg = ArrayList<Double>()
@@ -603,11 +613,15 @@ object AdvancedSleepStager {
 
     private fun offWristHRGapSpans(p: Period, hr: List<HrTs>): List<IntArray> {
         if (hr.isEmpty() || p.end <= p.start) return emptyList()
-        val sortedAll = hr.sortedBy { it.ts }
+        // The detector sorts its heart rates once; everything downstream stays
+        // in that order, so this is usually a one-pass check, not a sort.
+        val sortedAll = if (hr.isTsOrdered { it.ts }) hr else hr.sortedBy { it.ts }
         val streamSpan = sortedAll.last().ts - sortedAll.first().ts
         if (streamSpan >= hrDenseSpacingS && hr.size < streamSpan / hrDenseSpacingS) return emptyList()
         val gapS = offWristHRGapMin * 60
-        val seg = rowsBetween(hr, p.start, p.end).sortedBy { it.ts }
+        val seg = rowsBetween(hr, p.start, p.end).let {
+            if (it.isTsOrdered { r -> r.ts }) it else it.sortedBy { r -> r.ts }
+        }
         if (seg.isEmpty()) {
             return if ((p.end - p.start) >= gapS) listOf(intArrayOf(p.start, p.end)) else emptyList()
         }
@@ -706,13 +720,17 @@ object AdvancedSleepStager {
         val minStageableSec = 3 * epSec
         if (span < minStageableSec) return listOf(StageSegment(start, end, "unobserved"))
 
-        val gByTs = HashMap<Int, GravTs>()
+        val gAt = arrayOfNulls<GravTs>(span)
         for (g in grav) {
-            if (g.valid && g.ts >= start && g.ts < end) gByTs[g.ts] = g
+            if (g.valid && g.ts >= start && g.ts < end) gAt[g.ts - start] = g
         }
-        val hByTs = HashMap<Int, HrTs>()
+        val hAt = DoubleArray(span)
+        val hHas = BooleanArray(span)
         for (h in hr) {
-            if (h.ts >= start && h.ts < end) hByTs[h.ts] = h
+            if (h.ts >= start && h.ts < end) {
+                hAt[h.ts - start] = h.bpm
+                hHas[h.ts - start] = true
+            }
         }
         val accel = MutableList(span) { AccelSample(start * 1000.0, 0.0, 0.0, 1.0) }
         val hr1hz = DoubleArray(span)
@@ -720,7 +738,7 @@ object AdvancedSleepStager {
         var lastRealIdx = -1
         for (i in 0 until span) {
             val ts = start + i
-            val g = gByTs[ts]
+            val g = gAt[i]
             if (g != null) {
                 accel[i] = AccelSample(ts * 1000.0, g.x, g.y, g.z)
                 lastRealIdx = i
@@ -730,7 +748,7 @@ object AdvancedSleepStager {
                 accel[i] = AccelSample(ts * 1000.0, p.x, p.y, p.z)
                 usable[i] = true
             }
-            hr1hz[i] = hByTs[ts]?.bpm ?: 0.0
+            hr1hz[i] = if (hHas[i]) hAt[i] else 0.0
         }
         val rrMs = ArrayList<Double>()
         val rrTsMs = ArrayList<Double>()

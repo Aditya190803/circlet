@@ -89,7 +89,7 @@ fun dayLoad(
         ).toCore()
     }
     val zones = zoneMinutes(clipped, profile, zone, date, now, restingHeartRateBpm, priorResting)
-    val kcal = dayCalories(clipped, profile, zone, date, now, restingHeartRateBpm, maxHr)
+    val kcal = dayCaloriesFromMinutes(minutes, profile, date, restingHeartRateBpm, maxHr)
     return DayLoad(Strain(strainMetric, zones), kcal, quietToday)
 }
 
@@ -163,12 +163,15 @@ fun zoneMinutes(
     priorResting: List<Double>,
 ): ZoneMinutes {
     val set = zoneSet(profile, date, priorResting, restingHeartRateBpm) ?: return ZoneMinutes.ZERO
-    val points = samples.upTo(now).mapNotNull { sample ->
-        val local = Instant.ofEpochSecond(sample.epochSecond).atZone(zone)
-        if (local.toLocalDate() != date) return@mapNotNull null
-        val bpm = sample.heartRateBpm ?: return@mapNotNull null
-        if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) return@mapNotNull null
-        HrPoint(sample.epochSecond * 1000.0, bpm.toDouble())
+    val range = dayRange(date, zone)
+    val nowSec = now.epochSecond
+    val points = ArrayList<HrPoint>()
+    for (sample in samples) {
+        val epoch = sample.epochSecond
+        if (epoch > nowSec || epoch !in range) continue
+        val bpm = sample.heartRateBpm ?: continue
+        if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) continue
+        points.add(HrPoint(epoch * 1000.0, bpm.toDouble()))
     }
     val time = HeartRateZones.timeInZone(points, set) ?: return ZoneMinutes.ZERO
     val rounded = time.toRoundedMinuteMap()
@@ -220,6 +223,28 @@ fun dayCalories(
     }
     val minutes = perMinuteBpm(samples.upTo(now), zone, date)
     if (minutes.none { it > 0 }) return Metric.absent(AbsentReason.NOT_WORN)
+    return dayCaloriesFromMinutes(minutes, profile, date, restingHeartRateBpm, maxHeartRateBpm)
+}
+
+/**
+ * [dayCalories] over an already-averaged minute table. The day engine's load
+ * already averaged the day, so the table is computed once and shared instead
+ * of scanning the samples a second time.
+ */
+internal fun dayCaloriesFromMinutes(
+    minutes: List<Double>,
+    profile: Profile,
+    date: LocalDate,
+    restingHeartRateBpm: Double?,
+    maxHeartRateBpm: Double?,
+): Metric<Int> {
+    val age = profile.ageOn(date)?.toDouble()
+    val weight = profile.weightKg
+    val height = profile.heightCm
+    if (age == null || weight == null || height == null || restingHeartRateBpm == null || maxHeartRateBpm == null) {
+        return Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
+    }
+    if (minutes.none { it > 0 }) return Metric.absent(AbsentReason.NOT_WORN)
     val energy = Calories.dailyEnergy(
         minutes,
         CalorieProfile(weight, height, age, calorieSex(profile.sex)),
@@ -230,6 +255,17 @@ fun dayCalories(
 }
 
 internal fun List<Sample>.upTo(now: Instant): List<Sample> = filter { it.epochSecond <= now.epochSecond }
+
+/**
+ * Epoch seconds of one local day. Exactly the instants whose local date is
+ * [date], daylight-saving transitions included, so filtering by range is the
+ * same as comparing local dates one sample at a time.
+ */
+internal fun dayRange(date: LocalDate, zone: ZoneId): LongRange {
+    val start = date.atStartOfDay(zone).toEpochSecond()
+    val end = date.plusDays(1).atStartOfDay(zone).toEpochSecond()
+    return start until end
+}
 
 internal fun perMinuteBpm(samples: List<Sample>, zone: ZoneId, date: LocalDate): List<Double> {
     val sums = DoubleArray(1440)

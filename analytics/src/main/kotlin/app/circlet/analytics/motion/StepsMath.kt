@@ -31,13 +31,15 @@ fun movementMinutes(
     personalDynFloorG: Double?,
     historyDaysAvailable: Int = 0,
 ): MotionDay {
-    val accel = samples.mapNotNull { sample ->
-        if (sample.epochSecond > now.epochSecond) return@mapNotNull null
-        val g = sample.gravity ?: return@mapNotNull null
-        val local = Instant.ofEpochSecond(sample.epochSecond).atZone(zone)
-        if (local.toLocalDate() != date) return@mapNotNull null
-        if (!SignalBounds.plausibleGravity(g)) return@mapNotNull null
-        AccelSample(sample.epochSecond * 1000.0, g.x.toDouble(), g.y.toDouble(), g.z.toDouble())
+    val nowSec = now.epochSecond
+    val range = dayRange(date, zone)
+    val accel = ArrayList<AccelSample>()
+    for (sample in samples) {
+        val epoch = sample.epochSecond
+        if (epoch > nowSec || epoch !in range) continue
+        val g = sample.gravity ?: continue
+        if (!SignalBounds.plausibleGravity(g)) continue
+        accel.add(AccelSample(epoch * 1000.0, g.x.toDouble(), g.y.toDouble(), g.z.toDouble()))
     }
     if (accel.isEmpty()) {
         val absent = Metric.absent<Int>(AbsentReason.NOT_WORN)
@@ -58,4 +60,15 @@ fun movementMinutes(
         activeMinutes = minutes,
         dynFloorG = personalDynFloorG,
     )
+}
+
+/**
+ * Epoch seconds of one local day. Exactly the instants whose local date is
+ * [date], daylight-saving transitions included, so filtering by range is the
+ * same as comparing local dates one sample at a time.
+ */
+private fun dayRange(date: LocalDate, zone: ZoneId): LongRange {
+    val start = date.atStartOfDay(zone).toEpochSecond()
+    val end = date.plusDays(1).atStartOfDay(zone).toEpochSecond()
+    return start until end
 }

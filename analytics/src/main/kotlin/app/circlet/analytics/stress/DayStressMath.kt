@@ -7,7 +7,11 @@ import app.circlet.core.DayStress
 import app.circlet.core.Metric
 import app.circlet.core.Sample
 import app.circlet.core.SignalBounds
+import app.circlet.core.StressBand
+import app.circlet.core.StressBandMinutes
 import app.circlet.core.StressPoint
+import app.circlet.core.stressBandOf
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -21,9 +25,11 @@ import java.time.ZoneId
 private const val NORMAL_UPPER_SI = 150.0
 
 fun dayStress(samples: List<Sample>, zone: ZoneId, date: LocalDate, now: Instant): DayStress {
-    val clipped = samples.filter { sample ->
-        sample.epochSecond <= now.epochSecond &&
-            Instant.ofEpochSecond(sample.epochSecond).atZone(zone).toLocalDate() == date
+    val nowSec = now.epochSecond
+    val range = dayRange(date, zone)
+    val clipped = ArrayList<Sample>()
+    for (sample in samples) {
+        if (sample.epochSecond <= nowSec && sample.epochSecond in range) clipped.add(sample)
     }
     val beats = beatsOf(clipped)
     if (beats == null) {
@@ -40,7 +46,34 @@ fun dayStress(samples: List<Sample>, zone: ZoneId, date: LocalDate, now: Instant
     val timeline = windows.map { StressPoint(Instant.ofEpochMilli(it.endTimeMs.toLong()), siToScore(it.si)) }
     val score = siToScore(median(windows.map { it.si })!!)
     val conf = (0.4 + windows.size / 60.0).coerceIn(0.4, 0.7)
-    return DayStress(Metric.of(score, confidenceTier(conf)), timeline)
+    return DayStress(Metric.of(score, confidenceTier(conf)), timeline, stressBandMinutes(timeline))
+}
+
+/**
+ * Whole minutes per stress band from a timeline. Each point counts until the
+ * next, capped at [maxGap] so a long pause (the strap off the wrist) does not
+ * count as time in a band. The cut-offs are the core [stressBandOf] bands, so
+ * this matches what the stress screen derived as a stand-in.
+ */
+internal fun stressBandMinutes(
+    timeline: List<StressPoint>,
+    maxGap: Duration = Duration.ofMinutes(10),
+): StressBandMinutes {
+    val seconds = LongArray(StressBand.values().size)
+    for (i in 0 until timeline.size - 1) {
+        val current = timeline[i]
+        val gap = Duration.between(current.at, timeline[i + 1].at)
+        if (!gap.isNegative && !gap.isZero) {
+            val counted = if (gap > maxGap) maxGap else gap
+            seconds[stressBandOf(current.score).ordinal] += counted.seconds
+        }
+    }
+    fun minutes(band: StressBand): Int = (seconds[band.ordinal] / 60).toInt()
+    return StressBandMinutes(
+        lowMinutes = minutes(StressBand.LOW),
+        mediumMinutes = minutes(StressBand.MEDIUM),
+        highMinutes = minutes(StressBand.HIGH),
+    )
 }
 
 /** Display map. SI 150 (top of Baevsky's normal band) lands at 50. */
@@ -50,7 +83,7 @@ internal fun siToScore(si: Double): Double {
 }
 
 private fun beatsOf(samples: List<Sample>): Pair<List<Double>, List<Double>>? {
-    val sorted = samples.sortedBy { it.epochSecond }
+    val sorted = if (samples.isEpochOrdered()) samples else samples.sortedBy { it.epochSecond }
     if (sorted.isEmpty()) return null
     val nn = ArrayList<Double>()
     val times = ArrayList<Double>()
@@ -66,4 +99,23 @@ private fun beatsOf(samples: List<Sample>): Pair<List<Double>, List<Double>>? {
         }
     }
     return if (nn.isEmpty()) null else nn to times
+}
+
+/** True when no record precedes an earlier one; such an input sorts to itself. */
+private fun List<Sample>.isEpochOrdered(): Boolean {
+    for (i in 1 until size) {
+        if (this[i].epochSecond < this[i - 1].epochSecond) return false
+    }
+    return true
+}
+
+/**
+ * Epoch seconds of one local day. Exactly the instants whose local date is
+ * [date], daylight-saving transitions included, so filtering by range is the
+ * same as comparing local dates one sample at a time.
+ */
+private fun dayRange(date: LocalDate, zone: ZoneId): LongRange {
+    val start = date.atStartOfDay(zone).toEpochSecond()
+    val end = date.plusDays(1).atStartOfDay(zone).toEpochSecond()
+    return start until end
 }

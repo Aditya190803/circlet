@@ -7,6 +7,7 @@ import app.circlet.analytics.foundations.OsMetric
 import app.circlet.analytics.foundations.Tier
 import app.circlet.analytics.foundations.freqGrid
 import app.circlet.analytics.foundations.lombScargle
+import app.circlet.analytics.foundations.orderedMap
 import app.circlet.analytics.foundations.round6
 import kotlin.math.ceil
 
@@ -45,12 +46,39 @@ data class HrvFreq(
  * resolve is null, never 0. HF (and total, LF/HF, nu) is withheld when
  * [artifactFraction] exceeds [hfArtifactGate].
  */
+/** Artifact fraction above which HF (and the figures built on it) is withheld. */
+const val HF_ARTIFACT_GATE_DEFAULT = 0.15
+
 fun hrvFreq(
     nnMs: List<Double>,
     nnTimesMs: List<Double>,
     artifactFraction: Double,
-    hfArtifactGate: Double = 0.15,
+    hfArtifactGate: Double = HF_ARTIFACT_GATE_DEFAULT,
     oversample: Double = 4.0,
+): OsMetric<HrvFreq> = hrvFreqBands(
+    nnMs,
+    nnTimesMs,
+    artifactFraction,
+    hfArtifactGate,
+    oversample,
+    wantUlf = true,
+    wantVlf = true,
+)
+
+/**
+ * [hrvFreq] with the slow bands optional. Each band is an independent Welch
+ * average, so asking only for LF and HF returns the same LF and HF the full
+ * call would. The day pipeline uses this: it keeps LF/HF/LF-HF and never
+ * reads ULF or VLF, and VLF's long segments are most of the work.
+ */
+internal fun hrvFreqBands(
+    nnMs: List<Double>,
+    nnTimesMs: List<Double>,
+    artifactFraction: Double,
+    hfArtifactGate: Double = HF_ARTIFACT_GATE_DEFAULT,
+    oversample: Double = 4.0,
+    wantUlf: Boolean = true,
+    wantVlf: Boolean = true,
 ): OsMetric<HrvFreq> {
     val inputs = listOf("rr_cleaned", "beat_times")
     if (nnMs.size < 16 || nnTimesMs.size != nnMs.size) {
@@ -69,8 +97,8 @@ fun hrvFreq(
             note = "degenerate beat times",
         )
     }
-    val ulf = welchBandPower(tSec, nnMs, 0.0003, 0.003, oversample = oversample)
-    val vlf = welchBandPower(tSec, nnMs, 0.003, 0.04, oversample = oversample)
+    val ulf = if (wantUlf) welchBandPower(tSec, nnMs, 0.0003, 0.003, oversample = oversample) else null
+    val vlf = if (wantVlf) welchBandPower(tSec, nnMs, 0.003, 0.04, oversample = oversample) else null
     val lf = welchBandPower(tSec, nnMs, 0.04, 0.15, oversample = oversample)
     val hfRaw = welchBandPower(tSec, nnMs, 0.15, 0.40, oversample = oversample)
     if (lf == null && hfRaw == null) {
@@ -157,38 +185,70 @@ private fun welchBandPower(
     val df = 1.0 / segSec / oversample
     val nGrid = ceil((hiHz - loHz) / df).toInt() + 1
     val grid = freqGrid(loHz, hiHz, nGrid)
-    var sum = 0.0
-    var k = 0
     val step = segSec / 2.0
+    val starts = ArrayList<Double>()
     var start = tSec.first()
     while (start + segSec <= tSec.last()) {
-        val end = start + segSec
-        val ts = ArrayList<Double>()
-        val ys = ArrayList<Double>()
-        for (i in tSec.indices) {
-            if (tSec[i] < start) continue
-            if (tSec[i] >= end) break
-            ts.add(tSec[i])
-            ys.add(y[i])
-        }
-        if (ts.size >= minPointsPerSegment && ts.last() - ts.first() >= segSec * 0.8) {
-            var maxGap = 0.0
-            for (i in 1 until ts.size) {
-                val g = ts[i] - ts[i - 1]
-                if (g > maxGap) maxGap = g
-            }
-            if (maxGap <= segSec * 0.2) {
-                val ls = lombScargle(ts, ys, grid)
-                if (ls != null) {
-                    val p = ls.bandPower(loHz, hiHz)
-                    if (p.isFinite()) {
-                        sum += p
-                        k++
-                    }
-                }
-            }
-        }
+        starts.add(start)
         start += step
     }
+    // Segments are independent; the average is folded in order, as before.
+    val powers = orderedMap(starts.size, minTotal = 8) { s ->
+        segmentBandPower(tSec, y, grid, loHz, hiHz, starts[s], segSec, minPointsPerSegment)
+    }
+    var sum = 0.0
+    var k = 0
+    for (power in powers) {
+        if (power != null && power.isFinite()) {
+            sum += power
+            k++
+        }
+    }
     return if (k == 0) null else sum / k
+}
+
+/**
+ * One Welch segment's band power, or null when the segment is too short,
+ * too thin, too gappy, or its spectrum is undefined.
+ */
+private fun segmentBandPower(
+    tSec: List<Double>,
+    y: List<Double>,
+    grid: List<Double>,
+    loHz: Double,
+    hiHz: Double,
+    start: Double,
+    segSec: Double,
+    minPointsPerSegment: Int,
+): Double? {
+    val end = start + segSec
+    val from = lowerBoundTime(tSec, start)
+    val ts = ArrayList<Double>()
+    val ys = ArrayList<Double>()
+    var i = from
+    while (i < tSec.size && tSec[i] < end) {
+        ts.add(tSec[i])
+        ys.add(y[i])
+        i++
+    }
+    if (ts.size < minPointsPerSegment || ts.last() - ts.first() < segSec * 0.8) return null
+    var maxGap = 0.0
+    for (i in 1 until ts.size) {
+        val g = ts[i] - ts[i - 1]
+        if (g > maxGap) maxGap = g
+    }
+    if (maxGap > segSec * 0.2) return null
+    val ls = lombScargle(ts, ys, grid) ?: return null
+    return ls.bandPower(loHz, hiHz)
+}
+
+/** First index with time >= [v]. Beat times ascend, so segments start in O(log n). */
+private fun lowerBoundTime(t: List<Double>, v: Double): Int {
+    var lo = 0
+    var hi = t.size
+    while (lo < hi) {
+        val m = (lo + hi) ushr 1
+        if (t[m] < v) lo = m + 1 else hi = m
+    }
+    return lo
 }

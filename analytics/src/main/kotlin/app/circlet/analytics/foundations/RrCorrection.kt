@@ -6,6 +6,8 @@
 
 package app.circlet.analytics.foundations
 
+import app.circlet.analytics.foundations.fillOrdered
+import java.util.Arrays
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -200,7 +202,22 @@ private fun beatTimes(
 /**
  * α times the quartile deviation of the signed series. The deviation is taken on the
  * signed values: folding onto |dRR| collapses it and the detector becomes a fixed 100 ms cut.
+ *
+ * The window sorts a reused thread-local buffer, so neither a boxed copy nor
+ * a fresh array is made per sample. The quartiles interpolate exactly like
+ * [percentile], and every index is independent, so the values match the
+ * boxed loop bit for bit.
  */
+private val slideScratch = ThreadLocal.withInitial { DoubleArray(128) }
+
+private fun scratchFor(size: Int): DoubleArray {
+    val have = slideScratch.get()
+    if (have.size >= size) return have
+    val bigger = DoubleArray(size)
+    slideScratch.set(bigger)
+    return bigger
+}
+
 private fun slidingThreshold(
     x: DoubleArray,
     win: Int,
@@ -210,14 +227,14 @@ private fun slidingThreshold(
     val n = x.size
     val out = DoubleArray(n)
     val half = win / 2
-    val seg = ArrayList<Double>(win)
-    for (i in 0 until n) {
+    fillOrdered(n, minTotal = 512) { i ->
         val lo = max(0, i - half)
         val hi = min(n - 1, i + half)
-        seg.clear()
-        for (k in lo..hi) seg.add(x[k])
-        val q1 = percentile(seg, 25.0) ?: 0.0
-        val q3 = percentile(seg, 75.0) ?: 0.0
+        val seg = scratchFor(hi - lo + 1)
+        for (k in lo..hi) seg[k - lo] = x[k]
+        Arrays.sort(seg, 0, hi - lo + 1)
+        val q1 = percentileSortedRange(seg, hi - lo + 1, 25.0)
+        val q3 = percentileSortedRange(seg, hi - lo + 1, 75.0)
         val qd = (q3 - q1) / 2.0
         out[i] = max(alpha * qd, floorMs)
     }
@@ -228,18 +245,37 @@ private fun slidingMedian(x: List<Double>, win: Int): DoubleArray {
     val n = x.size
     val out = DoubleArray(n)
     val half = win / 2
-    val seg = ArrayList<Double>(win)
-    for (i in 0 until n) {
+    fillOrdered(n, minTotal = 512) { i ->
         val lo = max(0, i - half)
         val hi = min(n - 1, i + half)
-        seg.clear()
+        val seg = scratchFor(hi - lo)
+        var m = 0
         for (k in lo..hi) {
             if (k == i) continue
-            seg.add(x[k])
+            seg[m++] = x[k]
         }
-        out[i] = median(seg) ?: x[i]
+        if (m == 0) {
+            out[i] = x[i]
+        } else {
+            Arrays.sort(seg, 0, m)
+            out[i] = percentileSortedRange(seg, m, 50.0)
+        }
     }
     return out
+}
+
+/**
+ * Linear-interpolated percentile of an already-ascending array prefix, the
+ * same interpolation [percentileSorted] applies to a sorted list.
+ */
+private fun percentileSortedRange(sorted: DoubleArray, size: Int, p: Double): Double {
+    if (size == 1) return sorted[0]
+    val rank = (p / 100.0) * (size - 1)
+    val lo = kotlin.math.floor(rank).toInt()
+    val hi = kotlin.math.ceil(rank).toInt()
+    if (lo == hi) return sorted[lo]
+    val frac = rank - lo
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 }
 
 /** Catmull–Rom at t = 0.5 between the nearest normal beats. Null when an anchor side is missing. */

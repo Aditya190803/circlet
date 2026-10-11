@@ -6,8 +6,8 @@ package app.circlet.analytics.sleep
 import app.circlet.analytics.foundations.AccelSample
 import app.circlet.analytics.foundations.OsMetric
 import app.circlet.analytics.foundations.Tier
-import app.circlet.analytics.foundations.median
 import app.circlet.analytics.foundations.round6
+import java.util.Arrays
 
 /** Index range [start, end) of the main nocturnal sleep, so [detectNaps] can carve it out. */
 data class SleepWindowSpan(val start: Int, val end: Int)
@@ -109,9 +109,24 @@ fun detectNaps(
             note = "too little data for nap detection (need ≥15 min)",
         )
     }
-
     val series = if (accel.size == n) accel else accel.subList(0, n)
-    val mask = immobilityMask(series)
+    return detectNapsWithMask(series, hr.subList(0, n), immobilityMask(series), mainSleep, wristOff, exclude)
+}
+
+/**
+ * [detectNaps] over a precomputed [mask]. The day pipeline stages the night
+ * and the naps off one mask instead of scanning the day twice; the mask is
+ * over the same samples with the same settings, so the naps are unchanged.
+ */
+internal fun detectNapsWithMask(
+    series: List<AccelSample>,
+    hr: List<Double>,
+    mask: ImmobilityMask,
+    mainSleep: SleepWindowSpan? = null,
+    wristOff: List<List<Int>> = emptyList(),
+    exclude: List<List<Int>> = emptyList(),
+): OsMetric<List<NapWindow>> {
+    val n = minOf(series.size, hr.size)
     val win = mask.sustainedSec
     val thr = mask.thresholdDeg
     val baseSec = (series[0].tsMs / 1000.0).toInt()
@@ -250,7 +265,7 @@ fun detectNaps(
             unverifiable++
             continue
         }
-        val medHr = median(boutHr)!!
+        val medHr = medianOf(boutHr)!!
 
         val awakeHr = ArrayList<Double>()
         for (k in awakeIdx) {
@@ -261,7 +276,7 @@ fun detectNaps(
             noBaseline++
             continue
         }
-        val baseline = median(awakeHr)!!
+        val baseline = medianOf(awakeHr)!!
         if (baseline <= 0.0) {
             noBaseline++
             continue
@@ -347,6 +362,23 @@ fun detectNaps(
         inputsUsed = napInputs,
         note = note,
     )
+}
+
+/**
+ * Median of one sample, interpolated exactly like median(): the callers stage
+ * the same naps, only without sorting a boxed copy per bout.
+ */
+private fun medianOf(values: List<Double>): Double? {
+    if (values.isEmpty()) return null
+    if (values.size == 1) return values[0]
+    val sorted = DoubleArray(values.size) { values[it] }
+    Arrays.sort(sorted)
+    val rank = 0.5 * (sorted.size - 1)
+    val lo = kotlin.math.floor(rank).toInt()
+    val hi = kotlin.math.ceil(rank).toInt()
+    if (lo == hi) return sorted[lo]
+    val frac = rank - lo
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 }
 
 /**

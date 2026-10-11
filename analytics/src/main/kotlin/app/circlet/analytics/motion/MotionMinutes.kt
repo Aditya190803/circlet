@@ -5,6 +5,7 @@ import app.circlet.analytics.support.mean
 import app.circlet.analytics.support.median
 import app.circlet.analytics.support.needBaselineNote
 import app.circlet.analytics.support.percentile
+import java.util.Arrays
 import kotlin.math.sqrt
 
 // dynAmp is ported from OpenStrap lib/src/onehz/motion/enmo.dart because
@@ -54,15 +55,40 @@ internal data class DailyMovementEstimate(
 internal fun calibrateGRef(mags: List<Double>): Double {
     if (mags.isEmpty()) return 1.0
     if (mags.size == 1) return if (mags.first() > 0) mags.first() else 1.0
-    val steps = ArrayList<Double>(mags.size)
-    for (i in 1 until mags.size) steps.add(kotlin.math.abs(mags[i] - mags[i - 1]))
-    val stepThresh = median(steps) ?: 0.0
-    val still = ArrayList<Double>()
+    // Primitive sorts, no boxed copies: the medians interpolate exactly like
+    // median(), so the reference is unchanged.
+    val steps = DoubleArray(mags.size - 1) { i -> kotlin.math.abs(mags[i + 1] - mags[i]) }
+    Arrays.sort(steps)
+    val stepThresh = percentileSortedArray(steps)
+    var stillCount = 0
     for (i in 1 until mags.size) {
-        if (kotlin.math.abs(mags[i] - mags[i - 1]) <= stepThresh) still.add(mags[i])
+        if (kotlin.math.abs(mags[i] - mags[i - 1]) <= stepThresh) stillCount++
     }
-    val g = (if (still.size >= 2) median(still) else median(mags)) ?: 1.0
+    val g = if (stillCount >= 2) {
+        val still = DoubleArray(stillCount)
+        var k = 0
+        for (i in 1 until mags.size) {
+            if (kotlin.math.abs(mags[i] - mags[i - 1]) <= stepThresh) still[k++] = mags[i]
+        }
+        Arrays.sort(still)
+        percentileSortedArray(still)
+    } else {
+        val all = DoubleArray(mags.size) { mags[it] }
+        Arrays.sort(all)
+        percentileSortedArray(all)
+    }
     return if (g > 0) g else 1.0
+}
+
+/** Median of an ascending array: the percentile() interpolation at p=50. */
+private fun percentileSortedArray(sorted: DoubleArray): Double {
+    if (sorted.size == 1) return sorted[0]
+    val rank = 0.5 * (sorted.size - 1)
+    val lo = kotlin.math.floor(rank).toInt()
+    val hi = kotlin.math.ceil(rank).toInt()
+    if (lo == hi) return sorted[lo]
+    val frac = rank - lo
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 }
 
 internal fun enmoSeries(
@@ -72,7 +98,10 @@ internal fun enmoSeries(
     gravityWindowS: Double = DEFAULT_GRAVITY_WINDOW_S,
     expectedMinutes: Int? = null,
 ): EnmoResult {
-    val valid = samples.filter { it.valid }.sortedBy { it.tsMs }
+    val valid = run {
+        val filtered = samples.filter { it.valid }
+        if (filtered.isOrdered()) filtered else filtered.sortedBy { it.tsMs }
+    }
     if (valid.isEmpty()) return EnmoResult(gRef ?: 1.0, emptyList(), 0.0)
     val mags = valid.map { sqrt(it.x * it.x + it.y * it.y + it.z * it.z) }
     val ref = gRef ?: calibrateGRef(mags)
@@ -222,4 +251,12 @@ internal fun dailyActiveMinutes(
         conf,
         "ESTIMATE: minutes of sustained wrist movement. Deliberately not a step count.",
     )
+}
+
+/** True when no sample precedes an earlier one; such an input sorts to itself. */
+private fun List<AccelSample>.isOrdered(): Boolean {
+    for (i in 1 until size) {
+        if (this[i].tsMs < this[i - 1].tsMs) return false
+    }
+    return true
 }
