@@ -5,6 +5,7 @@ import app.circlet.core.StrapState
 import app.circlet.core.SyncProgress
 import app.circlet.protocol.Frames
 import app.circlet.strap.link.NotifyRole
+import org.junit.Assert.assertTrue
 import app.circlet.strap.notify.statusLine
 import app.circlet.strap.wire.Inbound
 import app.circlet.strap.wire.ProtocolWire
@@ -50,6 +51,30 @@ class ProtocolWireTest {
         into[offset + 1] = ((bits ushr 8) and 0xFF).toByte()
         into[offset + 2] = ((bits ushr 16) and 0xFF).toByte()
         into[offset + 3] = ((bits ushr 24) and 0xFF).toByte()
+    }
+
+    @Test
+    fun aDataRangeReplyReportsTheStoredWindow() {
+        val body = ByteArray(65)
+        body[0] = 1
+        putU32(body, 33, 1_750_000_000L)
+        putU32(body, 57, 1_750_003_600L)
+        val inner = ByteArray(5 + body.size)
+        inner[0] = 0x24
+        inner[2] = 0x22
+        inner[4] = 1
+        body.copyInto(inner, 5)
+        val inbound = ProtocolWire().feed(NotifyRole.COMMANDS, Frames.wrap(inner)).single()
+        val range = inbound as Inbound.Range
+        assertEquals(3_600L, range.storedSeconds)
+        assertTrue(ProtocolWire().feed(NotifyRole.COMMANDS, Frames.wrap(byteArrayOf(0x24, 0, 0x22, 0, 1, 0))).single() is Inbound.Ignore)
+    }
+
+    private fun putU32(into: ByteArray, offset: Int, value: Long) {
+        into[offset] = (value and 0xFF).toByte()
+        into[offset + 1] = ((value ushr 8) and 0xFF).toByte()
+        into[offset + 2] = ((value ushr 16) and 0xFF).toByte()
+        into[offset + 3] = ((value ushr 24) and 0xFF).toByte()
     }
 
     @Test

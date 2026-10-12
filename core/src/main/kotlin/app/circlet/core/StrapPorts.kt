@@ -55,7 +55,11 @@ interface StrapPrefs {
     suspend fun setAlarms(alarms: List<StrapAlarm>)
 }
 
-/** Finished activities. The data module implements this. */
+/**
+ * Finished activities. The data module implements this.
+ * [saveLive] and [currentLive] persist the in-progress session, including a pause, across process death.
+ * The defaults do nothing so a store that only keeps finished activities still compiles.
+ */
 interface WorkoutStore {
     suspend fun insert(activity: Activity)
 
@@ -64,6 +68,10 @@ interface WorkoutStore {
     suspend fun delete(id: String)
 
     suspend fun get(id: String): Activity?
+
+    suspend fun saveLive(session: LiveSession?) {}
+
+    suspend fun currentLive(): LiveSession? = null
 }
 
 /**

@@ -8,8 +8,10 @@ import java.time.ZoneId
  * Everything required to compute one local day.
  *
  * [samples] run from 18:00 local on the day before [date] through the last
- * instant of [date], in [zone]. [history] holds at most 60 days before [date],
- * oldest first, and does not include [date]. [manualActivities] are workouts
+ * instant of [date], in [zone]. [history] is older than [date], oldest first, and does not
+ * include [date]. It is the previous 60 days when at least 14 of them carry a recovery score,
+ * and older days as well when the recent window is sparser than that, so an imported history
+ * still seeds the baseline. [manualActivities] are workouts
  * the user logged or edited; the result must keep their identity.
  * [now] is the instant the caller considers current. The engine does not read a clock.
  * [priorSkinTemp] holds settled skin-temp means (ADC counts) for nights before

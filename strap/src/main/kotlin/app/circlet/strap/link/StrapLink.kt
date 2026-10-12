@@ -17,6 +17,7 @@ import app.circlet.strap.alarm.AlarmRadio
 import app.circlet.strap.sync.DrainSchedule
 import app.circlet.strap.sync.DrainTrigger
 import app.circlet.strap.sync.EndResult
+import app.circlet.strap.sync.HISTORY_FLUSH_EVERY
 import app.circlet.strap.sync.HistoryDrain
 import app.circlet.strap.wire.Inbound
 import app.circlet.strap.wire.MetaKind
@@ -70,6 +71,8 @@ internal class StrapLink(
     private var workoutHeart = false
     private var heartOn = false
     private var samplesPulled = 0L
+    private var samplesBuffered = 0L
+    private var strapStoredSeconds: Long? = null
     private var drainAttempt = 0
     private var drainHeard = false
     private var lastDrainStart: Instant? = null
@@ -190,8 +193,14 @@ internal class StrapLink(
 
     override suspend fun syncNow(): Outcome<Unit> {
         if (ports.prefs.pairedAddress().isNullOrBlank()) return notPaired()
-        if (stateFlow.value.link != LinkState.CONNECTED) return strap(StrapError.LinkLost)
-        if (drain.open) return Outcome.Ok(Unit)
+        if (stateFlow.value.link != LinkState.CONNECTED) {
+            if (keep && reconnectJob?.isActive != true) kickReconnect()
+            return strap(StrapError.LinkLost)
+        }
+        if (drain.open) {
+            if (drain.awaitingStart && samplesPulled == 0L && samplesBuffered == 0L) restartQuietDrain()
+            return Outcome.Ok(Unit)
+        }
         requestDrain(DrainTrigger.MANUAL)
         return Outcome.Ok(Unit)
     }
@@ -200,6 +209,7 @@ internal class StrapLink(
         if (ports.prefs.pairedAddress().isNullOrBlank()) return notPaired()
         foregroundHeart = enabled
         reconcileHeart()
+        if (enabled) requestDrain(DrainTrigger.FOREGROUND)
         return Outcome.Ok(Unit)
     }
 
@@ -289,11 +299,12 @@ internal class StrapLink(
         livenessJob?.cancel()
         cancelDrainJobs()
         heartOn = false
+        samplesBuffered = 0
         publish {
             it.copy(
                 link = if (it.link == LinkState.UNPAIRED) LinkState.UNPAIRED else LinkState.DISCONNECTED,
                 liveHeartRateBpm = null,
-                sync = it.sync.copy(draining = false),
+                sync = sync(false),
                 error = StrapError.BluetoothOff,
             )
         }
@@ -303,6 +314,7 @@ internal class StrapLink(
         if (!keep || opening) return
         if (stateFlow.value.link == LinkState.UNPAIRED) return
         heartOn = false
+        samplesBuffered = 0
         cancelDrainJobs()
         drain.onDisconnect()
         periodicJob?.cancel()
@@ -311,7 +323,7 @@ internal class StrapLink(
             it.copy(
                 link = LinkState.RECONNECTING,
                 liveHeartRateBpm = null,
-                sync = it.sync.copy(draining = false),
+                sync = sync(false),
                 error = StrapError.LinkLost,
             )
         }
@@ -428,12 +440,35 @@ internal class StrapLink(
 
     private fun armDrainState() {
         samplesPulled = 0
+        samplesBuffered = 0
         drainHeard = false
         drain.begin()
         lastDrainStart = time.now()
-        publish { it.copy(sync = SyncProgress(samplesPulled, draining = true), error = null) }
+        publish { it.copy(sync = sync(true), error = null) }
         armStall()
         armIdle()
+    }
+
+    /**
+     * A manual sync found a drain that was announced and has still received nothing.
+     * Abort it and ask again now, instead of waiting out the stall timer.
+     */
+    private suspend fun restartQuietDrain() {
+        cancelDrainJobs()
+        drainAttempt = 0
+        drainHeard = false
+        samplesBuffered = 0
+        drain.abortOpen()
+        if (write(wire.abort(seq.live())) !is Outcome.Ok) {
+            retryDrain()
+            return
+        }
+        sleep(300)
+        if (!keep || stateFlow.value.link != LinkState.CONNECTED || !drain.open) return
+        armStall()
+        armIdle()
+        publish { it.copy(sync = sync(true)) }
+        if (write(wire.historical(seq.live())) !is Outcome.Ok) retryDrain()
     }
 
     private fun armStall() {
@@ -455,6 +490,7 @@ internal class StrapLink(
     private fun retryDrain() {
         cancelDrainJobs()
         drain.abortOpen()
+        samplesBuffered = 0
         drainAttempt++
         // A strap with nothing new to hand over stays silent after the request. Two
         // unanswered asks on a live link mean it is up to date, which is not a fault.
@@ -465,7 +501,7 @@ internal class StrapLink(
             if (alive) scope.launch { ports.prefs.setLastSync(now) }
             publish {
                 it.copy(
-                    sync = stateFlow.value.sync.copy(draining = false),
+                    sync = sync(false),
                     lastSync = if (alive) now else it.lastSync,
                     error = null,
                 )
@@ -476,7 +512,7 @@ internal class StrapLink(
             // A drain that started and then stalled is picked up by the next periodic
             // drain; the records already committed are kept. It is not shown as an error.
             drain.abandon()
-            publish { it.copy(sync = stateFlow.value.sync.copy(draining = false), error = null) }
+            publish { it.copy(sync = sync(false), error = null) }
             return
         }
         val wait = Backoff.delay(drainAttempt).toMillis()
@@ -488,7 +524,7 @@ internal class StrapLink(
             if (!drain.open) return@launch
             armStall()
             armIdle()
-            publish { it.copy(sync = SyncProgress(samplesPulled, draining = true)) }
+            publish { it.copy(sync = sync(true)) }
             write(wire.historical(seq.live()))
         }
     }
@@ -513,17 +549,32 @@ internal class StrapLink(
                 ports.prefs.setStrapName(inbound.name)
                 publish { it.copy(name = inbound.name) }
             }
-            is Inbound.Sampled -> {
-                drainHeard = true
-                drain.onRecord(inbound.sample, inbound.raw)
-                stallJob?.cancel()
-                armIdle()
-            }
+            is Inbound.Sampled -> onSample(inbound)
             is Inbound.Heart -> onHeart(inbound.bpm)
             is Inbound.Meta -> onMeta(inbound)
             is Inbound.Signal -> onSignal(inbound)
+            is Inbound.Range -> {
+                val stored = inbound.storedSeconds ?: return
+                strapStoredSeconds = stored
+                publish { it.copy(sync = sync(it.sync.draining)) }
+            }
             Inbound.Ignore -> Unit
         }
+    }
+
+    private suspend fun onSample(inbound: Inbound.Sampled) {
+        drainHeard = true
+        val before = drain.bufferedSamples()
+        drain.onRecord(inbound.sample, inbound.raw)
+        val pending = drain.bufferedSamples()
+        stallJob?.cancel()
+        armIdle()
+        val flushed = if (pending >= HISTORY_FLUSH_EVERY) drain.flush() else 0
+        if (flushed > 0) samplesPulled += flushed
+        val buffered = drain.bufferedSamples()
+        val moved = flushed > 0 || (pending > 0 && (before == 0 || buffered % 10 == 0))
+        samplesBuffered = buffered.toLong()
+        if (moved) publish { it.copy(sync = sync(true)) }
     }
 
     private suspend fun onMeta(meta: Inbound.Meta) {
@@ -539,9 +590,10 @@ internal class StrapLink(
                 when (val result = drain.onEnd(token)) {
                     is EndResult.Ack -> {
                         samplesPulled += result.committed
+                        samplesBuffered = drain.bufferedSamples().toLong()
                         val now = time.now()
                         ports.prefs.setLastSync(now)
-                        publish { it.copy(sync = SyncProgress(samplesPulled, draining = true), lastSync = now) }
+                        publish { it.copy(sync = sync(true), lastSync = now) }
                         if (write(wire.historyAck(seq.ack(), result.token)) is Outcome.Ok) drain.ackLanded()
                         armIdle()
                     }
@@ -553,10 +605,11 @@ internal class StrapLink(
             }
             MetaKind.COMPLETE -> {
                 drain.onComplete()
+                samplesBuffered = 0
                 cancelDrainJobs()
                 val now = time.now()
                 ports.prefs.setLastSync(now)
-                publish { it.copy(sync = SyncProgress(samplesPulled, draining = false), lastSync = now) }
+                publish { it.copy(sync = sync(false), lastSync = now) }
             }
         }
     }
@@ -645,6 +698,13 @@ internal class StrapLink(
         if (epochSecond <= 0L) return true
         return abs(time.now().epochSecond - epochSecond) <= 1800
     }
+
+    private fun sync(draining: Boolean): SyncProgress = SyncProgress(
+        samplesPulled = samplesPulled,
+        draining = draining,
+        samplesBuffered = samplesBuffered,
+        strapStoredSeconds = strapStoredSeconds,
+    )
 
     private fun publish(block: (StrapState) -> StrapState) {
         val next = block(stateFlow.value)

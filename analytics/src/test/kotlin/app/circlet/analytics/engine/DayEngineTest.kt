@@ -3,17 +3,24 @@ package app.circlet.analytics.engine
 import app.circlet.core.AbsentReason
 import app.circlet.core.ActivitySource
 import app.circlet.core.CalibrationStatus
+import app.circlet.core.Confidence
 import app.circlet.core.DayInput
 import app.circlet.core.DaySummary
 import app.circlet.core.GravityVector
 import app.circlet.core.Profile
+import app.circlet.core.Recovery
+import app.circlet.core.RespiratoryRate
+import app.circlet.core.RestingHeartRate
 import app.circlet.core.Sample
 import app.circlet.core.Sex
 import app.circlet.core.SkinTempFlag
+import app.circlet.core.SleepPerformance
 import app.circlet.core.Sport
 import app.circlet.core.Activity
 import app.circlet.core.Metric
+import app.circlet.core.WorkoutPause
 import app.circlet.core.ZoneMinutes
+import app.circlet.core.emptyDay
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -125,6 +132,65 @@ class DayEngineTest {
         assertNull(kept.sportConfidence)
         assertEquals(start, kept.start)
         assertNotNull(kept.averageHeartRateBpm.value)
+    }
+
+    @Test
+    fun pausedSamplesAreLeftOutOfTheActivity() {
+        val start = date.atTime(12, 0).atZone(zone).toInstant()
+        val pauseStart = start.plusSeconds(30)
+        val pauseEnd = start.plusSeconds(90)
+        val end = start.plusSeconds(120)
+        val samples = (0 until 120).map { second ->
+            val bpm = if (second in 30 until 90) 180 else 100
+            sample(start.epochSecond + second, bpm, emptyList(), moving = true)
+        }
+        val manual = logged("paused", start, end, listOf(WorkoutPause(pauseStart, pauseEnd)))
+        val now = end.plusSeconds(30)
+        val summary = engine.computeDay(input(date, samples, now, emptyList(), manual = listOf(manual)))
+        val kept = summary.activities.single { it.id == "paused" }
+        assertEquals(100, kept.averageHeartRateBpm.value)
+        assertEquals(100, kept.maxHeartRateBpm.value)
+        assertEquals(60L, kept.pausedSeconds)
+        assertEquals(start, kept.start)
+        assertEquals(end, kept.end)
+    }
+
+    @Test
+    fun anEditedWindowIsScoredFromTheSamplesInsideIt() {
+        val start = date.atTime(12, 0).atZone(zone).toInstant()
+        val earlyEnd = start.plusSeconds(59)
+        val lateStart = start.plusSeconds(60)
+        val end = start.plusSeconds(119)
+        val samples = (0 until 120).map { second ->
+            sample(start.epochSecond + second, if (second < 60) 90 else 150, emptyList(), moving = true)
+        }
+        val now = end.plusSeconds(30)
+        val summary = engine.computeDay(
+            input(
+                date,
+                samples,
+                now,
+                emptyList(),
+                manual = listOf(logged("early", start, earlyEnd), logged("late", lateStart, end)),
+            ),
+        )
+        assertEquals(90, summary.activities.single { it.id == "early" }.averageHeartRateBpm.value)
+        assertEquals(150, summary.activities.single { it.id == "late" }.averageHeartRateBpm.value)
+        assertEquals(150, summary.activities.single { it.id == "late" }.maxHeartRateBpm.value)
+    }
+
+    @Test
+    fun fourteenImportedRecoveryNightsLeaveTheNextDayReady() {
+        val history = (14 downTo 1).map { ago ->
+            importedNight(date.minusDays(ago.toLong()), 50 + ago, 40.0 + ago, 48 + (ago % 5), 14.0 + ago * 0.1, 70 + ago)
+        }
+        val now = date.plusDays(1).atStartOfDay(zone).toInstant()
+        assertEquals(6, engine.algorithmVersion)
+        val summary = engine.computeDay(input(date, daySamples(date, 0, includeRun = false), now, history))
+        assertEquals(CalibrationStatus.READY, summary.recovery.calibration)
+        assertNotNull(summary.recovery.score.value)
+        val short = engine.computeDay(input(date, emptyList(), now, history.take(13)))
+        assertEquals(CalibrationStatus.CALIBRATING, short.recovery.calibration)
     }
 
     @Test
@@ -289,6 +355,48 @@ class DayEngineTest {
             if (second in from until until) beats.getOrPut(second) { ArrayList() }.add(rr)
             i++
         }
+    }
+
+    private fun logged(
+        id: String,
+        start: Instant,
+        end: Instant,
+        pauses: List<WorkoutPause> = emptyList(),
+    ) = Activity(
+        id = id,
+        source = ActivitySource.MANUAL,
+        sport = Sport.YOGA,
+        sportConfidence = null,
+        start = start,
+        end = end,
+        strain = Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
+        averageHeartRateBpm = Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
+        maxHeartRateBpm = Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
+        calories = Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
+        zoneMinutes = ZoneMinutes.ZERO,
+        heartRateRecovery = null,
+        pausedSeconds = pauses.sumOf { java.time.Duration.between(it.start, it.end).seconds.coerceAtLeast(0) },
+        pauses = pauses,
+    )
+
+    private fun importedNight(
+        day: LocalDate,
+        recovery: Int,
+        hrv: Double,
+        resting: Int,
+        respiratory: Double,
+        sleep: Int,
+    ): DaySummary {
+        val base = emptyDay(day, AbsentReason.NOT_ENOUGH_DATA, CalibrationStatus.READY)
+        return base.copy(
+            recovery = Recovery(Metric.of(recovery, Confidence.MEDIUM), CalibrationStatus.READY, base.recovery.drivers),
+            heart = base.heart.copy(
+                resting = RestingHeartRate(Metric.of(resting, Confidence.MEDIUM)),
+                hrv = base.heart.hrv.copy(rmssdMs = Metric.of(hrv, Confidence.MEDIUM)),
+                respiratoryRate = RespiratoryRate(Metric.of(respiratory, Confidence.MEDIUM)),
+            ),
+            sleepPerformance = SleepPerformance(Metric.of(sleep, Confidence.MEDIUM)),
+        )
     }
 
     private fun sample(epoch: Long, hr: Int, rr: List<Int>, moving: Boolean): Sample {

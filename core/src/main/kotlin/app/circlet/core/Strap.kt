@@ -17,10 +17,16 @@ enum class LinkState {
  * History drain progress.
  * [samplesPulled] is the number of 1 Hz samples committed by the current or latest drain.
  * [draining] is true only while a drain is running.
+ * [samplesBuffered] is samples received in the open batch and not committed yet.
+ * [strapStoredSeconds] is newest minus oldest from the strap's data-range reply:
+ * how much history the strap is holding, not how much of this drain is left, and not a percentage.
+ * Null until that reply has been read.
  */
 data class SyncProgress(
     val samplesPulled: Long,
     val draining: Boolean,
+    val samplesBuffered: Long = 0,
+    val strapStoredSeconds: Long? = null,
 )
 
 /** A typed strap failure. [detail] on [Rejected] is safe to show. */

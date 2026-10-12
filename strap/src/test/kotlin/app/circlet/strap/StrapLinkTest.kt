@@ -7,6 +7,7 @@ import app.circlet.core.FoundStrap
 import app.circlet.core.LinkState
 import app.circlet.core.Outcome
 import app.circlet.core.StrapError
+import app.circlet.protocol.Frames
 import app.circlet.strap.link.GattOperationQueue
 import app.circlet.strap.link.NotifyRole
 import app.circlet.strap.link.StrapLink
@@ -134,6 +135,66 @@ class StrapLinkTest {
     }
 
     @Test
+    fun aManualSyncRestartsADrainThatHasNotStarted() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        val historical = rig.transport.writes.count { opcodeOf(it) == 0x16 }
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        assertTrue(rig.link.syncNow() is Outcome.Ok)
+        runCurrent()
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        assertEquals(historical + 1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertEquals(true, rig.link.state.value.sync.draining)
+        assertEquals(0L, rig.link.state.value.sync.samplesPulled)
+    }
+
+    @Test
+    fun theStoredWindowIsPublishedBeforeAnySample() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.COMMANDS, dataRangeFrame(1_750_000_000L, 1_750_003_600L))
+        runCurrent()
+        assertEquals(3_600L, rig.link.state.value.sync.strapStoredSeconds)
+        assertEquals(0L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(true, rig.link.state.value.sync.draining)
+    }
+
+    @Test
+    fun samplesCountAsSoonAsAMinuteIsCommitted() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, heartFrame())
+        runCurrent()
+        assertEquals(1L, rig.link.state.value.sync.samplesBuffered)
+        assertEquals(0L, rig.link.state.value.sync.samplesPulled)
+        repeat(59) { rig.transport.emit(NotifyRole.DATA, heartFrame()) }
+        runCurrent()
+        assertEquals(60L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(0L, rig.link.state.value.sync.samplesBuffered)
+        assertEquals(true, rig.link.state.value.sync.draining)
+    }
+
+    @Test
+    fun openingTheAppAsksForHistoryAgainAfterAMinute() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        assertEquals(false, rig.link.state.value.sync.draining)
+        val historical = rig.transport.writes.count { opcodeOf(it) == 0x16 }
+        rig.time.advance(Duration.ofSeconds(60))
+        assertTrue(rig.link.setLiveHeartRate(true) is Outcome.Ok)
+        runCurrent()
+        assertEquals(historical + 1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertEquals(true, rig.link.state.value.sync.draining)
+    }
+
+    @Test
     fun liveHeartRateTurnsOffWhenNobodyNeedsIt() = runTest {
         val rig = rig()
         rig.link.pair(strap)
@@ -195,6 +256,34 @@ class StrapLinkTest {
 
     private fun realtimeBodies(rig: Rig): List<Int> =
         rig.transport.writes.filter { opcodeOf(it) == 0x03 }.map { innerOf(it)[3].toInt() and 0xFF }
+
+    private fun dataRangeFrame(oldest: Long, newest: Long): ByteArray {
+        val body = ByteArray(65)
+        body[0] = 1
+        putU32(body, 33, oldest)
+        putU32(body, 57, newest)
+        val inner = ByteArray(5 + body.size)
+        inner[0] = 0x24
+        inner[2] = 0x22
+        inner[4] = 1
+        body.copyInto(inner, 5)
+        return Frames.wrap(inner)
+    }
+
+    private fun heartFrame(): ByteArray {
+        val inner = ByteArray(96)
+        inner[0] = 0x2F
+        inner[1] = 24
+        inner[17] = 60
+        return Frames.wrap(inner)
+    }
+
+    private fun putU32(into: ByteArray, offset: Int, value: Long) {
+        into[offset] = (value and 0xFF).toByte()
+        into[offset + 1] = ((value ushr 8) and 0xFF).toByte()
+        into[offset + 2] = ((value ushr 16) and 0xFF).toByte()
+        into[offset + 3] = ((value ushr 24) and 0xFF).toByte()
+    }
 
     private class Rig(
         val link: StrapLink,

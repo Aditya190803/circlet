@@ -4,6 +4,8 @@ import app.circlet.core.AbsentReason
 import app.circlet.core.Activity
 import app.circlet.core.ActivitySource
 import app.circlet.core.Confidence
+import app.circlet.core.LiveWorkout
+import app.circlet.core.WorkoutPause
 import app.circlet.core.GravityVector
 import app.circlet.core.HealthKind
 import app.circlet.core.Metric
@@ -21,7 +23,9 @@ import app.circlet.core.SkinTemperature
 import app.circlet.core.Sport
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.emptyDay
+import app.circlet.data.codec.ActivityCodec
 import app.circlet.data.codec.DayCodec
+import app.circlet.data.codec.LiveCodec
 import app.circlet.data.codec.packGravity
 import app.circlet.data.codec.packRr
 import app.circlet.data.codec.toEntity
@@ -224,6 +228,61 @@ class PureTest {
         assertEquals(writes.map { it.clientRecordId }.toSet(), firstPass)
         assertEquals(firstPass, secondPass)
         assertEquals(writes.size * 2, client.inserted.size)
+    }
+
+    @Test
+    fun pauseFieldsRoundTripAndOldRowsDecodeWithoutThem() {
+        val start = Instant.parse("2026-06-15T12:00:00Z")
+        val pause = WorkoutPause(start.plusSeconds(10), start.plusSeconds(40))
+        val live = LiveWorkout(
+            sport = Sport.YOGA,
+            startedAt = start,
+            heartRateBpm = 110,
+            strain = 1.5,
+            caloriesKcal = 12,
+            zoneMinutes = ZoneMinutes.ZERO,
+            averageHeartRateBpm = 100,
+            maxHeartRateBpm = 110,
+            pausedAt = start.plusSeconds(50),
+            pausedSeconds = 30,
+            pauses = listOf(pause),
+        )
+        val stored = LiveCodec.decode(LiveCodec.encode(live, 2, start.toEpochMilli(), listOf(100, 110)))
+        assertEquals(live, stored.workout)
+        assertEquals(listOf(100, 110), stored.beats)
+        assertEquals(2, stored.samples)
+
+        val oldLive = """{"sport":"YOGA","startedAt":${start.toEpochMilli()},"strain":1.5,"calories":12,"zones":[0,0,0,0,0,0],"samples":4,"lastTick":${start.toEpochMilli()}}"""
+        val legacy = LiveCodec.decode(oldLive)
+        assertNull(legacy.workout.pausedAt)
+        assertEquals(0L, legacy.workout.pausedSeconds)
+        assertTrue(legacy.workout.pauses.isEmpty())
+        assertTrue(legacy.beats.isEmpty())
+        assertEquals(4, legacy.samples)
+
+        val activity = Activity(
+            id = "paused",
+            source = ActivitySource.MANUAL,
+            sport = Sport.YOGA,
+            sportConfidence = null,
+            start = start,
+            end = start.plusSeconds(120),
+            strain = Metric.of(2.0, Confidence.LOW),
+            averageHeartRateBpm = Metric.of(100, Confidence.LOW),
+            maxHeartRateBpm = Metric.of(110, Confidence.LOW),
+            calories = Metric.of(20, Confidence.LOW),
+            zoneMinutes = ZoneMinutes.ZERO,
+            heartRateRecovery = null,
+            pausedSeconds = 30,
+            pauses = listOf(pause),
+        )
+        assertEquals(activity, ActivityCodec.decode(ActivityCodec.encode(activity)))
+
+        val oldActivity = """{"id":"old","source":"MANUAL","sport":"YOGA","start":${start.toEpochMilli()},"end":${start.plusSeconds(60).toEpochMilli()},"strain":{"confidence":"LOW","absent":"NOT_ENOUGH_DATA"},"average":{"confidence":"LOW","absent":"NOT_ENOUGH_DATA"},"max":{"confidence":"LOW","absent":"NOT_ENOUGH_DATA"},"calories":{"confidence":"LOW","absent":"NOT_ENOUGH_DATA"},"zones":[0,0,0,0,0,0]}"""
+        val decoded = ActivityCodec.decode(oldActivity)
+        assertEquals(0L, decoded.pausedSeconds)
+        assertTrue(decoded.pauses.isEmpty())
+        assertEquals("old", decoded.id)
     }
 
     private fun measuredDay() = run {

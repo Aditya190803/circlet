@@ -32,6 +32,7 @@ import app.circlet.core.PersonalRecord
 import app.circlet.core.Profile
 import app.circlet.core.ProfileRepository
 import app.circlet.core.reading
+import app.circlet.core.rejectedActivityWindow
 import app.circlet.core.RecordKind
 import app.circlet.core.ScheduledAlarm
 import app.circlet.core.SettingsRepository
@@ -375,9 +376,8 @@ class FakeCirclet(
 
     override suspend fun resume(): Outcome<Unit> {
         val session = liveState.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
-        val since = session.pausedAt ?: return Outcome.Err(CoreError.Invalid("workout is not paused"))
-        val added = Duration.between(since, time.now()).seconds.coerceAtLeast(0)
-        liveState.value = session.copy(pausedAt = null, pausedSeconds = session.pausedSeconds + added)
+        if (session.pausedAt == null) return Outcome.Err(CoreError.Invalid("workout is not paused"))
+        liveState.value = session.closingPause(time.now())
         return Outcome.Ok(Unit)
     }
 
@@ -385,7 +385,8 @@ class FakeCirclet(
         val session = liveState.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
         val end = time.now()
         if (!end.isAfter(session.startedAt)) return Outcome.Err(CoreError.Invalid("workout is too short"))
-        val minutes = session.activeDuration(end).toMinutes().toInt().coerceAtLeast(1)
+        val closed = session.closingPause(end)
+        val minutes = closed.activeDuration(end).toMinutes().toInt().coerceAtLeast(1)
         val activity = Activity(
             id = "live-${session.startedAt.epochSecond}",
             source = ActivitySource.MANUAL,
@@ -394,11 +395,13 @@ class FakeCirclet(
             start = session.startedAt,
             end = end,
             strain = Metric.of(min(21.0, minutes / 8.0), Confidence.LOW),
-            averageHeartRateBpm = Metric.of(session.averageHeartRateBpm ?: 120, Confidence.LOW),
-            maxHeartRateBpm = Metric.of(session.maxHeartRateBpm ?: 140, Confidence.LOW),
+            averageHeartRateBpm = Metric.of(closed.averageHeartRateBpm ?: 120, Confidence.LOW),
+            maxHeartRateBpm = Metric.of(closed.maxHeartRateBpm ?: 140, Confidence.LOW),
             calories = Metric.of(minutes * 8, Confidence.LOW),
             zoneMinutes = ZoneMinutes.of(0, 0, minutes, 0, 0, 0),
             heartRateRecovery = null,
+            pausedSeconds = closed.pausedSeconds,
+            pauses = closed.pauses,
         )
         liveState.value = null
         val date = session.startedAt.atZone(time.zone()).toLocalDate()
@@ -408,6 +411,8 @@ class FakeCirclet(
     }
 
     override suspend fun edit(activity: Activity): Outcome<Unit> {
+        val window = rejectedActivityWindow(activity.start, activity.end, time.now())
+        if (window != null) return Outcome.Err(CoreError.Invalid(window))
         val located = find(activity.id) ?: return Outcome.Err(CoreError.Invalid("no activity with that id"))
         val date = activity.start.atZone(time.zone()).toLocalDate()
         val without = days.value[located.first]?.let { it.copy(activities = it.activities.filter { item -> item.id != activity.id }) }

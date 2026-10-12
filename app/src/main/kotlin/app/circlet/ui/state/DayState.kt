@@ -59,7 +59,7 @@ sealed interface Notice {
 
 /**
  * Everything Home and the three detail screens draw for the selected date.
- * [history] is up to thirty days ending on [date], oldest first, and is empty while loading.
+ * [history] is up to sixty days ending on [date], oldest first, and is empty while loading.
  */
 data class DayUiState(
     val date: LocalDate,
@@ -112,7 +112,7 @@ val DaySummary.hasData: Boolean
 private val DaySummary.emptyReason: AbsentReason
     get() = strain.score.absentReason ?: sleep.absentReason ?: AbsentReason.NOT_ENOUGH_DATA
 
-private const val HISTORY_DAYS = 30L
+private const val HISTORY_DAYS = 60L
 
 /** The day state for whichever date [dates] carries. Shared by the view model and the debug gallery. */
 @OptIn(ExperimentalCoroutinesApi::class)

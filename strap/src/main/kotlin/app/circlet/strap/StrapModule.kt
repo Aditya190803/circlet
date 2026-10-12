@@ -66,12 +66,16 @@ object StrapModule {
         )
         val alarms = StrapAlarms(ports.prefs, time, ports.sleepStage, ports.doubleTap, link)
         val workouts = StrapWorkouts(ports.workouts, time, ports.liveLoad, link)
-        link.onSessionReady = { alarms.onConnected() }
+        link.onSessionReady = {
+            alarms.onConnected()
+            workouts.onConnected()
+        }
         link.onDoubleTap = { alarms.onDoubleTap() }
         link.onAlarmFired = { alarms.onFired() }
         alarms.watch(scope)
         scope.launch {
             alarms.load()
+            workouts.restore()
             link.start()
             val address = ports.prefs.pairedAddress()
             if (!address.isNullOrBlank()) StrapCompanion.observeIfAssociated(context, address)

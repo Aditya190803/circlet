@@ -5,6 +5,7 @@ import app.circlet.core.Activity
 import app.circlet.core.ActivitySource
 import app.circlet.core.Confidence
 import app.circlet.core.CoreError
+import app.circlet.core.LiveSession
 import app.circlet.core.LiveStrainEstimator
 import app.circlet.core.LiveWorkout
 import app.circlet.core.Metric
@@ -14,7 +15,7 @@ import app.circlet.core.TimeSource
 import app.circlet.core.WorkoutController
 import app.circlet.core.WorkoutStore
 import app.circlet.core.ZoneMinutes
-import java.time.Duration
+import app.circlet.core.rejectedActivityWindow
 import java.util.UUID
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,8 +35,9 @@ internal class StrapWorkouts(
     private val heart: HeartDemand,
 ) : WorkoutController {
     private val liveState = MutableStateFlow<LiveWorkout?>(null)
-    private val rates = ArrayList<Int>()
+    private val beats = ArrayList<Int>()
     private val gate = Mutex()
+    private val heartLock = Any()
 
     override val live: StateFlow<LiveWorkout?> = liveState
 
@@ -49,8 +51,7 @@ internal class StrapWorkouts(
             if (liveState.value != null) return busy()
             val streaming = heart.setWorkout(true)
             if (streaming is Outcome.Err) return streaming
-            rates.clear()
-            liveState.value = LiveWorkout(
+            val workout = LiveWorkout(
                 sport = sport,
                 startedAt = time.now(),
                 heartRateBpm = null,
@@ -60,43 +61,104 @@ internal class StrapWorkouts(
                 averageHeartRateBpm = null,
                 maxHeartRateBpm = null,
             )
+            synchronized(heartLock) {
+                beats.clear()
+                liveState.value = workout
+            }
+            store.saveLive(LiveSession(workout, emptyList()))
             return Outcome.Ok(Unit)
         } finally {
             gate.unlock()
         }
     }
 
-    // TODO(pause): placeholder so the module compiles; the real pause and resume replace these.
-    override suspend fun pause(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+    /** Reloads a session saved before process death. Safe to call when nothing was saved. */
+    internal suspend fun restore() {
+        val saved = store.currentLive() ?: return
+        if (!gate.tryLock()) return
+        try {
+            synchronized(heartLock) {
+                if (liveState.value != null) return@synchronized
+                beats.clear()
+                beats.addAll(saved.beats)
+                liveState.value = saved.workout
+            }
+        } finally {
+            gate.unlock()
+        }
+    }
 
-    override suspend fun resume(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+    /** Asks for live heart rate again once the link is up, if a session was restored. */
+    internal suspend fun onConnected() {
+        if (liveState.value != null) heart.setWorkout(true)
+    }
+
+    override suspend fun pause(): Outcome<Unit> {
+        if (!gate.tryLock()) return busy()
+        try {
+            val saved = synchronized(heartLock) {
+                val session = liveState.value ?: return invalid("no workout is running")
+                if (session.paused) return invalid("workout is already paused")
+                val paused = session.copy(pausedAt = time.now())
+                liveState.value = paused
+                LiveSession(paused, beats.toList())
+            }
+            store.saveLive(saved)
+            return Outcome.Ok(Unit)
+        } finally {
+            gate.unlock()
+        }
+    }
+
+    override suspend fun resume(): Outcome<Unit> {
+        if (!gate.tryLock()) return busy()
+        try {
+            val saved = synchronized(heartLock) {
+                val session = liveState.value ?: return invalid("no workout is running")
+                if (!session.paused) return invalid("workout is not paused")
+                val running = session.closingPause(time.now())
+                liveState.value = running
+                LiveSession(running, beats.toList())
+            }
+            store.saveLive(saved)
+            return Outcome.Ok(Unit)
+        } finally {
+            gate.unlock()
+        }
+    }
 
     override suspend fun stop(): Outcome<Activity> {
         if (!gate.tryLock()) return busy()
         try {
-            val current = liveState.value ?: return invalid("No workout is being recorded")
+            if (liveState.value == null) return invalid("No workout is being recorded")
             heart.setWorkout(false)
-            val end = time.now()
-            val elapsed = Duration.between(current.startedAt, end).coerceAtLeast(Duration.ZERO)
-            val snapshot = rates.toList()
-            val numbers = estimator.load(elapsed, snapshot)
-            val activity = Activity(
-                id = UUID.randomUUID().toString(),
-                source = ActivitySource.MANUAL,
-                sport = current.sport,
-                sportConfidence = null,
-                start = current.startedAt,
-                end = end,
-                strain = numbers.strain,
-                averageHeartRateBpm = heartMetric(snapshot.averageOrNull()),
-                maxHeartRateBpm = heartMetric(snapshot.maxOrNull()),
-                calories = numbers.calories,
-                zoneMinutes = numbers.zoneMinutes,
-                heartRateRecovery = null,
-            )
+            val activity = synchronized(heartLock) {
+                val session = liveState.value ?: return invalid("No workout is being recorded")
+                val end = time.now()
+                val closed = session.closingPause(end)
+                val snapshot = beats.toList()
+                val numbers = estimator.load(closed.activeDuration(end), snapshot)
+                beats.clear()
+                liveState.value = null
+                Activity(
+                    id = UUID.randomUUID().toString(),
+                    source = ActivitySource.MANUAL,
+                    sport = closed.sport,
+                    sportConfidence = null,
+                    start = closed.startedAt,
+                    end = end,
+                    strain = numbers.strain,
+                    averageHeartRateBpm = heartMetric(snapshot.averageOrNull()),
+                    maxHeartRateBpm = heartMetric(snapshot.maxOrNull()),
+                    calories = numbers.calories,
+                    zoneMinutes = numbers.zoneMinutes,
+                    heartRateRecovery = null,
+                    pausedSeconds = closed.pausedSeconds,
+                    pauses = closed.pauses,
+                )
+            }
             store.insert(activity)
-            rates.clear()
-            liveState.value = null
+            store.saveLive(null)
             return Outcome.Ok(activity)
         } finally {
             gate.unlock()
@@ -106,7 +168,8 @@ internal class StrapWorkouts(
     override suspend fun edit(activity: Activity): Outcome<Unit> {
         if (activity.id.isBlank()) return invalid("Activity id is empty")
         if (store.get(activity.id) == null) return invalid("No activity with that id")
-        if (activity.end.isBefore(activity.start)) return invalid("Activity ends before it starts")
+        val window = rejectedActivityWindow(activity.start, activity.end, time.now())
+        if (window != null) return invalid(window)
         store.update(activity)
         return Outcome.Ok(Unit)
     }
@@ -158,19 +221,24 @@ internal class StrapWorkouts(
     }
 
     private fun onHeart(bpm: Int?) {
-        val current = liveState.value ?: return
-        val measured = bpm?.takeIf { it in 25..230 }
-        if (measured != null) rates += measured
-        val elapsed = Duration.between(current.startedAt, time.now()).coerceAtLeast(Duration.ZERO)
-        val numbers = estimator.load(elapsed, rates.toList())
-        liveState.value = current.copy(
-            heartRateBpm = measured,
-            strain = numbers.strain.value ?: 0.0,
-            caloriesKcal = numbers.calories.value ?: 0,
-            zoneMinutes = numbers.zoneMinutes,
-            averageHeartRateBpm = rates.averageOrNull(),
-            maxHeartRateBpm = rates.maxOrNull(),
-        )
+        synchronized(heartLock) {
+            val current = liveState.value ?: return
+            val measured = bpm?.takeIf { it in 25..230 }
+            if (current.paused) {
+                if (measured != null) liveState.value = current.copy(heartRateBpm = measured)
+                return
+            }
+            if (measured != null) beats += measured
+            val numbers = estimator.load(current.activeDuration(time.now()), beats.toList())
+            liveState.value = current.copy(
+                heartRateBpm = measured,
+                strain = numbers.strain.value ?: 0.0,
+                caloriesKcal = numbers.calories.value ?: 0,
+                zoneMinutes = numbers.zoneMinutes,
+                averageHeartRateBpm = beats.averageOrNull(),
+                maxHeartRateBpm = beats.maxOrNull(),
+            )
+        }
     }
 
     private fun heartMetric(value: Int?): Metric<Int> =

@@ -7,7 +7,12 @@ import app.circlet.core.SampleSink
 // Ported from OpenStrap edge/lib/ble/ble_engine.dart — DrainController and the
 // idle watchdog (kBackfillIdleTimeoutSeconds = 60, kHistoryFirstStartTimeoutSeconds = 10).
 // A batch is committed, and only then acknowledged. HISTORY_COMPLETE is never acknowledged.
-// An open batch is dropped on idle, stall, or disconnect, so the strap re-sends it.
+// Every HISTORY_FLUSH_EVERY samples are committed before the end marker so progress is visible;
+// the end marker commits only what is left and is still the only thing acknowledged.
+// An uncommitted remainder is dropped on idle, stall, or disconnect, so the strap re-sends it.
+// A sample committed early is replaced if the strap sends that second again.
+
+internal const val HISTORY_FLUSH_EVERY = 60
 /**
  * History batches between a start marker and an end marker.
  *
@@ -67,6 +72,24 @@ class HistoryDrain(
         if (!open || finished || awaitingStart) return
         if (sample != null) samples += sample
         raws += raw
+    }
+
+    /** Samples held in the open batch and not committed yet. */
+    fun bufferedSamples(): Int = if (!open || finished || awaitingStart) 0 else samples.size
+
+    /**
+     * Stores the open batch without acknowledging it.
+     * Returns how many samples were committed. Zero when there is nothing to store.
+     */
+    suspend fun flush(): Int {
+        if (!open || finished || awaitingStart) return 0
+        if (samples.isEmpty() && raws.isEmpty()) return 0
+        val committedSamples = samples.toList()
+        val committedRaw = raws.toList()
+        sink.commit(committedSamples, committedRaw)
+        samples.clear()
+        raws.clear()
+        return committedSamples.size
     }
 
     suspend fun onEnd(token: ByteArray): EndResult {

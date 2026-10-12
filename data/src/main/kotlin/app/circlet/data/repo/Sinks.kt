@@ -20,14 +20,18 @@ import app.circlet.core.StrapAlarm
 import app.circlet.core.StrapEvent
 import app.circlet.core.StrapEventSink
 import app.circlet.core.StrapPrefs
+import app.circlet.core.LiveSession
 import app.circlet.core.WorkoutStore
 import app.circlet.core.ZoneMinutes
 import app.circlet.data.codec.ActivityCodec
 import app.circlet.data.codec.DayCodec
+import app.circlet.data.codec.LiveCodec
 import app.circlet.data.codec.toEntity
 import app.circlet.data.db.ActivityEntity
 import app.circlet.data.db.Keys
 import app.circlet.data.db.KvEntity
+import app.circlet.data.db.LIVE_ROW
+import app.circlet.data.db.LiveWorkoutEntity
 import app.circlet.data.db.RawRecordEntity
 import app.circlet.data.db.StrapEventEntity
 import app.circlet.data.pipeline.RecomputePipeline
@@ -175,6 +179,8 @@ internal class WorkoutStoreImpl(
                 if (existing != null && existing.localDate != date.toString()) {
                     store.database.dirty().mark(existing.localDate)
                 }
+                val endDate = activity.end.atZone(zone).toLocalDate().toString()
+                if (endDate != date.toString()) store.database.dirty().mark(endDate)
             }
         }
         pipeline.nudge()
@@ -197,6 +203,30 @@ internal class WorkoutStoreImpl(
 
     override suspend fun get(id: String): Activity? = store.io {
         store.database.activities().get(id)?.visibleActivity()
+    }
+
+    override suspend fun saveLive(session: LiveSession?) {
+        store.lock.withLock {
+            store.io {
+                if (session == null) {
+                    store.database.liveWorkout().clear()
+                } else {
+                    val payload = LiveCodec.encode(
+                        session.workout,
+                        session.beats.size,
+                        session.workout.startedAt.toEpochMilli(),
+                        session.beats,
+                    )
+                    store.database.liveWorkout().upsert(LiveWorkoutEntity(LIVE_ROW, payload))
+                }
+            }
+        }
+    }
+
+    override suspend fun currentLive(): LiveSession? = store.io {
+        val row = store.database.liveWorkout().get() ?: return@io null
+        val stored = LiveCodec.decode(row.payload)
+        LiveSession(stored.workout, stored.beats)
     }
 }
 

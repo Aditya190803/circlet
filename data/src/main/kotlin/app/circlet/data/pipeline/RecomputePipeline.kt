@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.withLock
 
 private const val HISTORY_DAYS = 60L
 private const val SPARSE_HISTORY_DAYS = 14
+private const val OLDER_HISTORY_DAYS = 400
 
 internal class RecomputePipeline(
     private val store: Store,
@@ -105,13 +106,16 @@ internal class RecomputePipeline(
         val window = sampleWindow(date, zone)
         val samples = store.database.samples().range(window.first, window.last).map { it.toSample() }
         val historyTo = date.minusDays(1).toString()
-        val recentRows = store.database.days().range(date.minusDays(HISTORY_DAYS).toString(), historyTo)
-        // With little recent history, older days still say what is normal for this person:
-        // an imported history that ended months ago is better than starting from nothing.
-        val historyRows = if (recentRows.size >= SPARSE_HISTORY_DAYS) {
+        val windowStart = date.minusDays(HISTORY_DAYS).toString()
+        val recentRows = store.database.days().range(windowStart, historyTo)
+        // Fourteen recent nights with a recovery score are enough of a baseline.
+        // Fewer than that, and an imported history older than this window still counts:
+        // a row that exists but has no recovery score does not make the window "full".
+        val historyRows = if (recentRows.count { usableNight(it) } >= SPARSE_HISTORY_DAYS) {
             recentRows
         } else {
-            store.database.days().latestBefore(iso, HISTORY_DAYS.toInt()).asReversed()
+            val older = store.database.days().latestBefore(windowStart, OLDER_HISTORY_DAYS).asReversed()
+            older + recentRows
         }
         val historyFrom = historyRows.firstOrNull()?.date ?: historyTo
         val historyActivities = store.database.activities().range(historyFrom, historyTo).groupBy { it.localDate }
@@ -159,6 +163,15 @@ internal class RecomputePipeline(
         } catch (error: Exception) {
             return
         }
+    }
+
+    private fun usableNight(row: DaySummaryEntity): Boolean {
+        val day = try {
+            DayCodec.decode(row.payload)
+        } catch (error: Exception) {
+            return false
+        }
+        return day.recovery.score.present
     }
 
     private enum class Step { DONE, RETRY, FAILED }

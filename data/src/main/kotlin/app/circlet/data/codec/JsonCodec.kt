@@ -46,6 +46,7 @@ import app.circlet.core.Vo2Max
 import app.circlet.core.WakeEvent
 import app.circlet.core.WellnessFlag
 import app.circlet.core.WellnessKind
+import app.circlet.core.WorkoutPause
 import app.circlet.core.ZoneMinutes
 import java.time.Duration
 import java.time.Instant
@@ -200,18 +201,23 @@ internal object SpotCodec {
 }
 
 internal object LiveCodec {
-    fun encode(workout: LiveWorkout, samples: Int, lastTickMillis: Long): String = JSONObject().apply {
-        put("sport", workout.sport.name)
-        put("startedAt", workout.startedAt.toEpochMilli())
-        workout.heartRateBpm?.let { put("heartRate", it) }
-        put("strain", workout.strain)
-        put("calories", workout.caloriesKcal)
-        put("zones", zonesJson(workout.zoneMinutes))
-        workout.averageHeartRateBpm?.let { put("average", it) }
-        workout.maxHeartRateBpm?.let { put("max", it) }
-        put("samples", samples)
-        put("lastTick", lastTickMillis)
-    }.toString()
+    fun encode(workout: LiveWorkout, samples: Int, lastTickMillis: Long, beats: List<Int> = emptyList()): String =
+        JSONObject().apply {
+            put("sport", workout.sport.name)
+            put("startedAt", workout.startedAt.toEpochMilli())
+            workout.heartRateBpm?.let { put("heartRate", it) }
+            put("strain", workout.strain)
+            put("calories", workout.caloriesKcal)
+            put("zones", zonesJson(workout.zoneMinutes))
+            workout.averageHeartRateBpm?.let { put("average", it) }
+            workout.maxHeartRateBpm?.let { put("max", it) }
+            put("samples", samples)
+            put("lastTick", lastTickMillis)
+            workout.pausedAt?.let { put("pausedAt", it.toEpochMilli()) }
+            put("pausedSeconds", workout.pausedSeconds)
+            put("pauses", pausesJson(workout.pauses))
+            put("beats", beatsJson(beats))
+        }.toString()
 
     fun decode(payload: String): StoredLive {
         val json = JSONObject(payload)
@@ -224,8 +230,21 @@ internal object LiveCodec {
             zoneMinutes = zones(json.getJSONArray("zones")),
             averageHeartRateBpm = json.optionalInt("average"),
             maxHeartRateBpm = json.optionalInt("max"),
+            pausedAt = if (json.has("pausedAt") && !json.isNull("pausedAt")) {
+                Instant.ofEpochMilli(json.getLong("pausedAt"))
+            } else {
+                null
+            },
+            pausedSeconds = json.optLong("pausedSeconds"),
+            pauses = if (json.has("pauses") && !json.isNull("pauses")) pauses(json.getJSONArray("pauses")) else emptyList(),
         )
-        return StoredLive(workout, json.optInt("samples"), json.optLong("lastTick", workout.startedAt.toEpochMilli()))
+        val beats = if (json.has("beats") && !json.isNull("beats")) readBeats(json.getJSONArray("beats")) else emptyList()
+        return StoredLive(
+            workout,
+            json.optInt("samples"),
+            json.optLong("lastTick", workout.startedAt.toEpochMilli()),
+            beats,
+        )
     }
 }
 
@@ -233,6 +252,7 @@ internal data class StoredLive(
     val workout: LiveWorkout,
     val samples: Int,
     val lastTickMillis: Long,
+    val beats: List<Int> = emptyList(),
 )
 
 internal fun journalTagsJson(ids: Set<String>): String = JSONArray().apply { ids.sorted().forEach { put(it) } }.toString()
@@ -417,6 +437,8 @@ private fun activityJson(activity: Activity): JSONObject = JSONObject().apply {
     activity.heartRateRecovery?.let { recovery ->
         put("hrr", metricJson(recovery.dropBpm) { put("value", it) })
     }
+    put("pausedSeconds", activity.pausedSeconds)
+    put("pauses", pausesJson(activity.pauses))
 }
 
 private fun activity(json: JSONObject): Activity = Activity(
@@ -436,6 +458,8 @@ private fun activity(json: JSONObject): Activity = Activity(
     } else {
         null
     },
+    pausedSeconds = json.optLong("pausedSeconds"),
+    pauses = if (json.has("pauses") && !json.isNull("pauses")) pauses(json.getJSONArray("pauses")) else emptyList(),
 )
 
 private fun wellnessJson(flag: WellnessFlag): JSONObject = JSONObject().apply {
@@ -506,6 +530,23 @@ private fun reference(json: JSONObject): MetricReference {
         },
     )
 }
+
+private fun pausesJson(pauses: List<WorkoutPause>): JSONArray = JSONArray().apply {
+    pauses.forEach { pause ->
+        put(JSONObject().apply {
+            put("start", pause.start.toEpochMilli())
+            put("end", pause.end.toEpochMilli())
+        })
+    }
+}
+
+private fun pauses(array: JSONArray): List<WorkoutPause> = array.objects().map { pause ->
+    WorkoutPause(Instant.ofEpochMilli(pause.getLong("start")), Instant.ofEpochMilli(pause.getLong("end")))
+}
+
+private fun beatsJson(beats: List<Int>): JSONArray = JSONArray().apply { beats.forEach { put(it) } }
+
+private fun readBeats(array: JSONArray): List<Int> = List(array.length()) { array.getInt(it) }
 
 private fun zonesJson(zones: ZoneMinutes): JSONArray = JSONArray().apply { zones.minutes.forEach { put(it) } }
 

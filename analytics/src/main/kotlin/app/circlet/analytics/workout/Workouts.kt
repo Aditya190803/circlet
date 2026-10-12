@@ -20,8 +20,10 @@ import app.circlet.core.Profile
 import app.circlet.core.Sample
 import app.circlet.core.SignalBounds
 import app.circlet.core.Sport
+import app.circlet.core.WorkoutPause
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.ageOn
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -100,9 +102,10 @@ fun recordedActivity(
     quietWakingHrr: Double?,
     quietSettled: Boolean,
     priorResting: List<Double> = emptyList(),
+    pauses: List<WorkoutPause> = emptyList(),
 ): Activity = windowActivity(
     samples, profile, zone, start, end, sport, ActivitySource.MANUAL, null, id,
-    restingHeartRateBpm, quietWakingHrr, quietSettled, priorResting,
+    restingHeartRateBpm, quietWakingHrr, quietSettled, priorResting, pauses,
 )
 
 fun mergeActivities(
@@ -129,6 +132,7 @@ fun mergeActivities(
         if (source == ActivitySource.AUTO) Confidence.LOW else null,
         "merged-" + activities.joinToString("-") { it.id },
         restingHeartRateBpm, quietWakingHrr, quietSettled, priorResting,
+        activities.flatMap { it.pauses },
     )
 }
 
@@ -168,12 +172,15 @@ private fun windowActivity(
     quietWakingHrr: Double?,
     quietSettled: Boolean,
     priorResting: List<Double>,
+    pauses: List<WorkoutPause> = emptyList(),
 ): Activity {
-    val inside = samples.filter { it.epochSecond in start.epochSecond..end.epochSecond }.sortedBy { it.epochSecond }
+    val inside = samples.filter { sample ->
+        sample.epochSecond in start.epochSecond..end.epochSecond && !inPause(sample.epochSecond, pauses)
+    }.sortedBy { it.epochSecond }
     val bpm = inside.mapNotNull { it.measured() }
     val date = start.atZone(zone).toLocalDate()
     val maxHr = resolveMaxHr(profile, date)
-    val minutes = perMinuteIn(inside)
+    val minutes = perMinuteIn(inside, pauses)
     val strain = if (quietWakingHrr == null) {
         Metric.absent<Double>(AbsentReason.CALIBRATING)
     } else {
@@ -207,6 +214,8 @@ private fun windowActivity(
         calories = calories,
         zoneMinutes = zones,
         heartRateRecovery = heartRateRecovery(samples, end),
+        pausedSeconds = pauses.sumOf { span -> Duration.between(span.start, span.end).seconds.coerceAtLeast(0) },
+        pauses = pauses,
     )
 }
 
@@ -258,7 +267,7 @@ private fun zonesOf(
     )
 }
 
-private fun perMinuteIn(samples: List<Sample>): List<Double> {
+private fun perMinuteIn(samples: List<Sample>, pauses: List<WorkoutPause>): List<Double> {
     if (samples.isEmpty()) return emptyList()
     val byMinute = LinkedHashMap<Long, MutableList<Int>>()
     for (s in samples) {
@@ -268,11 +277,18 @@ private fun perMinuteIn(samples: List<Sample>): List<Double> {
     if (byMinute.isEmpty()) return emptyList()
     val first = byMinute.keys.min()
     val last = byMinute.keys.max()
-    return (first..last).map { minute ->
+    return (first..last).mapNotNull { minute ->
         val xs = byMinute[minute]
-        if (xs.isNullOrEmpty()) 0.0 else xs.sum().toDouble() / xs.size
+        if (!xs.isNullOrEmpty()) return@mapNotNull xs.sum().toDouble() / xs.size
+        val start = minute * 60
+        val paused = pauses.any { pause -> pause.start.epochSecond < start + 60 && start < pause.end.epochSecond }
+        if (paused) null else 0.0
     }
 }
+
+/** Half-open `[start, end)`, matching a pause closed at [WorkoutPause.end]. */
+private fun inPause(epochSecond: Long, pauses: List<WorkoutPause>): Boolean =
+    pauses.any { epochSecond >= it.start.epochSecond && epochSecond < it.end.epochSecond }
 
 private fun motionOf(samples: List<Sample>, nowSec: Long, range: LongRange): List<MotionPoint> {
     val withG = ArrayList<Sample>()

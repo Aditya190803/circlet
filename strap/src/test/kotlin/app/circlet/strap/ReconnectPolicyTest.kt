@@ -90,6 +90,8 @@ class ReconnectPolicyTest {
         assertTrue(DrainSchedule.due(DrainTrigger.PROMPT, start.plusSeconds(90), start))
         assertFalse(DrainSchedule.due(DrainTrigger.PERIODIC, start.plus(Duration.ofMinutes(14)), start))
         assertTrue(DrainSchedule.due(DrainTrigger.PERIODIC, start.plus(Duration.ofMinutes(14).plusSeconds(30)), start))
+        assertFalse(DrainSchedule.due(DrainTrigger.FOREGROUND, start.plusSeconds(59), start))
+        assertTrue(DrainSchedule.due(DrainTrigger.FOREGROUND, start.plusSeconds(60), start))
     }
 
     private fun decide(

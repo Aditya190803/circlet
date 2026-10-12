@@ -12,6 +12,7 @@ import app.circlet.core.Outcome
 import app.circlet.core.Sport
 import app.circlet.core.WorkoutController
 import app.circlet.core.ZoneMinutes
+import app.circlet.core.rejectedActivityWindow
 import app.circlet.data.codec.ActivityCodec
 import app.circlet.data.codec.LiveCodec
 import app.circlet.data.db.ActivityEntity
@@ -50,10 +51,19 @@ internal class WorkoutControllerImpl(
         return Outcome.Ok(Unit)
     }
 
-    // TODO(pause): placeholder so the module compiles; the real pause and resume replace these.
-    override suspend fun pause(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+    override suspend fun pause(): Outcome<Unit> {
+        val current = memory.live.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
+        if (current.paused) return Outcome.Err(CoreError.Invalid("workout is already paused"))
+        persist(current.copy(pausedAt = store.time.now()))
+        return Outcome.Ok(Unit)
+    }
 
-    override suspend fun resume(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+    override suspend fun resume(): Outcome<Unit> {
+        val current = memory.live.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
+        if (!current.paused) return Outcome.Err(CoreError.Invalid("workout is not paused"))
+        persist(current.closingPause(store.time.now()))
+        return Outcome.Ok(Unit)
+    }
 
     override suspend fun stop(): Outcome<Activity> {
         val current = memory.live.value ?: return Outcome.Err(CoreError.Invalid("no workout is being recorded"))
@@ -61,6 +71,7 @@ internal class WorkoutControllerImpl(
         if (!end.isAfter(current.startedAt)) {
             return Outcome.Err(CoreError.Invalid("workout has not started"))
         }
+        val closed = current.closingPause(end)
         val zone = store.time.zone()
         val date = current.startedAt.atZone(zone).toLocalDate()
         val weight = memory.profile.value.weightKg
@@ -71,15 +82,17 @@ internal class WorkoutControllerImpl(
             sportConfidence = null,
             start = current.startedAt,
             end = end,
-            strain = Metric.of(current.strain, Confidence.LOW),
-            averageHeartRateBpm = current.averageHeartRateBpm?.let { Metric.of(it, Confidence.LOW) }
+            strain = Metric.of(closed.strain, Confidence.LOW),
+            averageHeartRateBpm = closed.averageHeartRateBpm?.let { Metric.of(it, Confidence.LOW) }
                 ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
-            maxHeartRateBpm = current.maxHeartRateBpm?.let { Metric.of(it, Confidence.LOW) }
+            maxHeartRateBpm = closed.maxHeartRateBpm?.let { Metric.of(it, Confidence.LOW) }
                 ?: Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
-            calories = if (weight != null) Metric.of(current.caloriesKcal, Confidence.LOW)
+            calories = if (weight != null) Metric.of(closed.caloriesKcal, Confidence.LOW)
             else Metric.absent(AbsentReason.NOT_ENOUGH_DATA),
-            zoneMinutes = current.zoneMinutes,
+            zoneMinutes = closed.zoneMinutes,
             heartRateRecovery = null,
+            pausedSeconds = closed.pausedSeconds,
+            pauses = closed.pauses,
         )
         store.io {
             val db = store.database
@@ -100,7 +113,11 @@ internal class WorkoutControllerImpl(
         val existing = store.io { store.database.activities().get(activity.id) }
             ?: return Outcome.Err(CoreError.Invalid("no activity with that id"))
         if (existing.suppressed) return Outcome.Err(CoreError.Invalid("no activity with that id"))
-        val date = activity.start.atZone(store.time.zone()).toLocalDate().toString()
+        val window = rejectedActivityWindow(activity.start, activity.end, store.time.now())
+        if (window != null) return Outcome.Err(CoreError.Invalid(window))
+        val zone = store.time.zone()
+        val date = activity.start.atZone(zone).toLocalDate().toString()
+        val endDate = activity.end.atZone(zone).toLocalDate().toString()
         store.io {
             store.database.activities().insert(
                 listOf(existing.copy(
@@ -114,6 +131,7 @@ internal class WorkoutControllerImpl(
             )
             store.database.dirty().mark(existing.localDate)
             store.database.dirty().mark(date)
+            if (endDate != date) store.database.dirty().mark(endDate)
         }
         pipeline.nudge()
         return Outcome.Ok(Unit)

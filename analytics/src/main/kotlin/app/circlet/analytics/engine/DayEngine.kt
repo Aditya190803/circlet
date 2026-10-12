@@ -47,7 +47,11 @@ import kotlin.math.roundToInt
  * First composition of the day packages.
  * Bump this when the maths those packages publish changes what a stored day means.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 5
+/**
+ * Bumped when a stored strap day must be scored again.
+ * 6 leaves paused spans out of an activity and keeps older imported nights in a sparse baseline.
+ */
+const val CIRCLET_ALGORITHM_VERSION: Int = 6
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -281,6 +285,7 @@ private fun activitiesOf(
             quietWakingHrr = quiet,
             quietSettled = quietSettled,
             priorResting = priorResting,
+            pauses = manual.pauses,
         )
         manual.copy(
             strain = scored.strain,

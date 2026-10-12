@@ -1,12 +1,20 @@
 package app.circlet.ui
 
 import app.circlet.core.AbsentReason
+import app.circlet.core.CalibrationStatus
+import app.circlet.core.Confidence
 import app.circlet.core.LinkState
 import app.circlet.core.MassUnit
+import app.circlet.core.Metric
+import app.circlet.core.Recovery
 import app.circlet.core.Sex
 import app.circlet.core.StrapError
+import app.circlet.core.StrapState
+import app.circlet.core.Strain
 import app.circlet.core.SyncProgress
 import app.circlet.core.SystemTimeSource
+import app.circlet.core.ZoneMinutes
+import app.circlet.core.emptyDay
 import app.circlet.core.fake.FakeCirclet
 import app.circlet.core.fake.FakeScenario
 import app.circlet.ui.design.words
@@ -54,6 +62,29 @@ class UiLogicTest {
         assertEquals(Notice.Calibrating(calibrating.baselineNights, calibrating.baselineNightsLeft), calibrating.notice)
         assertEquals(14, calibrating.baselineNights + calibrating.baselineNightsLeft)
         assertEquals(Notice.EmptyDay(today = true, reason = AbsentReason.NOT_ENOUGH_DATA), ready(FakeScenario.NO_DATA_TODAY).notice)
+    }
+
+    @Test
+    fun fourteenEarlierRecoveryNightsAreNotCalibrating() {
+        val today = LocalDate.of(2026, 10, 12)
+        val history = (14 downTo 0).map { ago ->
+            val day = today.minusDays(ago.toLong())
+            emptyDay(day, AbsentReason.NOT_ENOUGH_DATA, CalibrationStatus.READY).copy(
+                recovery = Recovery(Metric.of(70, Confidence.HIGH), CalibrationStatus.READY, emptyList()),
+                strain = Strain(Metric.of(8.0, Confidence.MEDIUM), ZoneMinutes.ZERO),
+            )
+        }
+        val state = DayUiState(
+            date = today,
+            today = today,
+            day = Loadable.Ready(history.last()),
+            history = history,
+            strap = StrapState(link = LinkState.CONNECTED),
+        )
+        assertEquals(14, state.baselineNights)
+        assertNull(state.notice)
+        assertTrue(state.notice !is Notice.Calibrating)
+        assertTrue(state.notice !is Notice.FirstNight)
     }
 
     @Test

@@ -103,6 +103,25 @@ class HistoryDrainTest {
     }
 
     @Test
+    fun aFullMinuteIsCommittedBeforeTheEndAndTheEndCountsOnlyTheRest() = runTest {
+        val sink = RecordingSink()
+        val drain = open(sink)
+        repeat(60) { index ->
+            drain.onRecord(sample.copy(epochSecond = sample.epochSecond + index), raw)
+        }
+        assertEquals(60, drain.flush())
+        assertEquals(1, sink.batches.size)
+        assertEquals(60, sink.batches.single().first.size)
+        repeat(5) { index ->
+            drain.onRecord(sample.copy(epochSecond = sample.epochSecond + 60 + index), raw)
+        }
+        val ack = drain.onEnd(token)
+        assertTrue(ack is EndResult.Ack)
+        assertEquals(5, (ack as EndResult.Ack).committed)
+        assertEquals(2, sink.batches.size)
+    }
+
+    @Test
     fun completeCarriesNoToken() = runTest {
         val sink = RecordingSink()
         val drain = open(sink)

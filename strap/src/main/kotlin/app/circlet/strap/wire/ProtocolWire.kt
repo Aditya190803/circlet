@@ -15,6 +15,7 @@ import app.circlet.protocol.StrapEventId
 import app.circlet.protocol.Uuids
 import app.circlet.protocol.advertisingName
 import app.circlet.protocol.batteryPercent
+import app.circlet.protocol.dataRange as readDataRange
 import app.circlet.protocol.hello
 import app.circlet.strap.link.NotifyRole
 
@@ -65,6 +66,9 @@ internal sealed interface Inbound {
     data class Heart(val bpm: Int) : Inbound
     data class Meta(val kind: MetaKind, val token: ByteArray?) : Inbound
     data class Signal(val signal: StrapSignal, val epochSecond: Long, val battery: Double?, val charging: Boolean?) : Inbound
+
+    /** Seconds of history the strap says it is holding. Null when the reply has no clock range. */
+    data class Range(val storedSeconds: Long?) : Inbound
     data object Ignore : Inbound
 }
 
@@ -179,6 +183,13 @@ internal class ProtocolWire {
             advertisingName(packet.body)?.let { Inbound.Name(it) } ?: Inbound.Ignore
         } else {
             Inbound.Ignore
+        }
+        0x22 -> {
+            val range = readDataRange(packet.body) ?: return Inbound.Ignore
+            val oldest = range.oldestEpochSeconds
+            val newest = range.newestEpochSeconds
+            val stored = if (oldest != null && newest != null) newest - oldest else null
+            Inbound.Range(stored)
         }
         else -> Inbound.Ignore
     }
