@@ -72,13 +72,14 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
                     }
                     PrimaryButton("STOP WORKOUT") { confirmingFinish = true }
                     if (confirmingFinish) {
-                        Sheet("Finish this workout?", onDismiss = { confirmingFinish = false }) {
-                            Text("Recorded so far: $elapsed.", style = body(14.sp))
+                        Sheet("FINISH THIS WORKOUT?", onDismiss = { confirmingFinish = false }) {
+                            Text("$elapsed recorded. It is saved to today's activities.", style = body(14.sp, Palette.Dim))
                             Spacer(Modifier.height(Space.lg))
                             PrimaryButton("FINISH") {
                                 confirmingFinish = false
                                 vm.stop()
                             }
+                            Spacer(Modifier.height(Space.sm))
                             SecondaryButton("KEEP GOING") { confirmingFinish = false }
                         }
                     }

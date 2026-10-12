@@ -123,7 +123,7 @@ fun MoreScreen(
                 Divider()
                 ListRow("Export and backup", Glyph.Export, "Health Connect, export files, backup and restore", onClick = actions.data)
                 Divider()
-                ListRow("Import WHOOP history", Glyph.Export, "Bring in earlier days from the official app's export", onClick = actions.importHistory)
+                ListRow("Import WHOOP history", Glyph.Import, "Bring in your earlier days and baseline", onClick = actions.importHistory)
                 Divider()
                 ListRow("Profile", Glyph.Person, "Age, height, weight and max heart rate", onClick = actions.profile)
                 Divider()
