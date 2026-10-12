@@ -50,6 +50,11 @@ internal class WorkoutControllerImpl(
         return Outcome.Ok(Unit)
     }
 
+    // TODO(pause): placeholder so the module compiles; the real pause and resume replace these.
+    override suspend fun pause(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+
+    override suspend fun resume(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+
     override suspend fun stop(): Outcome<Activity> {
         val current = memory.live.value ?: return Outcome.Err(CoreError.Invalid("no workout is being recorded"))
         val end = store.time.now()

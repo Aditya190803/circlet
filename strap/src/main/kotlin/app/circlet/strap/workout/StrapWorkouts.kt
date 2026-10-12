@@ -66,6 +66,11 @@ internal class StrapWorkouts(
         }
     }
 
+    // TODO(pause): placeholder so the module compiles; the real pause and resume replace these.
+    override suspend fun pause(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+
+    override suspend fun resume(): Outcome<Unit> = Outcome.Err(CoreError.Invalid("pause is not available yet"))
+
     override suspend fun stop(): Outcome<Activity> {
         if (!gate.tryLock()) return busy()
         try {

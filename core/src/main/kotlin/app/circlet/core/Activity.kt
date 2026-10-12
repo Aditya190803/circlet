@@ -1,5 +1,6 @@
 package app.circlet.core
 
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.flow.StateFlow
 
@@ -72,7 +73,9 @@ data class Activity(
 
 /**
  * A workout that is being recorded.
- * Elapsed time is [java.time.Duration.between] [startedAt] and [TimeSource.now].
+ * [pausedAt] is set while the workout is paused and null while it runs.
+ * [pausedSeconds] is the total of earlier, finished pauses; it excludes a pause still open.
+ * Time recorded so far is [activeDuration]. Nothing is added to the totals while paused.
  * [strain] is 0–21 so far. [caloriesKcal] are kilocalories so far.
  * Heart rates are beats per minute.
  */
@@ -85,17 +88,34 @@ data class LiveWorkout(
     val zoneMinutes: ZoneMinutes,
     val averageHeartRateBpm: Int?,
     val maxHeartRateBpm: Int?,
-)
+    val pausedAt: Instant? = null,
+    val pausedSeconds: Long = 0,
+) {
+    val paused: Boolean get() = pausedAt != null
+
+    /** Recorded time up to [now], leaving out every pause. Never negative. */
+    fun activeDuration(now: Instant): Duration {
+        val until = pausedAt ?: now
+        val active = Duration.between(startedAt, until).minusSeconds(pausedSeconds)
+        return if (active.isNegative) Duration.ZERO else active
+    }
+}
 
 /**
- * Manual workouts: start, stop, edit, delete, and merge.
+ * Manual workouts: start, pause, resume, stop, edit, delete, and merge.
  * [live] is null when nothing is being recorded.
+ * [pause] and [resume] fail with [CoreError.Invalid] when there is nothing to pause or resume.
+ * [stop] works while paused and closes the open pause first.
  * [stop] returns the stored activity. [merge] returns the combined activity.
  */
 interface WorkoutController {
     val live: StateFlow<LiveWorkout?>
 
     suspend fun start(sport: Sport): Outcome<Unit>
+
+    suspend fun pause(): Outcome<Unit>
+
+    suspend fun resume(): Outcome<Unit>
 
     suspend fun stop(): Outcome<Activity>
 

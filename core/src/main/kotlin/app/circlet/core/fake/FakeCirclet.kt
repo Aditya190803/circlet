@@ -366,11 +366,26 @@ class FakeCirclet(
         return Outcome.Ok(Unit)
     }
 
+    override suspend fun pause(): Outcome<Unit> {
+        val session = liveState.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
+        if (session.paused) return Outcome.Err(CoreError.Invalid("workout is already paused"))
+        liveState.value = session.copy(pausedAt = time.now())
+        return Outcome.Ok(Unit)
+    }
+
+    override suspend fun resume(): Outcome<Unit> {
+        val session = liveState.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
+        val since = session.pausedAt ?: return Outcome.Err(CoreError.Invalid("workout is not paused"))
+        val added = Duration.between(since, time.now()).seconds.coerceAtLeast(0)
+        liveState.value = session.copy(pausedAt = null, pausedSeconds = session.pausedSeconds + added)
+        return Outcome.Ok(Unit)
+    }
+
     override suspend fun stop(): Outcome<Activity> {
         val session = liveState.value ?: return Outcome.Err(CoreError.Invalid("no workout is running"))
         val end = time.now()
         if (!end.isAfter(session.startedAt)) return Outcome.Err(CoreError.Invalid("workout is too short"))
-        val minutes = Duration.between(session.startedAt, end).toMinutes().toInt().coerceAtLeast(1)
+        val minutes = session.activeDuration(end).toMinutes().toInt().coerceAtLeast(1)
         val activity = Activity(
             id = "live-${session.startedAt.epochSecond}",
             source = ActivitySource.MANUAL,
