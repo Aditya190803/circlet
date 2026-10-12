@@ -27,7 +27,6 @@ import app.circlet.ui.design.Card
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.Glyph
 import app.circlet.ui.design.ListRow
-import app.circlet.ui.design.LocalTimeFormat
 import app.circlet.ui.design.Palette
 import app.circlet.ui.design.PrimaryButton
 import app.circlet.ui.design.QuietButton
@@ -38,15 +37,14 @@ import app.circlet.ui.design.StatRow
 import app.circlet.ui.design.TextEntry
 import app.circlet.ui.design.Toggle
 import app.circlet.ui.design.body
-import app.circlet.ui.design.hoursMinutes
+import app.circlet.ui.design.agoWords
+import app.circlet.ui.design.minutesWords
 import app.circlet.ui.design.label
 import app.circlet.ui.design.words
 import app.circlet.ui.state.StrapAction
 import app.circlet.ui.strap.Access
 import app.circlet.ui.strap.AccessRows
 import java.time.Instant
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 /** Everything the More tab can ask for. */
@@ -68,6 +66,7 @@ class MoreActions(
     val stress: () -> Unit = {},
     val workouts: () -> Unit = {},
     val data: () -> Unit = {},
+    val importHistory: () -> Unit = {},
     val gallery: (() -> Unit)? = null,
 )
 
@@ -110,8 +109,6 @@ fun MoreScreen(
                     color = if (checks.companionDeviceAssociated) Palette.Teal else Palette.Dim,
                     note = "Wakes Circlet when the strap is near",
                 )
-                Divider()
-                StatRow("LAST SYNC", strap.lastSync?.let { stamp(it) } ?: "NOT YET")
             }
             Card {
                 ListRow("Trends", Glyph.Trends, "Metrics over weeks and months, plus records", onClick = actions.trends)
@@ -124,7 +121,9 @@ fun MoreScreen(
                 Divider()
                 ListRow("Workouts", Glyph.Run, "Activities for the selected day", onClick = actions.workouts)
                 Divider()
-                ListRow("Export data", Glyph.Export, "Take your recorded data out of Circlet", onClick = actions.data)
+                ListRow("Export and backup", Glyph.Export, "Health Connect, export files, backup and restore", onClick = actions.data)
+                Divider()
+                ListRow("Import WHOOP history", Glyph.Export, "Bring in earlier days from the official app's export", onClick = actions.importHistory)
                 Divider()
                 ListRow("Profile", Glyph.Person, "Age, height, weight and max heart rate", onClick = actions.profile)
                 Divider()
@@ -138,14 +137,6 @@ fun MoreScreen(
             }
         }
     }
-}
-
-@Composable
-private fun stamp(at: Instant): String {
-    val format = LocalTimeFormat.current
-    val day = at.atZone(format.zone).toLocalDate()
-    val time = format.time(at)
-    return if (day == LocalDate.now(format.zone)) time else "${day.format(DateTimeFormatter.ofPattern("MMM d")).uppercase()}, $time"
 }
 
 @Composable
@@ -168,15 +159,21 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         Divider()
         StatRow("BATTERY", strap.batteryPercent?.roundToInt()?.toString(), if (strap.charging == true) "% · CHARGING" else "%")
         Divider()
-        StatRow("LAST SYNC", strap.lastSync?.let { stamp(it) } ?: "NOT YET")
+        StatRow("LAST SYNC", strap.lastSync?.let { agoWords(it, Instant.now()) } ?: "NOT YET")
         strap.error?.let {
             Spacer(Modifier.height(8.dp))
             Text(it.words(), style = body(13.sp, Palette.Warn))
         }
         Spacer(Modifier.height(12.dp))
         val syncing = strap.sync.draining || busy == StrapAction.SYNC
+        val syncLabel = when {
+            strap.sync.draining && strap.sync.samplesPulled == 0L -> "SYNCING · STARTING"
+            strap.sync.draining -> "SYNCING · ${minutesWords(strap.sync.samplesPulled / 60)} PULLED"
+            syncing -> "SYNCING"
+            else -> "SYNC NOW"
+        }
         PrimaryButton(
-            if (strap.sync.draining) "SYNCING · ${hoursMinutes((strap.sync.samplesPulled / 60).toInt())}" else if (syncing) "SYNCING" else "SYNC NOW",
+            syncLabel,
             enabled = connected && (busy == null || busy == StrapAction.SYNC),
             loading = syncing,
             onClick = actions.sync,

@@ -197,9 +197,23 @@ class LiveWorkoutViewModel(
         if (live == null) {
             LiveUi.Idle
         } else {
-            LiveUi.Recording(live, Duration.between(live.startedAt, now))
+            LiveUi.Recording(live, live.activeDuration(now))
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LiveUi.Loading)
+
+    fun pause() {
+        viewModelScope.launch {
+            val result = workouts.pause()
+            if (result is Outcome.Err) messageChannel.send(result.error.words())
+        }
+    }
+
+    fun resume() {
+        viewModelScope.launch {
+            val result = workouts.resume()
+            if (result is Outcome.Err) messageChannel.send(result.error.words())
+        }
+    }
 
     fun stop() {
         viewModelScope.launch {

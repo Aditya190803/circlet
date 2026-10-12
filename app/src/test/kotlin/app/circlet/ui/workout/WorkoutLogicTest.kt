@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -161,5 +162,42 @@ class WorkoutLogicTest {
     @Test
     fun sportQueryWithNoMatchIsEmpty() {
         assertTrue(filterSports("zzzz").isEmpty())
+    }
+
+    private val now: Instant = base.plusSeconds(48 * 3600L)
+
+    @Test
+    fun validTimesHaveNoProblem() {
+        assertNull(timeProblem(at(0), at(45), now))
+    }
+
+    @Test
+    fun endBeforeStartIsRejected() {
+        assertEquals(TimeProblem.END_NOT_AFTER_START, timeProblem(at(45), at(0), now))
+    }
+
+    @Test
+    fun endEqualToStartIsRejected() {
+        assertEquals(TimeProblem.END_NOT_AFTER_START, timeProblem(at(10), at(10), now))
+    }
+
+    @Test
+    fun endInTheFutureIsRejected() {
+        assertEquals(TimeProblem.END_IN_FUTURE, timeProblem(now.minusSeconds(600), now.plusSeconds(60), now))
+    }
+
+    @Test
+    fun endExactlyNowIsAllowed() {
+        assertNull(timeProblem(now.minusSeconds(600), now, now))
+    }
+
+    @Test
+    fun spanOverADayIsRejected() {
+        assertEquals(TimeProblem.SPAN_OVER_A_DAY, timeProblem(at(0), at(24 * 60 + 1), now.plusSeconds(86400L * 3)))
+    }
+
+    @Test
+    fun spanExactlyADayIsAllowed() {
+        assertNull(timeProblem(at(0), at(24 * 60), now.plusSeconds(86400L * 3)))
     }
 }

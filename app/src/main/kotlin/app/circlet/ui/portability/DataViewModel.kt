@@ -35,6 +35,11 @@ class DataViewModel(private val data: DataPortability) : ViewModel() {
     private val importingState = MutableStateFlow(false)
     val importing: StateFlow<Boolean> = importingState.asStateFlow()
 
+    private val importResultState = MutableStateFlow<String?>(null)
+
+    /** The line describing the last WHOOP import, or null before one has finished. */
+    val importResult: StateFlow<String?> = importResultState.asStateFlow()
+
     fun setHealthConnect(enabled: Boolean) {
         viewModelScope.launch {
             val result = data.setHealthConnectEnabled(enabled)
@@ -81,15 +86,16 @@ class DataViewModel(private val data: DataPortability) : ViewModel() {
     fun importWhoop(uri: String) {
         if (importingState.value) return
         importingState.value = true
+        importResultState.value = null
         viewModelScope.launch {
             try {
                 when (val result = data.importWhoopExport(uri)) {
                     is Outcome.Ok -> {
                         val r = result.value
                         val kept = if (r.skipped > 0) " ${r.skipped} days already on this phone were kept." else ""
-                        messageChannel.send("Imported ${r.imported} days, ${r.firstDay} to ${r.lastDay}.$kept")
+                        importResultState.value = "Imported ${r.imported} days, ${r.firstDay} to ${r.lastDay}.$kept"
                     }
-                    is Outcome.Err -> messageChannel.send(result.error.words())
+                    is Outcome.Err -> importResultState.value = result.error.words()
                 }
             } finally {
                 importingState.value = false

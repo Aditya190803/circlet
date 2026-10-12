@@ -24,7 +24,6 @@ import app.circlet.ui.design.LiveDot
 import app.circlet.ui.design.SecondaryButton
 import app.circlet.ui.design.Icon
 import app.circlet.ui.state.BASELINE_NIGHTS
-import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
@@ -48,7 +47,6 @@ import app.circlet.ui.design.Figure
 import app.circlet.ui.design.GhostRow
 import app.circlet.ui.design.Glyph
 import app.circlet.ui.design.HeartRateChart
-import app.circlet.ui.design.LiveDot
 import app.circlet.ui.design.LocalTimeFormat
 import app.circlet.ui.design.MetricDial
 import app.circlet.ui.design.MetricRow
@@ -65,6 +63,7 @@ import app.circlet.ui.design.forKind
 import app.circlet.ui.design.glyph
 import app.circlet.ui.design.grouped
 import app.circlet.ui.design.hoursMinutes
+import app.circlet.ui.design.minutesWords
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
 import app.circlet.ui.design.positionTag
@@ -215,7 +214,8 @@ fun DayNotice(notice: Notice, onAction: () -> Unit) {
 }
 
 private fun StrapState.status(): String = when {
-    sync.draining -> "SYNCING"
+    sync.draining && sync.samplesPulled == 0L -> "SYNCING · STARTING"
+    sync.draining -> "SYNCING · ${minutesWords(sync.samplesPulled / 60)} PULLED"
     link == LinkState.CONNECTED && onWrist == false -> "OFF WRIST"
     link == LinkState.CONNECTED -> "LIVE"
     link == LinkState.CONNECTING || link == LinkState.RECONNECTING -> "SEARCHING"
@@ -335,7 +335,7 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
             delay(1_000)
         }
     }
-    val seconds = Duration.between(live.startedAt, now).seconds.coerceAtLeast(0)
+    val seconds = live.activeDuration(now).seconds
     Card {
         Row(
             Modifier
@@ -345,9 +345,13 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    LiveDot(color = Palette.Teal, active = true)
+                    LiveDot(color = if (live.paused) Palette.Warn else Palette.Teal, active = !live.paused)
                     Spacer(Modifier.width(8.dp))
-                    Text("${live.sport.label().uppercase()} IN PROGRESS", style = label(12.sp, Palette.Teal))
+                    val state = if (live.paused) "PAUSED" else "IN PROGRESS"
+                    Text(
+                        "${live.sport.label().uppercase()} $state",
+                        style = label(12.sp, if (live.paused) Palette.Warn else Palette.Teal),
+                    )
                 }
                 Text(
                     "%d:%02d:%02d".format(seconds / 3600, seconds % 3600 / 60, seconds % 60),

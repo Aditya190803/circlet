@@ -21,7 +21,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.ExportResult
 import androidx.health.connect.client.PermissionController
@@ -37,6 +36,7 @@ import app.circlet.ui.design.PrimaryButton
 import app.circlet.ui.design.QuietButton
 import app.circlet.ui.design.SecondaryButton
 import app.circlet.ui.design.Segmented
+import app.circlet.ui.design.Space
 import app.circlet.ui.design.TimeFormat
 import app.circlet.ui.design.Toggle
 import app.circlet.ui.design.body
@@ -96,10 +96,6 @@ fun DataScreen(onBack: () -> Unit) {
     val pickRestore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) pendingRestore = uri.toString()
     }
-    val pickWhoopExport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) vm.importWhoop(uri.toString())
-    }
-    val importing by vm.importing.collectAsState()
 
     Column(Modifier.fillMaxSize()) {
         DetailHeader("DATA", onBack = onBack)
@@ -113,13 +109,13 @@ fun DataScreen(onBack: () -> Unit) {
                     },
                     style = body(14.sp, Palette.Dim),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Toggle(
                     checked = health.enabled,
                     description = "Write measured values to Health Connect",
                     enabled = health.available,
                 ) { on -> if (on) askHealth.launch(HEALTH_WRITE_PERMISSIONS) else vm.setHealthConnect(false) }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text("WRITTEN", style = label(12.sp, Palette.Dim))
                 Text(
                     if (health.granted.isEmpty()) {
@@ -129,7 +125,7 @@ fun DataScreen(onBack: () -> Unit) {
                     },
                     style = label(13.sp, Palette.White),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text(
                     "Only measured values are exported, never scores.",
                     style = body(12.sp, Palette.Faint),
@@ -142,16 +138,16 @@ fun DataScreen(onBack: () -> Unit) {
                         "leaves it only when you save a copy.",
                     style = body(14.sp, Palette.Dim),
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Space.sm))
                 val made = export
                 if (made != null) {
                     ListRow(
                         title = made.displayName,
                         subtitle = "${"%,d".format(maxOf(1L, made.byteCount / 1024))} KB",
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Space.sm))
                     SecondaryButton("SAVE A COPY") { saveCopy.launch(made.displayName) }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(Space.sm))
                 }
                 SecondaryButton("CREATE EXPORT", enabled = !exporting) { vm.export() }
             }
@@ -161,38 +157,25 @@ fun DataScreen(onBack: () -> Unit) {
                     checked = backup.enabled,
                     description = "Scheduled backup to a folder",
                 ) { vm.setBackupEnabled(it) }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 ListRow(
                     title = "Folder",
                     value = if (backup.folderUri == null) "NOT CHOSEN" else "CHOSEN",
                     onClick = { pickFolder.launch(null) },
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 Text("HOW OFTEN", style = label(12.sp, Palette.Dim))
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Space.sm))
                 Segmented(
                     options = BACKUP_INTERVAL_LABELS,
                     selected = BACKUP_INTERVALS.indexOf(backup.interval),
                     onSelect = { vm.setBackupInterval(BACKUP_INTERVALS[it]) },
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Space.sm))
                 ListRow(
                     title = "Last backup",
                     value = lastBackupText(backup.lastBackup, timeFormat),
                 )
-            }
-
-            Card("IMPORT WHOOP HISTORY") {
-                Text(
-                    "Bring in your past days from the official app, so trends and your baselines start with that history. " +
-                        "In the WHOOP app, open More, App Settings, Data Export, and choose the zip it sends you. " +
-                        "Days this phone has already recorded from the strap are kept.",
-                    style = body(14.sp, Palette.Dim),
-                )
-                Spacer(Modifier.height(10.dp))
-                SecondaryButton(if (importing) "IMPORTING" else "CHOOSE THE EXPORT FILE", enabled = !importing) {
-                    pickWhoopExport.launch(arrayOf("application/zip", "text/csv", "text/comma-separated-values", "application/octet-stream", "*/*"))
-                }
             }
 
             Card("RESTORE") {
@@ -202,7 +185,7 @@ fun DataScreen(onBack: () -> Unit) {
                         "Restore a file made by Circlet's export or backup.",
                         style = body(14.sp, Palette.Dim),
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(Space.sm))
                     SecondaryButton("CHOOSE A FILE") { pickRestore.launch(arrayOf("*/*")) }
                 } else {
                     Text(
@@ -210,12 +193,12 @@ fun DataScreen(onBack: () -> Unit) {
                             "Data on this phone that is not in the file will be lost.",
                         style = body(14.sp, Palette.Dim),
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(Space.sm))
                     PrimaryButton("REPLACE DATA ON THIS PHONE", danger = true) {
                         vm.restore(pending)
                         pendingRestore = null
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(Space.xs))
                     QuietButton("CANCEL") { pendingRestore = null }
                 }
             }

@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import app.circlet.ui.design.minutesWords
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +63,15 @@ import app.circlet.ui.design.TextEntry
 import app.circlet.ui.design.words
 import app.circlet.ui.state.Loadable
 import app.circlet.ui.state.containerViewModel
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.text.style.TextAlign
+import app.circlet.ui.design.SmallButton
+import app.circlet.ui.design.number
+import java.time.temporal.ChronoUnit
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -76,6 +85,7 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
     val today = LocalDate.now(format.zone)
     var confirming by remember { mutableStateOf(false) }
     var changingSport by remember { mutableStateOf(false) }
+    var editingTime by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ready = (state as? Loadable.Ready<Activity>)?.value
@@ -101,6 +111,7 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
             }
             if (ready != null) {
                 SecondaryButton("CHANGE SPORT") { changingSport = true }
+                SecondaryButton("EDIT TIME") { editingTime = true }
                 SecondaryButton("DELETE ACTIVITY") { confirming = true }
             }
         }
@@ -119,6 +130,34 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
                             is Outcome.Ok -> Unit
                             is Outcome.Err -> messenger.show(result.error.words())
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (editingTime && ready != null) {
+        val now = remember { Instant.now() }
+        var startAt by remember { mutableStateOf(ready.start.truncatedTo(ChronoUnit.MINUTES)) }
+        var endAt by remember { mutableStateOf(ready.end.truncatedTo(ChronoUnit.MINUTES)) }
+        val problem = timeProblem(startAt, endAt, now)
+        Sheet(title = "EDIT TIME", onDismiss = { editingTime = false }) {
+            TimeStepper("START", startAt, null, format) { startAt = it }
+            Spacer(Modifier.height(Space.md))
+            TimeStepper("END", endAt, startAt, format) { endAt = it }
+            Spacer(Modifier.height(Space.md))
+            if (problem == null) {
+                Text("DURATION  ${minutesWords(Duration.between(startAt, endAt).toMinutes())}", style = label(12.sp, Palette.Dim))
+            } else {
+                Text(problem.sentence(), style = body(14.sp, Palette.Warn))
+            }
+            Spacer(Modifier.height(Space.md))
+            PrimaryButton("SAVE", enabled = problem == null) {
+                editingTime = false
+                scope.launch {
+                    when (val result = AppContainer.get(context).workouts.edit(ready.copy(start = startAt, end = endAt))) {
+                        is Outcome.Ok -> Unit
+                        is Outcome.Err -> messenger.show(result.error.words())
                     }
                 }
             }
@@ -225,3 +264,30 @@ private fun WorkoutHeartChart(minutes: List<Int?>) {
 
 private fun source(activity: Activity): String =
     if (activity.source == ActivitySource.AUTO) "DETECTED" else "LOGGED"
+
+/**
+ * One clock time with buttons that move it by one or ten minutes.
+ * [dayOf] is the time whose calendar day this one is compared with, to mark a time on another day.
+ */
+@Composable
+private fun TimeStepper(title: String, at: Instant, dayOf: Instant?, format: TimeFormat, onChange: (Instant) -> Unit) {
+    val otherDay = dayOf != null && localDay(at, format.zone) != localDay(dayOf, format.zone)
+    Text(if (otherDay) "$title · ${dayLabel(localDay(at, format.zone))}" else title, style = label(12.sp, Palette.Dim))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        SmallButton("−10") { onChange(at.minusSeconds(600)) }
+        Spacer(Modifier.width(Space.sm))
+        SmallButton("−1") { onChange(at.minusSeconds(60)) }
+        Text(
+            format.time(at),
+            style = number(28.sp, Palette.White),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        SmallButton("+1") { onChange(at.plusSeconds(60)) }
+        Spacer(Modifier.width(Space.sm))
+        SmallButton("+10") { onChange(at.plusSeconds(600)) }
+    }
+}
+
+private fun dayLabel(day: LocalDate): String = day.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US)).uppercase()

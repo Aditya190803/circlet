@@ -78,6 +78,7 @@ import app.circlet.ui.journal.JournalInsightsScreen
 import app.circlet.ui.journal.JournalScreen
 import app.circlet.ui.onboarding.OnboardingFlow
 import app.circlet.ui.portability.DataScreen
+import app.circlet.ui.portability.ImportScreen
 import app.circlet.ui.stress.StressScreen
 import app.circlet.ui.trends.MetricTrendScreen
 import app.circlet.ui.trends.RecordsScreen
@@ -111,7 +112,7 @@ enum class Tab(val route: String, val title: String, val glyph: Glyph) {
  * Screens pushed on top of a tab.
  *
  * Route table:
- * - more/profile, more/units, more/about, more/pair, more/data: More rows and setup screens
+ * - more/profile, more/units, more/about, more/pair, more/data, more/import: More rows and setup screens
  * - trends: TrendsScreen. trends/metric/{kind}: MetricTrendScreen. trends/recap: WeeklyRecapScreen. trends/records: RecordsScreen
  * - alarms: AlarmsScreen
  * - stress/{date}: StressScreen
@@ -127,6 +128,7 @@ object Routes {
     const val ABOUT = "more/about"
     const val PAIR = "more/pair"
     const val DATA = "more/data"
+    const val IMPORT = "more/import"
     const val TRENDS = "trends"
     const val RECAP = "trends/recap"
     const val RECORDS = "trends/records"
@@ -325,6 +327,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             stress = { nav.navigate(Routes.stress(state.date)) },
                             workouts = { nav.navigate(Routes.workouts(state.date)) },
                             data = { nav.navigate(Routes.DATA) },
+                            importHistory = { nav.navigate(Routes.IMPORT) },
                             gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
                         ),
                     )
@@ -365,6 +368,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                     PairScreen(phase, scanning, found, pairing::scan, pairing::pair, fixPairing) { nav.popBackStack() }
                 }
                 composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
+                composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
                 composable(Routes.TRENDS) {
                     TrendsScreen(
                         onBack = { nav.popBackStack() },

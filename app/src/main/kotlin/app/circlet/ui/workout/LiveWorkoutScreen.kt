@@ -11,6 +11,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -27,9 +30,12 @@ import app.circlet.ui.design.Glyph
 import app.circlet.ui.design.LiveDot
 import app.circlet.ui.design.Palette
 import app.circlet.ui.design.PrimaryButton
+import app.circlet.ui.design.SecondaryButton
+import app.circlet.ui.design.Sheet
 import app.circlet.ui.design.Skeleton
 import app.circlet.ui.design.Space
 import app.circlet.ui.design.ZoneBars
+import app.circlet.ui.design.body
 import app.circlet.ui.design.decimal
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
@@ -40,6 +46,7 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
     val vm = containerViewModel { container, _ -> LiveWorkoutViewModel(container.workouts, container.time) }
     val state by vm.state.collectAsStateWithLifecycle()
     val messenger = LocalMessenger.current
+    var confirmingFinish by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     LaunchedEffect(vm) { vm.finished.collect { onFinished(it) } }
 
@@ -58,8 +65,23 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
                     "Start a workout from the workouts page. Its time, heart rate, strain and calories appear here while you record it.",
                 )
                 is LiveUi.Recording -> {
-                    Recording(live = current.live, elapsedText = elapsedText(current.elapsed))
-                    PrimaryButton("STOP WORKOUT") { vm.stop() }
+                    val elapsed = elapsedText(current.elapsed)
+                    Recording(live = current.live, elapsedText = elapsed)
+                    SecondaryButton(if (current.live.paused) "RESUME" else "PAUSE") {
+                        if (current.live.paused) vm.resume() else vm.pause()
+                    }
+                    PrimaryButton("STOP WORKOUT") { confirmingFinish = true }
+                    if (confirmingFinish) {
+                        Sheet("Finish this workout?", onDismiss = { confirmingFinish = false }) {
+                            Text("Recorded so far: $elapsed.", style = body(14.sp))
+                            Spacer(Modifier.height(Space.lg))
+                            PrimaryButton("FINISH") {
+                                confirmingFinish = false
+                                vm.stop()
+                            }
+                            SecondaryButton("KEEP GOING") { confirmingFinish = false }
+                        }
+                    }
                 }
             }
         }
@@ -74,10 +96,14 @@ private fun Recording(live: LiveWorkout, elapsedText: String) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            LiveDot(color = Palette.Teal, active = true)
+            LiveDot(color = if (live.paused) Palette.Warn else Palette.Teal, active = !live.paused)
             Text(elapsedText, style = number(48.sp, Palette.White))
         }
-        Text("RECORDING", style = label(12.sp, Palette.Faint))
+        if (live.paused) {
+            Text("PAUSED", style = label(12.sp, Palette.Warn))
+        } else {
+            Text("RECORDING", style = label(12.sp, Palette.Faint))
+        }
     }
     Card("NOW") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

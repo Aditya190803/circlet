@@ -33,6 +33,24 @@ fun hoursMinutes(minutes: Int): String = "%d:%02d".format(minutes / 60, minutes 
 
 fun Duration.hoursMinutes(): String = hoursMinutes(toMinutes().toInt())
 
+/** Sync progress in words: "42 MIN" or "1 H 20 MIN". */
+fun minutesWords(minutes: Long): String {
+    val hours = minutes / 60
+    val rest = minutes % 60
+    return if (hours > 0) "%d H %02d MIN".format(hours, rest) else "$rest MIN"
+}
+
+/** How long ago [since] was, in words: "JUST NOW", "12 MIN AGO", "3 H AGO", "2 D AGO". */
+fun agoWords(since: Instant, now: Instant): String {
+    val minutes = Duration.between(since, now).toMinutes().coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "JUST NOW"
+        minutes < 60 -> "$minutes MIN AGO"
+        minutes < 24 * 60 -> "${minutes / 60} H AGO"
+        else -> "${minutes / (24 * 60)} D AGO"
+    }
+}
+
 fun Double.decimal(digits: Int = 1): String = "%.${digits}f".format(this)
 
 fun Int.grouped(): String = "%,d".format(this)

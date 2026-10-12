@@ -62,6 +62,22 @@ internal fun clockText(instant: Instant, format: TimeFormat): String {
 internal fun timeRange(start: Instant, end: Instant, format: TimeFormat): String =
     "${clockText(start, format)} - ${clockText(end, format)}"
 
+/** Why an edited start and end cannot be saved. */
+internal enum class TimeProblem { END_NOT_AFTER_START, END_IN_FUTURE, SPAN_OVER_A_DAY }
+
+internal fun timeProblem(start: Instant, end: Instant, now: Instant): TimeProblem? = when {
+    !end.isAfter(start) -> TimeProblem.END_NOT_AFTER_START
+    end.isAfter(now) -> TimeProblem.END_IN_FUTURE
+    Duration.between(start, end) > Duration.ofHours(24) -> TimeProblem.SPAN_OVER_A_DAY
+    else -> null
+}
+
+internal fun TimeProblem.sentence(): String = when (this) {
+    TimeProblem.END_NOT_AFTER_START -> "The end must be after the start."
+    TimeProblem.END_IN_FUTURE -> "The end cannot be in the future."
+    TimeProblem.SPAN_OVER_A_DAY -> "A workout cannot run longer than 24 hours."
+}
+
 /** Sports whose label contains [query], ignoring case and surrounding spaces. A blank query keeps all. */
 internal fun filterSports(query: String): List<Sport> {
     val wanted = query.trim()
