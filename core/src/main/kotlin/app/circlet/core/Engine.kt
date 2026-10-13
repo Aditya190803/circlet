@@ -28,6 +28,7 @@ data class DayInput(
     val manualActivities: List<Activity>,
     val now: Instant,
     val priorSkinTemp: Map<LocalDate, Double> = emptyMap(),
+    val sleepEdit: SleepEdit? = null,
 )
 
 /**

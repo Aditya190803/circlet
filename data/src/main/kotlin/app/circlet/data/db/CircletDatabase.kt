@@ -22,6 +22,7 @@ import app.circlet.core.JournalTag
         SpotCheckEntity::class,
         DirtyDayEntity::class,
         LiveWorkoutEntity::class,
+        SleepEditEntity::class,
     ],
     version = CircletDatabase.VERSION,
     exportSchema = true,
@@ -39,9 +40,10 @@ abstract class CircletDatabase : RoomDatabase() {
     abstract fun spotChecks(): SpotCheckDao
     abstract fun dirty(): DirtyDao
     abstract fun liveWorkout(): LiveWorkoutDao
+    abstract fun sleepEdits(): SleepEditDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val NAME = "circlet.db"
     }
 }

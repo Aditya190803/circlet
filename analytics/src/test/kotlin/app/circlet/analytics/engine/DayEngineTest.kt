@@ -14,6 +14,7 @@ import app.circlet.core.RestingHeartRate
 import app.circlet.core.Sample
 import app.circlet.core.Sex
 import app.circlet.core.SkinTempFlag
+import app.circlet.core.SleepEdit
 import app.circlet.core.SleepPerformance
 import app.circlet.core.Sport
 import app.circlet.core.Activity
@@ -103,6 +104,57 @@ class DayEngineTest {
         // No prior days yet, so the run is scored against today's own quiet waking level.
         assertTrue("run strain ${run.strain.value}", run.strain.value!! in 4.0..21.0)
         assertTrue(run.averageHeartRateBpm.value!! >= 140)
+    }
+
+    @Test
+    fun anEditedWindowReplacesTheDetectedOneAndRescoresFromIt() {
+        val now = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val samples = daySamples(date, 0)
+        val detected = engine.computeDay(input(date, samples, now, emptyList()))
+        val start = date.minusDays(1).atTime(23, 30).atZone(zone).toInstant()
+        val end = date.atTime(5, 30).atZone(zone).toInstant()
+        val edited = engine.computeDay(
+            input(date, samples, now, emptyList()).copy(sleepEdit = SleepEdit(start = start, end = end)),
+        )
+
+        val session = edited.sleep.value
+        assertNotNull("sleep ${edited.sleep.absentReason}", session)
+        assertEquals(start, session!!.start)
+        assertEquals(end, session.end)
+        assertTrue(session.timeAsleep < detected.sleep.value!!.timeAsleep)
+        assertNotNull(edited.heart.resting.bpm.value)
+        assertNotNull(edited.heart.hrv.rmssdMs.value)
+        assertNotNull(edited.sleepPerformance.percent.value)
+    }
+
+    @Test
+    fun aDeletedNightHasNoSleepAndNoSleepDerivedMetrics() {
+        val now = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val samples = daySamples(date, 0)
+        val deleted = engine.computeDay(
+            input(date, samples, now, emptyList()).copy(sleepEdit = SleepEdit(deleted = true)),
+        )
+        val noSleep = engine.computeDay(input(date, samples.filter { it.epochSecond >= date.atTime(7, 0).atZone(zone).toEpochSecond() }, now, emptyList()))
+
+        assertNull(deleted.sleep.value)
+        assertEquals(AbsentReason.NO_SLEEP, deleted.sleep.absentReason)
+        assertEquals(noSleep.sleep.absentReason, deleted.sleep.absentReason)
+        assertNull(deleted.sleepPerformance.percent.value)
+        assertNull(deleted.skinTemperature?.settledMeanCounts)
+    }
+
+    @Test
+    fun anEmptyEditAndAnUnmatchedRejectionScoreTheDayLikeNoEdit() {
+        val now = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val samples = daySamples(date, 0)
+        val plain = engine.computeDay(input(date, samples, now, emptyList()))
+        val empty = engine.computeDay(input(date, samples, now, emptyList()).copy(sleepEdit = SleepEdit()))
+        val unmatched = engine.computeDay(
+            input(date, samples, now, emptyList()).copy(sleepEdit = SleepEdit(rejectedNaps = setOf(Instant.ofEpochSecond(5)))),
+        )
+
+        assertEquals(plain, empty)
+        assertEquals(plain, unmatched)
     }
 
     @Test

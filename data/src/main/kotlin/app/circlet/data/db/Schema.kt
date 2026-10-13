@@ -42,11 +42,13 @@ internal val USER_TABLES = listOf(
     "spot_checks",
     "dirty_days",
     "live_workout",
+    "sleep_edits",
 )
 
 /**
  * Migrations between published schemas.
  * Version 2 adds the skin-temperature count column on samples.
+ * Version 3 adds the sleep_edits table for user sleep window overrides.
  * [missingSteps] fails the unit test until the chain from 1 is continuous.
  */
 internal object CircletMigrations {
@@ -56,7 +58,20 @@ internal object CircletMigrations {
         }
     }
 
-    val ALL: List<Migration> = listOf(MIGRATION_1_2)
+    val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS sleep_edits (" +
+                    "date TEXT PRIMARY KEY NOT NULL, " +
+                    "start_epoch INTEGER, " +
+                    "end_epoch INTEGER, " +
+                    "deleted INTEGER NOT NULL, " +
+                    "rejected_naps TEXT NOT NULL)",
+            )
+        }
+    }
+
+    val ALL: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3)
 
     fun missingSteps(from: Int = 1, to: Int = CircletDatabase.VERSION): List<Pair<Int, Int>> {
         val have = ALL.map { it.startVersion to it.endVersion }.toSet()

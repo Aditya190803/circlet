@@ -28,11 +28,13 @@ import app.circlet.core.MetricsRepository
 import app.circlet.core.OnboardingChecks
 import app.circlet.core.OnboardingState
 import app.circlet.core.Outcome
+import app.circlet.core.SleepEdit
 import app.circlet.core.PersonalRecord
 import app.circlet.core.Profile
 import app.circlet.core.ProfileRepository
 import app.circlet.core.reading
 import app.circlet.core.rejectedActivityWindow
+import app.circlet.core.rejectedSleepWindow
 import app.circlet.core.RecordKind
 import app.circlet.core.ScheduledAlarm
 import app.circlet.core.SettingsRepository
@@ -68,6 +70,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 /**
  * Which demo the UI is looking at.
@@ -112,6 +115,7 @@ class FakeCirclet(
     )
     private val days = MutableStateFlow(history.days)
     private val spots = MutableStateFlow(history.spotChecks)
+    private val sleepEdits = MutableStateFlow<Map<LocalDate, SleepEdit>>(emptyMap())
     private val strap = MutableStateFlow(initialStrap())
     private val scanningState = MutableStateFlow(false)
     private val found = MutableStateFlow<List<FoundStrap>>(emptyList())
@@ -218,6 +222,18 @@ class FakeCirclet(
 
     override fun observeSpotChecks(date: LocalDate): Flow<List<HrvSpotCheck>> =
         spots.map { it[date].orEmpty() }
+
+    override fun observeSleepEdit(date: LocalDate): Flow<SleepEdit?> = sleepEdits.map { it[date] }
+
+    override suspend fun saveSleepEdit(date: LocalDate, edit: SleepEdit?): Outcome<Unit> {
+        val window = edit?.window
+        if (window != null) {
+            val rejected = rejectedSleepWindow(window.first, window.second, time.now())
+            if (rejected != null) return Outcome.Err(CoreError.Invalid(rejected))
+        }
+        sleepEdits.update { if (edit == null || edit.isEmpty) it - date else it + (date to edit) }
+        return Outcome.Ok(Unit)
+    }
 
     override val state: StateFlow<StrapState> = strap
     override val scanning: StateFlow<Boolean> = scanningState

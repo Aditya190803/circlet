@@ -77,7 +77,7 @@ class CircletDayEngine : DayEngine {
         // One alignment and one night staging per day. The strain-fed sleep
         // need is rescored below; the sessions are not staged twice.
         val series = alignSamples(input.samples, input.now)
-        val segments = segmentDay(series, input.zone, input.date, input.profile, history)
+        val segments = segmentDay(series, input.zone, input.date, input.profile, history, input.sleepEdit)
         var sleep = finishSleep(segments, history, input.zone, input.date, null)
         val session = sleep.main.value
         val heart = computeHeart(

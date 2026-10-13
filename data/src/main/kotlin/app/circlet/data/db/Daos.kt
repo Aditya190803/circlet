@@ -210,3 +210,18 @@ interface LiveWorkoutDao {
     @Query("DELETE FROM live_workout WHERE id = :id")
     fun clear(id: Int = LIVE_ROW)
 }
+
+@Dao
+interface SleepEditDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsert(row: SleepEditEntity)
+
+    @Query("SELECT * FROM sleep_edits WHERE date = :date")
+    fun get(date: String): SleepEditEntity?
+
+    @Query("SELECT * FROM sleep_edits WHERE date = :date")
+    fun observe(date: String): Flow<SleepEditEntity?>
+
+    @Query("DELETE FROM sleep_edits WHERE date = :date")
+    fun delete(date: String)
+}

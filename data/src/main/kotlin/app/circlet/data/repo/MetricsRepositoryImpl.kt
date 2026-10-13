@@ -8,9 +8,11 @@ import app.circlet.core.MetricKind
 import app.circlet.core.MetricsRepository
 import app.circlet.core.Outcome
 import app.circlet.core.PersonalRecord
+import app.circlet.core.SleepEdit
 import app.circlet.core.TrendPoint
 import app.circlet.core.TrendRange
 import app.circlet.core.WeeklyRecap
+import app.circlet.core.rejectedSleepWindow
 import app.circlet.data.codec.SpotCodec
 import app.circlet.data.pipeline.RecomputePipeline
 import java.time.DayOfWeek
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.withLock
 
 internal class MetricsRepositoryImpl(
     private val store: Store,
@@ -81,6 +84,36 @@ internal class MetricsRepositoryImpl(
     override fun observeSpotChecks(date: LocalDate): Flow<List<HrvSpotCheck>> = store.generation.flatMapLatest {
         store.database.spotChecks().observe(date.toString()).map { rows ->
             rows.map { SpotCodec.decode(it.payload) }
+        }
+    }
+
+    override fun observeSleepEdit(date: LocalDate): Flow<SleepEdit?> =
+        store.database.sleepEdits().observe(date.toString()).map { it?.toEdit() }.distinctUntilChanged()
+
+    override suspend fun saveSleepEdit(date: LocalDate, edit: SleepEdit?): Outcome<Unit> {
+        val window = edit?.window
+        if (window != null) {
+            val rejected = rejectedSleepWindow(window.first, window.second, store.time.now())
+            if (rejected != null) return Outcome.Err(CoreError.Invalid(rejected))
+        }
+        return storage {
+            val zone = store.time.zone()
+            val iso = date.toString()
+            store.lock.withLock {
+                store.io {
+                    val dao = store.database.sleepEdits()
+                    if (edit == null || edit.isEmpty) dao.delete(iso) else dao.upsert(edit.toEntity(iso))
+                    store.database.dirty().mark(iso)
+                    if (window != null) {
+                        for (instant in window.toList()) {
+                            val touched = instant.atZone(zone).toLocalDate().toString()
+                            if (touched != iso) store.database.dirty().mark(touched)
+                        }
+                    }
+                }
+            }
+            pipeline.nudge()
+            Outcome.Ok(Unit)
         }
     }
 

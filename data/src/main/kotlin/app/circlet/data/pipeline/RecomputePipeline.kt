@@ -7,6 +7,7 @@ import app.circlet.data.codec.DayCodec
 import app.circlet.data.codec.ProfileCodec
 import app.circlet.data.codec.defaultProfile
 import app.circlet.data.codec.toSample
+import app.circlet.data.repo.toEdit
 import app.circlet.data.db.DaySummaryEntity
 import app.circlet.data.db.Keys
 import app.circlet.data.health.HealthConnectGateway
@@ -139,6 +140,7 @@ internal class RecomputePipeline(
                 profile = profile,
                 history = history,
                 manualActivities = manual,
+                sleepEdit = store.database.sleepEdits().get(iso)?.toEdit(),
                 now = store.time.now(),
                 priorSkinTemp = history.mapNotNull { day ->
                     day.skinTemperature?.settledMeanCounts?.let { day.date to it }
