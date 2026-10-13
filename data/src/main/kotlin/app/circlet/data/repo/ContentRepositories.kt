@@ -141,6 +141,7 @@ internal class SettingsRepositoryImpl(
             kv.put(KvEntity(Keys.LOW_BATTERY_THRESHOLD, settings.lowBatteryThreshold.toString()))
             putOrClear(kv, Keys.QUIET_START, settings.quietStartMinute)
             putOrClear(kv, Keys.QUIET_END, settings.quietEndMinute)
+            kv.put(KvEntity(Keys.PHONE_STEPS, settings.countPhoneSteps.toString()))
         }
         memory.settings.value = settings
         return Outcome.Ok(settings)

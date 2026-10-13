@@ -7,6 +7,7 @@ import app.circlet.core.DataPortability
 import app.circlet.core.ExportResult
 import app.circlet.core.HealthConnectStatus
 import app.circlet.core.Outcome
+import app.circlet.core.SettingsRepository
 import app.circlet.ui.design.words
 import java.time.Duration
 import kotlinx.coroutines.channels.Channel
@@ -14,11 +15,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 /** Health Connect, export, backup and restore. Results and problems go out through [messages]. */
-class DataViewModel(private val data: DataPortability) : ViewModel() {
+class DataViewModel(private val data: DataPortability, private val settings: SettingsRepository) : ViewModel() {
+    val countPhoneSteps: Flow<Boolean> = settings.settings.map { it.countPhoneSteps }.distinctUntilChanged()
     val healthConnect: StateFlow<HealthConnectStatus> = data.healthConnect
     val backup: StateFlow<BackupSettings> = data.backup
 
@@ -39,6 +43,13 @@ class DataViewModel(private val data: DataPortability) : ViewModel() {
 
     /** The line describing the last WHOOP import, or null before one has finished. */
     val importResult: StateFlow<String?> = importResultState.asStateFlow()
+
+    fun setCountPhoneSteps(enabled: Boolean) {
+        viewModelScope.launch {
+            val result = settings.update(settings.settings.value.copy(countPhoneSteps = enabled))
+            if (result is Outcome.Err) messageChannel.send(result.error.words())
+        }
+    }
 
     fun setHealthConnect(enabled: Boolean) {
         viewModelScope.launch {

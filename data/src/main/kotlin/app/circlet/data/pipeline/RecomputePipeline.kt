@@ -143,6 +143,7 @@ internal class RecomputePipeline(
                 priorSkinTemp = history.mapNotNull { day ->
                     day.skinTemperature?.settledMeanCounts?.let { day.date to it }
                 }.toMap(),
+                phoneSteps = readPhoneSteps(phoneStepsDir(store.context.filesDir), date),
             ),
         )
     }

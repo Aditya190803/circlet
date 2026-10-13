@@ -14,6 +14,8 @@ import java.time.ZoneId
  * still seeds the baseline. [manualActivities] are workouts
  * the user logged or edited; the result must keep their identity.
  * [now] is the instant the caller considers current. The engine does not read a clock.
+ * [phoneSteps] are this phone's step-counter readings for [date], preceded by the last reading of
+ * the day before when there is one; empty when the phone does not count steps.
  * [priorSkinTemp] holds settled skin-temp means (ADC counts) for nights before
  * [date], taken by the caller from [SkinTemperature.settledMeanCounts] on earlier
  * summaries; empty when there are none. The engine always scores the target night itself from
@@ -28,6 +30,7 @@ data class DayInput(
     val manualActivities: List<Activity>,
     val now: Instant,
     val priorSkinTemp: Map<LocalDate, Double> = emptyMap(),
+    val phoneSteps: List<StepReading> = emptyList(),
 )
 
 /**

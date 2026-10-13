@@ -13,6 +13,7 @@ import app.circlet.core.RespiratoryRate
 import app.circlet.core.RestingHeartRate
 import app.circlet.core.Sample
 import app.circlet.core.Sex
+import app.circlet.core.StepReading
 import app.circlet.core.SkinTempFlag
 import app.circlet.core.SleepPerformance
 import app.circlet.core.Sport
@@ -83,8 +84,9 @@ class DayEngineTest {
         assertNotNull("stress ${summary.stress.score.absentReason}", summary.stress.score.value)
         assertTrue(summary.stress.timeline.isNotEmpty())
 
-        // The run is the only sustained movement with a raised heart rate, so it carries the estimate.
-        assertTrue("steps ${summary.steps.count.value}", summary.steps.count.value!! in 3_000..12_000)
+        // Strap motion never makes a step count; only the phone's counter does.
+        assertNull(summary.steps.count.value)
+        assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.steps.count.absentReason)
         // No paced run to measure from, so the heart-rate-ratio estimate stands in at low confidence.
         assertTrue(summary.vo2Max.mlPerKgMin.value!! in 30.0..80.0)
         assertEquals(app.circlet.core.Confidence.LOW, summary.vo2Max.mlPerKgMin.confidence)
@@ -185,12 +187,24 @@ class DayEngineTest {
             importedNight(date.minusDays(ago.toLong()), 50 + ago, 40.0 + ago, 48 + (ago % 5), 14.0 + ago * 0.1, 70 + ago)
         }
         val now = date.plusDays(1).atStartOfDay(zone).toInstant()
-        assertEquals(7, engine.algorithmVersion)
+        assertEquals(8, engine.algorithmVersion)
         val summary = engine.computeDay(input(date, daySamples(date, 0, includeRun = false), now, history))
         assertEquals(CalibrationStatus.READY, summary.recovery.calibration)
         assertNotNull(summary.recovery.score.value)
         val short = engine.computeDay(input(date, emptyList(), now, history.take(13)))
         assertEquals(CalibrationStatus.CALIBRATING, short.recovery.calibration)
+    }
+
+    @Test
+    fun phoneReadingsAreTheOnlySourceOfSteps() {
+        val now = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val noon = date.atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+        val readings = listOf(StepReading(noon, 4_000), StepReading(noon + 10 * 60_000, 4_900))
+        val summary = engine.computeDay(input(date, emptyList(), now, emptyList(), phoneSteps = readings))
+        assertEquals(900, summary.steps.count.value)
+        assertEquals(app.circlet.core.Confidence.MEDIUM, summary.steps.count.confidence)
+        val other = engine.computeDay(input(date.plusDays(1), emptyList(), now, emptyList(), phoneSteps = readings))
+        assertEquals(AbsentReason.NOT_ENOUGH_DATA, other.steps.count.absentReason)
     }
 
     @Test
@@ -200,7 +214,7 @@ class DayEngineTest {
         assertEquals(AbsentReason.NOT_WORN, summary.sleep.absentReason)
         assertEquals(AbsentReason.NOT_WORN, summary.heart.resting.bpm.absentReason)
         assertEquals(AbsentReason.NOT_WORN, summary.strain.score.absentReason)
-        assertEquals(AbsentReason.NOT_WORN, summary.steps.count.absentReason)
+        assertEquals(AbsentReason.NOT_ENOUGH_DATA, summary.steps.count.absentReason)
         assertTrue(summary.activities.isEmpty())
         assertEquals(1440, summary.heartRateByMinute.size)
         assertTrue(summary.heartRateByMinute.all { it == null })
@@ -282,6 +296,7 @@ class DayEngineTest {
         history: List<DaySummary>,
         zoneId: ZoneId = zone,
         manual: List<Activity> = emptyList(),
+        phoneSteps: List<StepReading> = emptyList(),
     ): DayInput = DayInput(
         date = day,
         zone = zoneId,
@@ -290,6 +305,7 @@ class DayEngineTest {
         history = history,
         manualActivities = manual,
         now = now,
+        phoneSteps = phoneSteps,
     )
 
     private fun profile(): Profile = Profile(

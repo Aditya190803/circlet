@@ -12,7 +12,7 @@ import app.circlet.analytics.sleep.finishSleep
 import app.circlet.analytics.sleep.segmentDay
 import app.circlet.analytics.temperature.NightlyTemp
 import app.circlet.analytics.temperature.nightlySkinTemp
-import app.circlet.analytics.motion.estimateSteps
+import app.circlet.analytics.motion.phoneStepsOnDay
 import app.circlet.analytics.temperature.scoreSkinTemp
 import app.circlet.core.Steps
 import app.circlet.analytics.strain.QUIET_HRR_TRAIT_MIN_MINUTES
@@ -49,9 +49,9 @@ import kotlin.math.roundToInt
  */
 /**
  * Bumped when a stored strap day must be scored again.
- * 7 tightens the one-Hz step estimate and scales partial-minute motion by sample coverage.
+ * 8 takes the step count from the phone's step counter and drops the strap-motion estimate.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 7
+const val CIRCLET_ALGORITHM_VERSION: Int = 8
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -169,7 +169,7 @@ class CircletDayEngine : DayEngine {
             strain = load.strain,
             stress = stress,
             heart = heart,
-            steps = Steps(estimateSteps(input.samples, input.zone, input.date, input.now, input.profile, resting)),
+            steps = Steps(phoneSteps(input)),
             calories = load.calories,
             activities = activities,
             heartRateByMinute = tail.byMinute,
@@ -210,6 +210,12 @@ private data class TailSections(
  * honestly [SkinTempFlag.NOT_ENOUGH_BASELINE][app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE],
  * never a substituted temperature.
  */
+private fun phoneSteps(input: DayInput): app.circlet.core.Metric<Int> {
+    val total = phoneStepsOnDay(input.phoneSteps, input.zone, input.date)
+        ?: return app.circlet.core.Metric.absent(app.circlet.core.AbsentReason.NOT_ENOUGH_DATA)
+    return app.circlet.core.Metric.of(total, app.circlet.core.Confidence.MEDIUM)
+}
+
 private fun skinTemperatureOf(
     input: DayInput,
     session: app.circlet.core.SleepSession?,

@@ -188,6 +188,7 @@ internal fun readSettings(db: CircletDatabase): UserSettings {
             ?: defaults.lowBatteryThreshold,
         quietStartMinute = db.kv().get(Keys.QUIET_START)?.toIntOrNull()?.takeIf { it in 0..1439 },
         quietEndMinute = db.kv().get(Keys.QUIET_END)?.toIntOrNull()?.takeIf { it in 0..1439 },
+        countPhoneSteps = db.kv().get(Keys.PHONE_STEPS) == "true",
     )
 }
 

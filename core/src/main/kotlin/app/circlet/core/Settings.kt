@@ -26,6 +26,7 @@ enum class DoubleTapAction {
  * [heartRateBroadcast] is the standard heart-rate profile toggle for gym equipment.
  * [lowBatteryThreshold] is a percent. Quiet hours are minutes after local midnight;
  * both null means quiet hours are off.
+ * [countPhoneSteps] records this phone's step counter, the only source of the step count.
  */
 data class UserSettings(
     val mass: MassUnit,
@@ -37,6 +38,7 @@ data class UserSettings(
     val lowBatteryThreshold: Int = 20,
     val quietStartMinute: Int? = null,
     val quietEndMinute: Int? = null,
+    val countPhoneSteps: Boolean = false,
 )
 
 /** Units, clock, double tap, and heart-rate broadcast. */

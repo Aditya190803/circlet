@@ -17,6 +17,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -106,6 +108,17 @@ object RealBackend {
             val opened = DataModule.open(context, CircletDayEngine(), circletInsightEngine(), SystemTimeSource)
             strap = StrapModule.open(context, opened.ports, SystemTimeSource)
             data = opened
+            recordPhoneSteps(context, opened)
+        }
+    }
+
+    /** The recorder lives as long as the process, the foreground service included. */
+    private fun recordPhoneSteps(context: Context, opened: CircletData) {
+        val recorder = PhoneStepRecorder(context) { date ->
+            workers.launch { opened.refreshDates(listOf(date)) }
+        }
+        workers.launch {
+            opened.settings.settings.map { it.countPhoneSteps }.distinctUntilChanged().collect(recorder::setEnabled)
         }
     }
 

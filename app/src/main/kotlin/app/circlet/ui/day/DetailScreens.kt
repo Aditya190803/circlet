@@ -435,7 +435,7 @@ fun StrainScreen(
             Divider()
             MetricRow("CALORIES", day.calories, "KCAL") { it.grouped() }
             Divider()
-            MetricRow("STEPS", day.steps.count, tag = "ESTIMATE", note = "Counted from wrist movement") { it.grouped() }
+            MetricRow("STEPS", day.steps.count, note = "Counted by this phone") { it.grouped() }
         }
         Card("FITNESS") {
             MetricRow("VO2 MAX", day.vo2Max.mlPerKgMin, "ML/KG/MIN") { it.decimal() }

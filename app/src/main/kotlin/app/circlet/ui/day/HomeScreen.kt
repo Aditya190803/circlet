@@ -418,6 +418,6 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         Divider()
         MetricRow("CALORIES", summary.calories, "KCAL", onClick = { onOpenMetric(MetricKind.CALORIES) }) { it.grouped() }
         Divider()
-        MetricRow("STEPS", summary.steps.count, tag = "ESTIMATE", onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
+        MetricRow("STEPS", summary.steps.count, onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
     }
 }
