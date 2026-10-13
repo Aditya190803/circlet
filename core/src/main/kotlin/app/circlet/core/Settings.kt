@@ -24,12 +24,19 @@ enum class DoubleTapAction {
 /**
  * Preferences that do not change the physiology.
  * [heartRateBroadcast] is the standard heart-rate profile toggle for gym equipment.
+ * [lowBatteryThreshold] is a percent. Quiet hours are minutes after local midnight;
+ * both null means quiet hours are off.
  */
 data class UserSettings(
     val mass: MassUnit,
     val clock: ClockStyle,
     val doubleTap: DoubleTapAction,
     val heartRateBroadcast: Boolean,
+    val offWristAlerts: Boolean = true,
+    val lowBatteryAlerts: Boolean = true,
+    val lowBatteryThreshold: Int = 20,
+    val quietStartMinute: Int? = null,
+    val quietEndMinute: Int? = null,
 )
 
 /** Units, clock, double tap, and heart-rate broadcast. */

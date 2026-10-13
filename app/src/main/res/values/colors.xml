@@ -2,4 +2,7 @@
 <resources>
     <color name="bg">#283339</color>
     <color name="bg_bottom">#101518</color>
+    <color name="widget_bg">#101518</color>
+    <color name="widget_text">#F2F5F6</color>
+    <color name="widget_dim">#9AA6AB</color>
 </resources>

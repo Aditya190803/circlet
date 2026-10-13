@@ -66,5 +66,28 @@
                 <action android:name="android.intent.action.DATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".widget.TodayWidgetProvider"
+            android:label="@string/widget_today_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.BatteryWidgetProvider"
+            android:label="@string/widget_battery_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_battery_info" />
+        </receiver>
     </application>
 </manifest>

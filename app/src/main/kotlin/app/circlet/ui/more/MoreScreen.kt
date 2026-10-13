@@ -59,6 +59,7 @@ class MoreActions(
     val pair: () -> Unit = {},
     val profile: () -> Unit = {},
     val units: () -> Unit = {},
+    val notifications: () -> Unit = {},
     val about: () -> Unit = {},
     val trends: () -> Unit = {},
     val journal: () -> Unit = {},
@@ -131,6 +132,8 @@ fun MoreScreen(
                 ListRow("Profile", Glyph.Person, "Age, height, weight and max heart rate", onClick = actions.profile)
                 Divider()
                 ListRow("Units", Glyph.Ruler, "Weight and clock", onClick = actions.units)
+                Divider()
+                ListRow("Notifications", Glyph.Alarm, "Off-wrist and low-battery alerts, quiet hours", onClick = actions.notifications)
                 Divider()
                 ListRow("About and licences", Glyph.Info, "How scores are made, and the open-source notices", onClick = actions.about)
                 actions.gallery?.let { open ->

@@ -137,6 +137,7 @@ object DataModule {
                 sleepStage = StoredSleepStage(store),
                 doubleTap = SettingsDoubleTap(memory),
                 liveLoad = ProfileLiveLoad(store, memory),
+                settings = { memory.settings.value },
             ),
         )
         CircletDataHolder.current = data

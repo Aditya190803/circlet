@@ -69,6 +69,7 @@ import app.circlet.ui.design.TimeFormat
 import app.circlet.ui.design.label
 import app.circlet.ui.more.AboutScreen
 import app.circlet.ui.more.MoreActions
+import app.circlet.ui.more.NotificationsScreen
 import app.circlet.ui.more.MoreScreen
 import app.circlet.ui.more.PairScreen
 import app.circlet.ui.more.ProfileScreen
@@ -131,6 +132,7 @@ object Routes {
     const val DATA = "more/data"
     const val IMPORT = "more/import"
     const val BREATHE = "more/breathe"
+    const val NOTIFICATIONS = "more/notifications"
     const val TRENDS = "trends"
     const val RECAP = "trends/recap"
     const val RECORDS = "trends/records"
@@ -322,6 +324,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             pair = { nav.navigate(Routes.PAIR) },
                             profile = { nav.navigate(Routes.PROFILE) },
                             units = { nav.navigate(Routes.UNITS) },
+                            notifications = { nav.navigate(Routes.NOTIFICATIONS) },
                             about = { nav.navigate(Routes.ABOUT) },
                             trends = { nav.navigate(Routes.TRENDS) },
                             journal = { nav.navigate(Routes.journal(state.date)) },
@@ -346,6 +349,11 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                     val more = moreViewModel(messenger)
                     val settings by more.settings.collectAsStateWithLifecycle()
                     UnitsScreen(settings, more::update) { nav.popBackStack() }
+                }
+                composable(Routes.NOTIFICATIONS) {
+                    val more = moreViewModel(messenger)
+                    val settings by more.settings.collectAsStateWithLifecycle()
+                    NotificationsScreen(settings, more::update) { nav.popBackStack() }
                 }
                 composable(Routes.ABOUT) {
                     val notice = rememberNotice()

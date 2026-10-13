@@ -6,14 +6,12 @@ import app.circlet.core.Haptic
 import app.circlet.core.StrapController
 import app.circlet.core.TimeSource
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 val BREATHE_PACES = listOf(4.5, 5.5, 6.0, 7.0)
 val BREATHE_MINUTES = listOf(2, 5, 10)
@@ -55,14 +53,8 @@ class BreatheViewModel(private val strap: StrapController, private val time: Tim
     fun start() {
         if (state.value.running) return
         state.update { it.copy(running = true, finished = false, elapsedMs = 0, bpm = null, startBpm = null) }
-        session = viewModelScope.launch {
-            strap.setLiveHeartRate(true)
-            try {
-                run()
-            } finally {
-                withContext(NonCancellable) { strap.setLiveHeartRate(false) }
-            }
-        }
+        // Live heart rate already follows the app's foreground, so the session only reads it.
+        session = viewModelScope.launch { run() }
     }
 
     fun stop() {
