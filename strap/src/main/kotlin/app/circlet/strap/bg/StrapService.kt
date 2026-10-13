@@ -45,6 +45,17 @@ class StrapService : Service() {
         @Volatile
         internal var hooksNote: StatusNote? = null
 
+        /** True while a route is being recorded; the service then also declares the location type. */
+        @Volatile
+        var locationWanted: Boolean = false
+            private set
+
+        /** Turns the location type on or off and re-enters the foreground with the new type set. */
+        fun setLocationWanted(context: Context, wanted: Boolean) {
+            locationWanted = wanted
+            if (wanted || running) start(context)
+        }
+
         fun start(context: Context) {
             val intent = Intent(context, StrapService::class.java)
             try {
