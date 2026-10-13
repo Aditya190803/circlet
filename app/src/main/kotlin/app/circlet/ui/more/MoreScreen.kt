@@ -67,6 +67,7 @@ class MoreActions(
     val workouts: () -> Unit = {},
     val data: () -> Unit = {},
     val importHistory: () -> Unit = {},
+    val breathe: () -> Unit = {},
     val gallery: (() -> Unit)? = null,
 )
 
@@ -120,6 +121,8 @@ fun MoreScreen(
                 ListRow("Stress", Glyph.Stress, "Stress through the selected day", onClick = actions.stress)
                 Divider()
                 ListRow("Workouts", Glyph.Run, "Activities for the selected day", onClick = actions.workouts)
+                Divider()
+                ListRow("Breathe", Glyph.Breathing, "Paced breathing with your heart rate", onClick = actions.breathe)
                 Divider()
                 ListRow("Export and backup", Glyph.Export, "Health Connect, export files, backup and restore", onClick = actions.data)
                 Divider()

@@ -78,6 +78,7 @@ import app.circlet.ui.journal.JournalInsightsScreen
 import app.circlet.ui.journal.JournalScreen
 import app.circlet.ui.onboarding.OnboardingFlow
 import app.circlet.ui.portability.DataScreen
+import app.circlet.ui.more.BreatheScreen
 import app.circlet.ui.portability.ImportScreen
 import app.circlet.ui.stress.StressScreen
 import app.circlet.ui.trends.MetricTrendScreen
@@ -129,6 +130,7 @@ object Routes {
     const val PAIR = "more/pair"
     const val DATA = "more/data"
     const val IMPORT = "more/import"
+    const val BREATHE = "more/breathe"
     const val TRENDS = "trends"
     const val RECAP = "trends/recap"
     const val RECORDS = "trends/records"
@@ -328,6 +330,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             workouts = { nav.navigate(Routes.workouts(state.date)) },
                             data = { nav.navigate(Routes.DATA) },
                             importHistory = { nav.navigate(Routes.IMPORT) },
+                            breathe = { nav.navigate(Routes.BREATHE) },
                             gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
                         ),
                     )
@@ -369,6 +372,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                 }
                 composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
                 composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
+                composable(Routes.BREATHE) { BreatheScreen { nav.popBackStack() } }
                 composable(Routes.TRENDS) {
                     TrendsScreen(
                         onBack = { nav.popBackStack() },
