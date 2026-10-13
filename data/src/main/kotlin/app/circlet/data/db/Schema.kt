@@ -12,6 +12,7 @@ internal object Keys {
     const val CLOCK = "clock"
     const val DOUBLE_TAP = "double_tap"
     const val HR_BROADCAST = "hr_broadcast"
+    const val ZONE_BUZZ = "zone_buzz"
     const val ONBOARDING = "onboarding_complete"
     const val SAMPLE_RETENTION = "sample_retention_days"
     const val RAW_RETENTION = "raw_retention_days"

@@ -9,6 +9,7 @@ import app.circlet.core.DoubleTapAction
 import app.circlet.core.DoubleTapPolicy
 import app.circlet.core.LiveLoad
 import app.circlet.core.LiveStrainEstimator
+import app.circlet.core.ZoneBuzzPolicy
 import app.circlet.core.Metric
 import app.circlet.core.RawRecord
 import app.circlet.core.Sample
@@ -235,6 +236,11 @@ internal class SettingsDoubleTap(private val memory: Memory) : DoubleTapPolicy {
     override suspend fun current(): DoubleTapAction = memory.settings.value.doubleTap
 }
 
+/** The zone-buzz toggle from [app.circlet.core.SettingsRepository]. */
+internal class SettingsZoneBuzz(private val memory: Memory) : ZoneBuzzPolicy {
+    override fun enabled(): Boolean = memory.settings.value.zoneBuzz
+}
+
 /**
  * Sleep stage from the stored day, when [now] falls inside an epoch.
  * Reads Room. Call it off the main thread.
@@ -273,6 +279,11 @@ internal class ProfileLiveLoad(
     private val store: Store,
     private val memory: Memory,
 ) : LiveStrainEstimator {
+    override fun zoneOf(bpm: Int): Int? {
+        if (!SignalBounds.plausibleBpm(bpm)) return null
+        return zoneIndex(bpm, memory.profile.value, store.time.now().atZone(store.time.zone()).toLocalDate())
+    }
+
     override fun load(elapsed: Duration, heartRatesBpm: List<Int>): LiveLoad {
         val profile = memory.profile.value
         val date = store.time.now().atZone(store.time.zone()).toLocalDate()

@@ -73,6 +73,7 @@ import app.circlet.ui.more.MoreScreen
 import app.circlet.ui.more.PairScreen
 import app.circlet.ui.more.ProfileScreen
 import app.circlet.ui.more.UnitsScreen
+import app.circlet.ui.more.ZonesScreen
 import app.circlet.ui.more.rememberNotice
 import app.circlet.ui.journal.JournalInsightsScreen
 import app.circlet.ui.journal.JournalScreen
@@ -112,7 +113,7 @@ enum class Tab(val route: String, val title: String, val glyph: Glyph) {
  * Screens pushed on top of a tab.
  *
  * Route table:
- * - more/profile, more/units, more/about, more/pair, more/data, more/import: More rows and setup screens
+ * - more/profile, more/units, more/about, more/pair, more/data, more/import, more/zones: More rows and setup screens
  * - trends: TrendsScreen. trends/metric/{kind}: MetricTrendScreen. trends/recap: WeeklyRecapScreen. trends/records: RecordsScreen
  * - alarms: AlarmsScreen
  * - stress/{date}: StressScreen
@@ -129,6 +130,7 @@ object Routes {
     const val PAIR = "more/pair"
     const val DATA = "more/data"
     const val IMPORT = "more/import"
+    const val ZONES = "more/zones"
     const val TRENDS = "trends"
     const val RECAP = "trends/recap"
     const val RECORDS = "trends/records"
@@ -337,7 +339,11 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                     val profile by more.profile.collectAsStateWithLifecycle()
                     val settings by more.settings.collectAsStateWithLifecycle()
                     val error by more.profileError.collectAsStateWithLifecycle()
-                    ProfileScreen(profile, settings.mass, error, more::saveProfile) { nav.popBackStack() }
+                    ProfileScreen(
+                        profile, settings.mass, error, more::saveProfile,
+                        onZones = { nav.navigate(Routes.ZONES) },
+                        onBack = { nav.popBackStack() },
+                    )
                 }
                 composable(Routes.UNITS) {
                     val more = moreViewModel(messenger)
@@ -369,6 +375,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                 }
                 composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
                 composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
+                composable(Routes.ZONES) { ZonesScreen { nav.popBackStack() } }
                 composable(Routes.TRENDS) {
                     TrendsScreen(
                         onBack = { nav.popBackStack() },

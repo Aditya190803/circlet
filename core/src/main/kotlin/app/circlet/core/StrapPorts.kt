@@ -91,6 +91,11 @@ fun interface DoubleTapPolicy {
     suspend fun current(): DoubleTapAction
 }
 
+/** Whether the strap should buzz when the heart-rate zone changes during a workout. */
+fun interface ZoneBuzzPolicy {
+    fun enabled(): Boolean
+}
+
 /**
  * Strain, calories, and zone minutes for a workout that is still being recorded.
  * The default reports those as absent. Heart rate stays with the workout controller,
@@ -98,6 +103,9 @@ fun interface DoubleTapPolicy {
  */
 interface LiveStrainEstimator {
     fun load(elapsed: Duration, heartRatesBpm: List<Int>): LiveLoad
+
+    /** Zone 1 to 5 for [bpm] under the saved profile, 0 below zone 1, or null when unknown. */
+    fun zoneOf(bpm: Int): Int? = null
 
     companion object {
         val NONE: LiveStrainEstimator = object : LiveStrainEstimator {
@@ -129,4 +137,5 @@ data class StrapPorts(
     val sleepStage: SleepStageEstimate,
     val doubleTap: DoubleTapPolicy,
     val liveLoad: LiveStrainEstimator = LiveStrainEstimator.NONE,
+    val zoneBuzz: ZoneBuzzPolicy = ZoneBuzzPolicy { false },
 )

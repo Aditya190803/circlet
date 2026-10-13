@@ -31,6 +31,7 @@ import app.circlet.data.repo.ProfileRepositoryImpl
 import app.circlet.data.repo.SampleSinkImpl
 import app.circlet.data.repo.SettingsDoubleTap
 import app.circlet.data.repo.SettingsRepositoryImpl
+import app.circlet.data.repo.SettingsZoneBuzz
 import app.circlet.data.repo.Store
 import app.circlet.data.repo.StoredSleepStage
 import app.circlet.data.repo.StrapEventSinkImpl
@@ -137,6 +138,7 @@ object DataModule {
                 sleepStage = StoredSleepStage(store),
                 doubleTap = SettingsDoubleTap(memory),
                 liveLoad = ProfileLiveLoad(store, memory),
+                zoneBuzz = SettingsZoneBuzz(memory),
             ),
         )
         CircletDataHolder.current = data

@@ -24,12 +24,14 @@ enum class DoubleTapAction {
 /**
  * Preferences that do not change the physiology.
  * [heartRateBroadcast] is the standard heart-rate profile toggle for gym equipment.
+ * [zoneBuzz] buzzes the strap when the heart-rate zone changes during a workout.
  */
 data class UserSettings(
     val mass: MassUnit,
     val clock: ClockStyle,
     val doubleTap: DoubleTapAction,
     val heartRateBroadcast: Boolean,
+    val zoneBuzz: Boolean = false,
 )
 
 /** Units, clock, double tap, and heart-rate broadcast. */
