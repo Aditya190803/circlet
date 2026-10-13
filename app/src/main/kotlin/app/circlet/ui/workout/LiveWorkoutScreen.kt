@@ -1,5 +1,12 @@
 package app.circlet.ui.workout
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import app.circlet.core.routeKind
+import app.circlet.route.RouteRecorder
+import app.circlet.ui.design.Toggle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,8 +50,15 @@ import app.circlet.ui.state.containerViewModel
 
 @Composable
 fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
-    val vm = containerViewModel { container, _ -> LiveWorkoutViewModel(container.workouts, container.time) }
+    val context = LocalContext.current
+    val vm = containerViewModel { container, _ ->
+        LiveWorkoutViewModel(container.workouts, container.time, RouteRecorder.get(context))
+    }
     val state by vm.state.collectAsStateWithLifecycle()
+    val route by vm.route.collectAsStateWithLifecycle()
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (vm.hasLocationPermission()) vm.setRecordRoute(true)
+    }
     val messenger = LocalMessenger.current
     var confirmingFinish by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
@@ -67,6 +81,11 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
                 is LiveUi.Recording -> {
                     val elapsed = elapsedText(current.elapsed)
                     Recording(live = current.live, elapsedText = elapsed)
+                    if (current.live.sport.routeKind() != null) {
+                        RouteCard(route = route, onToggle = { on ->
+                            if (!on || vm.hasLocationPermission()) vm.setRecordRoute(on) else askLocation.launch(LOCATION_PERMISSIONS)
+                        })
+                    }
                     SecondaryButton(if (current.live.paused) "RESUME" else "PAUSE") {
                         if (current.live.paused) vm.resume() else vm.pause()
                     }
@@ -84,6 +103,25 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+private val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+@Composable
+private fun RouteCard(route: LiveRoute, onToggle: (Boolean) -> Unit) {
+    Card("ROUTE") {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("RECORD ROUTE", style = label(12.sp, Palette.Dim), modifier = Modifier.weight(1f))
+            Toggle(route.recording, "Record route", onChange = onToggle)
+        }
+        if (route.recording) {
+            Spacer(Modifier.height(Space.sm))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Figure(value = if (route.distanceM > 0.0) distanceKm(route.distanceM) else null, caption = "DISTANCE KM")
+                Figure(value = route.pace?.value, caption = "PACE ${route.pace?.unit ?: ""}".trim())
             }
         }
     }

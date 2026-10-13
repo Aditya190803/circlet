@@ -7,7 +7,14 @@ import app.circlet.core.DaySummary
 import app.circlet.core.LiveWorkout
 import app.circlet.core.MetricsRepository
 import app.circlet.core.Outcome
+import app.circlet.core.Route
+import app.circlet.core.RoutePoint
 import app.circlet.core.Sport
+import app.circlet.core.routeKind
+import app.circlet.route.RouteRecorder
+import app.circlet.route.RouteStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.circlet.core.TimeSource
 import app.circlet.core.WorkoutController
 import app.circlet.ui.design.words
@@ -106,6 +113,7 @@ class WorkoutsViewModel(
 class ActivityDetailViewModel(
     private val metrics: MetricsRepository,
     private val workouts: WorkoutController,
+    private val routes: RouteStore,
 ) : ViewModel() {
     private val target = MutableStateFlow<Pair<String, LocalDate>?>(null)
     private val messageChannel = Channel<String>(Channel.BUFFERED)
@@ -139,10 +147,19 @@ class ActivityDetailViewModel(
         val id = target.value?.first ?: return
         viewModelScope.launch {
             when (val result = workouts.delete(id)) {
-                is Outcome.Ok -> deletedChannel.send(Unit)
+                is Outcome.Ok -> {
+                    routes.delete(id)
+                    deletedChannel.send(Unit)
+                }
                 is Outcome.Err -> messageChannel.send(result.error.words())
             }
         }
+    }
+
+    /** The route recorded for this activity, filtered for its sport, or null when there is none. */
+    suspend fun route(id: String, sport: Sport): List<RoutePoint>? {
+        val kind = sport.routeKind() ?: return null
+        return withContext(Dispatchers.IO) { routes.read(id) }.let { Route.filter(it, kind) }.takeIf { it.size >= 2 }
     }
 }
 
@@ -177,9 +194,13 @@ sealed interface LiveUi {
     data class Recording(val live: LiveWorkout, val elapsed: Duration) : LiveUi
 }
 
+/** Distance and pace so far for the route being recorded. [recording] is false when the toggle is off. */
+data class LiveRoute(val recording: Boolean, val distanceM: Double, val pace: RoutePace?)
+
 class LiveWorkoutViewModel(
     private val workouts: WorkoutController,
     private val time: TimeSource,
+    private val recorder: RouteRecorder,
 ) : ViewModel() {
     private val messageChannel = Channel<String>(Channel.BUFFERED)
     private val finishedChannel = Channel<String>(Channel.BUFFERED)
@@ -201,6 +222,27 @@ class LiveWorkoutViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LiveUi.Loading)
 
+    val route: StateFlow<LiveRoute> = combine(recorder.active, recorder.points, state) { active, points, ui ->
+        val sport = (ui as? LiveUi.Recording)?.live?.sport
+        val kind = sport?.routeKind()
+        if (!active || kind == null || ui !is LiveUi.Recording) {
+            LiveRoute(active, 0.0, null)
+        } else {
+            val metres = Route.distanceM(Route.filter(points, kind))
+            LiveRoute(true, metres, RoutePace.of(kind, metres, ui.elapsed.seconds))
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LiveRoute(recorder.active.value, 0.0, null))
+
+    fun hasLocationPermission(): Boolean = recorder.hasPermission()
+
+    fun setRecordRoute(on: Boolean) {
+        if (!on) {
+            recorder.stop(null)
+        } else if (!recorder.start(workouts.live)) {
+            messageChannel.trySend("GPS is not available. Check that location is on.")
+        }
+    }
+
     fun pause() {
         viewModelScope.launch {
             val result = workouts.pause()
@@ -218,7 +260,10 @@ class LiveWorkoutViewModel(
     fun stop() {
         viewModelScope.launch {
             when (val result = workouts.stop()) {
-                is Outcome.Ok -> finishedChannel.send(result.value.id)
+                is Outcome.Ok -> {
+                    recorder.stop(result.value.id)
+                    finishedChannel.send(result.value.id)
+                }
                 is Outcome.Err -> messageChannel.send(result.error.words())
             }
         }

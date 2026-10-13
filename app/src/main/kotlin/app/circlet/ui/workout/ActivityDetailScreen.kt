@@ -28,7 +28,18 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.produceState
 import app.circlet.AppContainer
+import app.circlet.core.Route
+import app.circlet.core.RouteKind
+import app.circlet.core.RoutePoint
+import app.circlet.core.routeKind
+import app.circlet.route.RouteStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.circlet.core.AbsentReason
 import app.circlet.core.Activity
 import app.circlet.core.ActivitySource
@@ -77,7 +88,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit) {
-    val vm = containerViewModel { container, _ -> ActivityDetailViewModel(container.metrics, container.workouts) }
+    val context = LocalContext.current
+    val vm = containerViewModel { container, _ -> ActivityDetailViewModel(container.metrics, container.workouts, RouteStore(context)) }
     val state by vm.state.collectAsStateWithLifecycle()
     val dayHeartRate by vm.dayHeartRate.collectAsStateWithLifecycle()
     val messenger = LocalMessenger.current
@@ -86,9 +98,22 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
     var confirming by remember { mutableStateOf(false) }
     var changingSport by remember { mutableStateOf(false) }
     var editingTime by remember { mutableStateOf(false) }
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ready = (state as? Loadable.Ready<Activity>)?.value
+    val route by produceState<List<RoutePoint>?>(null, activityId, ready?.sport) {
+        value = ready?.let { vm.route(activityId, it.sport) }
+    }
+    val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri: Uri? ->
+        val points = route
+        if (uri == null || ready == null || points == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val gpx = Route.gpx("${ready.sport.label()} ${format.range(ready.start, ready.end)}", points)
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(gpx.toByteArray()) } }.isSuccess
+            }
+            messenger.show(if (saved) "GPX SAVED" else "The GPX file could not be saved.")
+        }
+    }
     LaunchedEffect(activityId, date) { vm.open(activityId, date) }
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     LaunchedEffect(vm) { vm.deleted.collect { onBack() } }
@@ -108,6 +133,12 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
                     heartRate = workoutMinutes(dayHeartRate, current.value, date, format),
                     format = format,
                 )
+            }
+            val track = route
+            if (ready != null && track != null) {
+                RouteCard(ready, track) {
+                    exportGpx.launch("circlet-${ready.sport.name.lowercase()}-${ready.start.atZone(format.zone).toLocalDate()}.gpx")
+                }
             }
             if (ready != null) {
                 SecondaryButton("CHANGE SPORT") { changingSport = true }
@@ -178,6 +209,29 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
             Spacer(Modifier.height(Space.xs))
             SecondaryButton("KEEP ACTIVITY") { confirming = false }
         }
+    }
+}
+
+@Composable
+private fun RouteCard(activity: Activity, points: List<RoutePoint>, onExport: () -> Unit) {
+    val metres = Route.distanceM(points)
+    val kind = activity.sport.routeKind()
+    val moving = Duration.between(activity.start, activity.end).seconds - activity.pausedSeconds
+    val pace = kind?.let { RoutePace.of(it, metres, moving) }
+    Card("ROUTE") {
+        Row(Modifier.fillMaxWidth()) {
+            Figure(value = distanceKm(metres), caption = "DISTANCE KM", modifier = Modifier.weight(1f))
+            Figure(
+                value = pace?.value,
+                caption = if (kind == RouteKind.CYCLING) "AVG KM/H" else "AVG MIN/KM",
+                alignEnd = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(Space.sm))
+        RouteTrack(points)
+        Spacer(Modifier.height(Space.sm))
+        SecondaryButton("EXPORT GPX", onClick = onExport)
     }
 }
 

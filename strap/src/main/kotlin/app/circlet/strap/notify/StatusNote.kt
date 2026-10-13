@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.Looper
@@ -51,8 +52,15 @@ internal class StatusNote(private val context: Context) {
 
     fun foreground(service: Service) {
         ensureChannel()
-        service.startForeground(ID, build(latest), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (app.circlet.strap.bg.StrapService.locationWanted && locationGranted()) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        }
+        service.startForeground(ID, build(latest), types)
     }
+
+    private fun locationGranted() =
+        context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     fun ensureChannel() {
         val channel = NotificationChannel(CHANNEL, "Strap connection", NotificationManager.IMPORTANCE_LOW)
