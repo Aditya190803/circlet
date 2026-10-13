@@ -120,6 +120,7 @@ data class LiveLoad(
 /**
  * Everything the strap module needs from the rest of the app.
  * [liveLoad] defaults to an estimator that does not invent strain or calories.
+ * [settings] returns the current preferences, or null before they are known, in which case alerts use their defaults.
  */
 data class StrapPorts(
     val samples: SampleSink,
@@ -129,4 +130,5 @@ data class StrapPorts(
     val sleepStage: SleepStageEstimate,
     val doubleTap: DoubleTapPolicy,
     val liveLoad: LiveStrainEstimator = LiveStrainEstimator.NONE,
+    val settings: () -> UserSettings? = { null },
 )

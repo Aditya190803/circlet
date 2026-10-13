@@ -136,10 +136,19 @@ internal class SettingsRepositoryImpl(
             kv.put(KvEntity(Keys.CLOCK, settings.clock.name))
             kv.put(KvEntity(Keys.DOUBLE_TAP, settings.doubleTap.name))
             kv.put(KvEntity(Keys.HR_BROADCAST, settings.heartRateBroadcast.toString()))
+            kv.put(KvEntity(Keys.OFF_WRIST_ALERTS, settings.offWristAlerts.toString()))
+            kv.put(KvEntity(Keys.LOW_BATTERY_ALERTS, settings.lowBatteryAlerts.toString()))
+            kv.put(KvEntity(Keys.LOW_BATTERY_THRESHOLD, settings.lowBatteryThreshold.toString()))
+            putOrClear(kv, Keys.QUIET_START, settings.quietStartMinute)
+            putOrClear(kv, Keys.QUIET_END, settings.quietEndMinute)
         }
         memory.settings.value = settings
         return Outcome.Ok(settings)
     }
+}
+
+private fun putOrClear(kv: app.circlet.data.db.KvDao, key: String, value: Int?) {
+    if (value == null) kv.delete(key) else kv.put(KvEntity(key, value.toString()))
 }
 
 internal class OnboardingStateImpl(

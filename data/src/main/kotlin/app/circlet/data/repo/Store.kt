@@ -182,6 +182,12 @@ internal fun readSettings(db: CircletDatabase): UserSettings {
         clock = db.kv().get(Keys.CLOCK)?.let { runCatching { ClockStyle.valueOf(it) }.getOrNull() } ?: defaults.clock,
         doubleTap = db.kv().get(Keys.DOUBLE_TAP)?.let { runCatching { DoubleTapAction.valueOf(it) }.getOrNull() } ?: defaults.doubleTap,
         heartRateBroadcast = db.kv().get(Keys.HR_BROADCAST) == "true",
+        offWristAlerts = db.kv().get(Keys.OFF_WRIST_ALERTS)?.let { it == "true" } ?: defaults.offWristAlerts,
+        lowBatteryAlerts = db.kv().get(Keys.LOW_BATTERY_ALERTS)?.let { it == "true" } ?: defaults.lowBatteryAlerts,
+        lowBatteryThreshold = db.kv().get(Keys.LOW_BATTERY_THRESHOLD)?.toIntOrNull()?.takeIf { it in 1..99 }
+            ?: defaults.lowBatteryThreshold,
+        quietStartMinute = db.kv().get(Keys.QUIET_START)?.toIntOrNull()?.takeIf { it in 0..1439 },
+        quietEndMinute = db.kv().get(Keys.QUIET_END)?.toIntOrNull()?.takeIf { it in 0..1439 },
     )
 }
 

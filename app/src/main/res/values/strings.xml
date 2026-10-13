@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Circlet</string>
+    <string name="widget_absent">—</string>
+    <string name="widget_recovery">RECOVERY</string>
+    <string name="widget_sleep">SLEEP</string>
+    <string name="widget_strain">STRAIN</string>
+    <string name="widget_battery_title">STRAP BATTERY</string>
+    <string name="widget_today_label">Circlet Today</string>
+    <string name="widget_battery_label">Strap battery</string>
+    <string name="widget_today_description">Today\'s recovery, sleep and strain</string>
+    <string name="widget_battery_description">Strap battery and connection</string>
 </resources>

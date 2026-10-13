@@ -53,7 +53,7 @@ object StrapModule {
 
     private fun boot(context: Context, ports: StrapPorts, time: TimeSource): StrapBindings {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val note = StatusNote(context)
+        val note = StatusNote(context, ports.settings)
         StrapService.hooksNote = note
         val host = AndroidHost(context, note)
         val link = StrapLink(

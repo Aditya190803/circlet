@@ -9,8 +9,14 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.Looper
+import app.circlet.core.ClockStyle
+import app.circlet.core.DoubleTapAction
 import app.circlet.core.LinkState
+import app.circlet.core.MassUnit
 import app.circlet.core.StrapState
+import app.circlet.core.UserSettings
+import java.time.LocalTime
+import kotlin.math.roundToInt
 
 // Ported from OpenStrap edge/android EdgeTrackingService.kt — one ongoing notification
 // for the connectedDevice foreground service. Every state change goes through here.
@@ -19,12 +25,16 @@ import app.circlet.core.StrapState
  * [foreground] is the call the service makes inside the start deadline.
  * [update] refreshes the same notification afterwards.
  */
-internal class StatusNote(private val context: Context) {
+internal class StatusNote(
+    private val context: Context,
+    private val settingsSource: () -> UserSettings? = { null },
+) {
     private val handler = Handler(Looper.getMainLooper())
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     @Volatile
     private var latest = StrapState()
     private var offWristEpisode = loadOffWristEpisode()
+    private var lowBatteryArmed = preferences.getBoolean(KEY_LOW_BATTERY_ARMED, true)
 
     private val offWristAlert = Runnable { postOffWristAlertIfDue() }
 
@@ -42,6 +52,7 @@ internal class StatusNote(private val context: Context) {
             } else {
                 scheduleOffWristAlert(state)
             }
+            checkLowBattery(state)
             if (app.circlet.strap.bg.StrapService.running) {
                 ensureChannel()
                 manager().notify(ID, build(state))
@@ -104,9 +115,77 @@ internal class StatusNote(private val context: Context) {
 
         offWristEpisode = episode.copy(alerted = true)
         persistOffWristEpisode()
+        val settings = settings()
+        if (!settings.offWristAlerts || isQuiet(settings)) return
         if (!manager().areNotificationsEnabled()) return
         ensureOffWristChannel()
         manager().notify(OFF_WRIST_ID, buildOffWristAlert())
+    }
+
+    private fun checkLowBattery(state: StrapState) {
+        val settings = settings()
+        val decision = LowBatteryAlertPolicy.evaluate(
+            armed = lowBatteryArmed,
+            state = state,
+            threshold = settings.lowBatteryThreshold,
+            enabled = settings.lowBatteryAlerts,
+            quiet = isQuiet(settings),
+        )
+        if (decision.armed != lowBatteryArmed) {
+            lowBatteryArmed = decision.armed
+            preferences.edit().putBoolean(KEY_LOW_BATTERY_ARMED, decision.armed).apply()
+        }
+        val percent = state.batteryPercent
+        if (!decision.fire || percent == null || !manager().areNotificationsEnabled()) return
+        ensureLowBatteryChannel()
+        manager().notify(LOW_BATTERY_ID, buildLowBatteryAlert(percent.roundToInt()))
+    }
+
+    private fun settings(): UserSettings = settingsSource() ?: UserSettings(
+        MassUnit.KILOGRAM,
+        ClockStyle.MATCH_SYSTEM,
+        DoubleTapAction.STOP_ALARM,
+        heartRateBroadcast = false,
+    )
+
+    private fun isQuiet(settings: UserSettings): Boolean {
+        val now = LocalTime.now()
+        return LowBatteryAlertPolicy.inQuietHours(
+            now.hour * 60 + now.minute,
+            settings.quietStartMinute,
+            settings.quietEndMinute,
+        )
+    }
+
+    private fun buildLowBatteryAlert(percent: Int): Notification {
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val pending = launch?.let {
+            PendingIntent.getActivity(
+                context,
+                LOW_BATTERY_ID,
+                it,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        }
+        return Notification.Builder(context, LOW_BATTERY_CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentTitle("Strap battery low")
+            .setContentText("Your WHOOP band is at $percent%. Charge it soon.")
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setContentIntent(pending)
+            .build()
+    }
+
+    private fun ensureLowBatteryChannel() {
+        val channel = NotificationChannel(
+            LOW_BATTERY_CHANNEL,
+            "Strap battery low",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        channel.setShowBadge(false)
+        channel.description = "Alerts when the band battery drops to your chosen level"
+        manager().createNotificationChannel(channel)
     }
 
     private fun buildOffWristAlert(): Notification {
@@ -167,6 +246,9 @@ internal class StatusNote(private val context: Context) {
         const val CHANNEL: String = "circlet_strap"
         const val OFF_WRIST_ID: Int = 7102
         const val OFF_WRIST_CHANNEL: String = "circlet_off_wrist"
+        const val LOW_BATTERY_ID: Int = 7103
+        const val LOW_BATTERY_CHANNEL: String = "circlet_low_battery"
+        private const val KEY_LOW_BATTERY_ARMED = "low_battery_armed"
         private const val PREFERENCES = "circlet_strap"
         private const val KEY_OFF_WRIST_SINCE = "off_wrist_since"
         private const val KEY_OFF_WRIST_ALERTED = "off_wrist_alerted"
