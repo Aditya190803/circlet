@@ -82,6 +82,16 @@ class DataViewModel(private val data: DataPortability) : ViewModel() {
         }
     }
 
+    /** Writes the CSV zip to [uri] and reports the outcome. */
+    fun exportCsv(uri: String) {
+        viewModelScope.launch {
+            when (val result = data.exportCsv(uri)) {
+                is Outcome.Ok -> messageChannel.send("CSV export saved.")
+                is Outcome.Err -> messageChannel.send(result.error.words())
+            }
+        }
+    }
+
     /** Adds the days from a WHOOP data export. Ignored while an import is already running. */
     fun importWhoop(uri: String) {
         if (importingState.value) return

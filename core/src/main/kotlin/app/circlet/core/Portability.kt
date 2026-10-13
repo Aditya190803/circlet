@@ -70,6 +70,9 @@ interface DataPortability {
 
     suspend fun exportDatabase(): Outcome<ExportResult>
 
+    /** Writes a zip of days, workouts and the last 30 days of heart rate as CSV to the content URI [uri]. */
+    suspend fun exportCsv(uri: String): Outcome<Unit>
+
     suspend fun updateBackup(backup: BackupSettings): Outcome<Unit>
 
     suspend fun restore(uri: String): Outcome<Unit>

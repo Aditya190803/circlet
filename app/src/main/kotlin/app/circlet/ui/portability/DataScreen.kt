@@ -80,7 +80,10 @@ fun DataScreen(onBack: () -> Unit) {
             messenger.show(if (copied) "Saved ${source.displayName}." else "Could not save the export there.")
         }
     }
-    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+    val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) vm.exportCsv(uri.toString())
+    }
+    val pickFolder =rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         try {
             context.contentResolver.takePersistableUriPermission(
@@ -150,6 +153,13 @@ fun DataScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(Space.sm))
                 }
                 SecondaryButton("CREATE EXPORT", enabled = !exporting) { vm.export() }
+                Spacer(Modifier.height(Space.sm))
+                Text(
+                    "Days, workouts and the last 30 days of heart rate as spreadsheet files in one zip.",
+                    style = body(14.sp, Palette.Dim),
+                )
+                Spacer(Modifier.height(Space.sm))
+                SecondaryButton("EXPORT CSV") { saveCsv.launch("circlet-csv.zip") }
             }
 
             Card("BACKUP") {

@@ -539,6 +539,11 @@ class FakeCirclet(
         return Outcome.Ok(Unit)
     }
 
+    override suspend fun exportCsv(uri: String): Outcome<Unit> {
+        if (uri.isBlank()) return Outcome.Err(CoreError.Invalid("export needs a file"))
+        return Outcome.Ok(Unit)
+    }
+
     override suspend fun importWhoopExport(uri: String): Outcome<ImportResult> {
         if (uri.isBlank()) return Outcome.Err(CoreError.Invalid("import needs a file"))
         return Outcome.Ok(ImportResult(imported = 0, skipped = 0, firstDay = null, lastDay = null))

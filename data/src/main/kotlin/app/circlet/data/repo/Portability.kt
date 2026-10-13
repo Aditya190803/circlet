@@ -7,6 +7,9 @@ import app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION
 import app.circlet.data.importer.cyclesCsvFrom
 import app.circlet.data.importer.parseWhoopCycles
 import android.content.Context
+import android.net.Uri
+import app.circlet.data.export.csvZip
+import java.io.IOException
 import app.circlet.core.BackupSettings
 import app.circlet.core.CoreError
 import app.circlet.core.DataPortability
@@ -49,6 +52,18 @@ internal class DataPortabilityImpl(
         val name = "circlet-${stamp()}.db"
         val uri = store.io { documents.write(store.context.cacheDir.absolutePath, name, bytes) }
         ExportResult(displayName = name, uri = uri, byteCount = bytes.size.toLong())
+    }
+
+    override suspend fun exportCsv(uri: String): Outcome<Unit> = catchStorage {
+        val zone = store.time.zone()
+        val today = store.time.now().atZone(zone).toLocalDate()
+        store.io {
+            val days = store.database.days().all().map { DayCodec.decode(it.payload) }
+            val bytes = csvZip(days, today, zone)
+            val output = store.context.contentResolver.openOutputStream(Uri.parse(uri), "wt")
+                ?: throw IOException("cannot write there")
+            output.use { it.write(bytes) }
+        }
     }
 
     override suspend fun updateBackup(backup: BackupSettings): Outcome<Unit> {
