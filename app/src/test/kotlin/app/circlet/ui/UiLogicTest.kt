@@ -18,6 +18,7 @@ import app.circlet.core.emptyDay
 import app.circlet.core.fake.FakeCirclet
 import app.circlet.core.fake.FakeScenario
 import app.circlet.ui.design.words
+import app.circlet.ui.design.stalled
 import app.circlet.ui.design.syncProgressLabel
 import app.circlet.ui.more.ProfileDraft
 import app.circlet.ui.more.parseNotice
@@ -59,6 +60,10 @@ class UiLogicTest {
 
     @Test
     fun syncStatusCountsBufferedSamplesBeforeTheyAreCommitted() {
+        assertEquals(true, SyncProgress(0, draining = false, lastOutcome = app.circlet.core.SyncOutcome.STALLED).stalled())
+        assertEquals(true, SyncProgress(0, draining = false, lastOutcome = app.circlet.core.SyncOutcome.DISCONNECTED).stalled())
+        assertEquals(false, SyncProgress(0, draining = true, lastOutcome = app.circlet.core.SyncOutcome.STALLED).stalled())
+        assertEquals(false, SyncProgress(0, draining = false, lastOutcome = app.circlet.core.SyncOutcome.ACK_FAILED).stalled())
         assertEquals("SYNCING · STARTING", syncProgressLabel(SyncProgress(0, draining = true)))
         assertEquals("SYNCING · 30 SEC RECEIVED", syncProgressLabel(SyncProgress(0, draining = true, samplesBuffered = 30)))
         assertEquals("SYNCING · 1 MIN RECEIVED", syncProgressLabel(SyncProgress(60, draining = true)))

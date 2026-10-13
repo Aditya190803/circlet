@@ -89,6 +89,20 @@ class HistoryDrainTest {
     }
 
     @Test
+    fun anEndMarkerForADroppedBatchIsIgnoredUntilTheNextStart() = runTest {
+        val sink = RecordingSink()
+        val drain = open(sink)
+        drain.onRecord(sample, raw)
+        assertTrue(drain.onIdle() is EndResult.Retry)
+        assertTrue(drain.onEnd(token) is EndResult.Ignored)
+        assertTrue(sink.batches.isEmpty())
+        drain.onStart()
+        drain.onRecord(sample, raw)
+        assertTrue(drain.onEnd(token) is EndResult.Ack)
+        assertEquals(1, sink.batches.size)
+    }
+
+    @Test
     fun disconnectDropsTheOpenBatchAndALaterBatchCommits() = runTest {
         val sink = RecordingSink()
         val drain = open(sink)

@@ -6,6 +6,7 @@ import app.circlet.core.Confidence
 import app.circlet.core.CoreError
 import app.circlet.core.Sport
 import app.circlet.core.StrapError
+import app.circlet.core.SyncOutcome
 import app.circlet.core.SyncProgress
 import java.time.Duration
 import java.time.Instant
@@ -51,6 +52,10 @@ fun syncProgressLabel(progress: SyncProgress): String {
         else -> "SYNCING · ${minutesWords(received / 60)} RECEIVED"
     }
 }
+
+/** True when the last drain ended without finishing and none is running now. */
+fun SyncProgress.stalled(): Boolean =
+    !draining && (lastOutcome == SyncOutcome.STALLED || lastOutcome == SyncOutcome.DISCONNECTED)
 
 /** How long ago [since] was, in words: "JUST NOW", "12 MIN AGO", "3 H AGO", "2 D AGO". */
 fun agoWords(since: Instant, now: Instant): String {

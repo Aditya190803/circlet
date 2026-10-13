@@ -155,6 +155,7 @@ object RealBackend {
             portability = data.portability,
             onboarding = data.onboarding,
             zoneDefaults = ZoneDefaults { profile, on, resting -> defaultZoneBounds(profile, on, resting) },
+            diagnostics = strap.diagnostics,
         )
     }
 }

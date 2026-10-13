@@ -33,6 +33,9 @@ class HistoryDrain(
     private var lastToken: ByteArray? = null
     private var oweAck = false
 
+    /** A batch was dropped and no start marker has arrived since, so an end marker belongs to the dropped batch. */
+    private var staleEnd = false
+
     /** A new session. Clears the duplicate-token memory because this connection has not acked yet. */
     fun begin() {
         open = true
@@ -42,6 +45,7 @@ class HistoryDrain(
         raws.clear()
         lastToken = null
         oweAck = false
+        staleEnd = false
     }
 
     /** The drain is over without an acknowledgement. A later [begin] can start another. */
@@ -59,6 +63,7 @@ class HistoryDrain(
         samples.clear()
         raws.clear()
         awaitingStart = true
+        staleEnd = true
     }
 
     fun onStart() {
@@ -66,6 +71,7 @@ class HistoryDrain(
         samples.clear()
         raws.clear()
         awaitingStart = false
+        staleEnd = false
     }
 
     fun onRecord(sample: Sample?, raw: RawRecord) {
@@ -98,6 +104,7 @@ class HistoryDrain(
         if (previous != null && previous.contentEquals(token)) {
             return if (oweAck) EndResult.AckAgain(token.copyOf()) else EndResult.Duplicate
         }
+        if (staleEnd) return EndResult.Ignored
         val committedSamples = samples.toList()
         val committedRaw = raws.toList()
         sink.commit(committedSamples, committedRaw)

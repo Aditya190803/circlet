@@ -94,6 +94,7 @@ internal class FakeTransport : GattTransport {
     var discoverValue = true
     var discoverDelayMs = 0L
     var mtuFails = false
+    var failOpcode = -1
 
     fun emit(role: NotifyRole, frame: ByteArray) {
         check(noteFlow.tryEmit(GattNotice(role, frame)))
@@ -131,6 +132,7 @@ internal class FakeTransport : GattTransport {
 
     override suspend fun subscribe(role: NotifyRole) = Unit
     override suspend fun write(frame: ByteArray) {
+        if (failOpcode >= 0 && opcodeOf(frame) == failOpcode) error("write refused")
         writes += frame.copyOf()
     }
 

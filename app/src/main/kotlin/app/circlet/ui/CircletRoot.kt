@@ -68,6 +68,7 @@ import app.circlet.ui.design.Palette
 import app.circlet.ui.design.TimeFormat
 import app.circlet.ui.design.label
 import app.circlet.ui.more.AboutScreen
+import app.circlet.ui.more.DiagnosticsScreen
 import app.circlet.ui.more.MoreActions
 import app.circlet.ui.more.NotificationsScreen
 import app.circlet.ui.more.MoreScreen
@@ -115,7 +116,8 @@ enum class Tab(val route: String, val title: String, val glyph: Glyph) {
  * Screens pushed on top of a tab.
  *
  * Route table:
- * - more/profile, more/units, more/about, more/pair, more/data, more/import, more/zones: More rows and setup screens
+ * - more/profile, more/units, more/about, more/pair, more/data, more/import, more/zones, more/diagnostics,
+ *   more/notifications, more/breathe: More rows and setup screens
  * - trends: TrendsScreen. trends/metric/{kind}: MetricTrendScreen. trends/recap: WeeklyRecapScreen. trends/records: RecordsScreen
  * - alarms: AlarmsScreen
  * - stress/{date}: StressScreen
@@ -135,6 +137,7 @@ object Routes {
     const val BREATHE = "more/breathe"
     const val NOTIFICATIONS = "more/notifications"
     const val ZONES = "more/zones"
+    const val DIAGNOSTICS = "more/diagnostics"
     const val TRENDS = "trends"
     const val RECAP = "trends/recap"
     const val RECORDS = "trends/records"
@@ -336,6 +339,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             data = { nav.navigate(Routes.DATA) },
                             importHistory = { nav.navigate(Routes.IMPORT) },
                             breathe = { nav.navigate(Routes.BREATHE) },
+                            diagnostics = { nav.navigate(Routes.DIAGNOSTICS) },
                             gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
                         ),
                     )
@@ -388,6 +392,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                 composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
                 composable(Routes.BREATHE) { BreatheScreen { nav.popBackStack() } }
                 composable(Routes.ZONES) { ZonesScreen { nav.popBackStack() } }
+                composable(Routes.DIAGNOSTICS) { DiagnosticsScreen { nav.popBackStack() } }
                 composable(Routes.TRENDS) {
                     TrendsScreen(
                         onBack = { nav.popBackStack() },

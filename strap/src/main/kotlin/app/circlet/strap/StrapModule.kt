@@ -5,12 +5,14 @@ import app.circlet.core.AlarmController
 import app.circlet.core.Haptic
 import app.circlet.core.StrapController
 import app.circlet.core.StrapPorts
+import app.circlet.core.SyncDiagnostics
 import app.circlet.core.TimeSource
 import app.circlet.core.WorkoutController
 import app.circlet.strap.alarm.StrapAlarms
 import app.circlet.strap.bg.AndroidHost
 import app.circlet.strap.bg.StrapCompanion
 import app.circlet.strap.bg.StrapService
+import app.circlet.strap.diag.openSyncDiagnostics
 import app.circlet.strap.link.AndroidGattTransport
 import app.circlet.strap.link.GattOperationQueue
 import app.circlet.strap.link.StrapLink
@@ -31,6 +33,7 @@ data class StrapBindings(
     val strap: StrapController,
     val alarms: AlarmController,
     val workouts: WorkoutController,
+    val diagnostics: SyncDiagnostics,
 )
 
 /**
@@ -58,13 +61,15 @@ object StrapModule {
         val note = StatusNote(context, ports.settings)
         StrapService.hooksNote = note
         val host = AndroidHost(context, note)
+        val diagnostics = openSyncDiagnostics(context)
         val link = StrapLink(
-            transport = AndroidGattTransport(context),
+            transport = AndroidGattTransport(context, diagnostics),
             queue = GattOperationQueue(Duration.ofSeconds(8)),
             ports = ports,
             time = time,
             scope = scope,
             host = host,
+            diag = diagnostics,
         )
         val alarms = StrapAlarms(ports.prefs, time, ports.sleepStage, ports.doubleTap, link)
         val workouts = StrapWorkouts(
@@ -86,6 +91,6 @@ object StrapModule {
             val address = ports.prefs.pairedAddress()
             if (!address.isNullOrBlank()) StrapCompanion.observeIfAssociated(context, address)
         }
-        return StrapBindings(link, alarms, workouts)
+        return StrapBindings(link, alarms, workouts, diagnostics)
     }
 }

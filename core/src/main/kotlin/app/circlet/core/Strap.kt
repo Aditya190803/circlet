@@ -21,13 +21,26 @@ enum class LinkState {
  * [strapStoredSeconds] is newest minus oldest from the strap's data-range reply:
  * how much history the strap is holding, not how much of this drain is left, and not a percentage.
  * Null until that reply has been read.
+ * [lastOutcome] is how the latest drain ended, and [lastOutcomeAt] when it ended. Both are null
+ * until a drain has ended in this process.
  */
 data class SyncProgress(
     val samplesPulled: Long,
     val draining: Boolean,
     val samplesBuffered: Long = 0,
     val strapStoredSeconds: Long? = null,
+    val lastOutcome: SyncOutcome? = null,
+    val lastOutcomeAt: Instant? = null,
 )
+
+/** How a history drain ended. Only [COMPLETED] advances the last-sync time. */
+enum class SyncOutcome {
+    COMPLETED,
+    STALLED,
+    DISCONNECTED,
+    ACK_FAILED,
+    DECODE_FAILED,
+}
 
 /** A typed strap failure. [detail] on [Rejected] is safe to show. */
 sealed interface StrapError {
