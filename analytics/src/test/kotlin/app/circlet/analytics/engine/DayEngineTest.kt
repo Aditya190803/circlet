@@ -185,7 +185,7 @@ class DayEngineTest {
             importedNight(date.minusDays(ago.toLong()), 50 + ago, 40.0 + ago, 48 + (ago % 5), 14.0 + ago * 0.1, 70 + ago)
         }
         val now = date.plusDays(1).atStartOfDay(zone).toInstant()
-        assertEquals(6, engine.algorithmVersion)
+        assertEquals(7, engine.algorithmVersion)
         val summary = engine.computeDay(input(date, daySamples(date, 0, includeRun = false), now, history))
         assertEquals(CalibrationStatus.READY, summary.recovery.calibration)
         assertNotNull(summary.recovery.score.value)

@@ -49,9 +49,9 @@ import kotlin.math.roundToInt
  */
 /**
  * Bumped when a stored strap day must be scored again.
- * 6 leaves paused spans out of an activity and keeps older imported nights in a sparse baseline.
+ * 7 tightens the one-Hz step estimate and scales partial-minute motion by sample coverage.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 6
+const val CIRCLET_ALGORITHM_VERSION: Int = 7
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()

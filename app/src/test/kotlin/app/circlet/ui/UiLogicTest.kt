@@ -18,6 +18,7 @@ import app.circlet.core.emptyDay
 import app.circlet.core.fake.FakeCirclet
 import app.circlet.core.fake.FakeScenario
 import app.circlet.ui.design.words
+import app.circlet.ui.design.syncProgressLabel
 import app.circlet.ui.more.ProfileDraft
 import app.circlet.ui.more.parseNotice
 import app.circlet.ui.state.DayUiState
@@ -54,6 +55,13 @@ class UiLogicTest {
         assertEquals(Notice.Searching, paired.copy(strap = paired.strap.copy(link = LinkState.RECONNECTING)).notice)
         assertEquals(Notice.NeedsPermission, paired.copy(strap = paired.strap.copy(error = StrapError.PermissionMissing)).notice)
         assertEquals(Notice.CatchingUp(90), paired.copy(strap = paired.strap.copy(sync = SyncProgress(5_400, draining = true))).notice)
+    }
+
+    @Test
+    fun syncStatusCountsBufferedSamplesBeforeTheyAreCommitted() {
+        assertEquals("SYNCING · STARTING", syncProgressLabel(SyncProgress(0, draining = true)))
+        assertEquals("SYNCING · 30 SEC RECEIVED", syncProgressLabel(SyncProgress(0, draining = true, samplesBuffered = 30)))
+        assertEquals("SYNCING · 1 MIN RECEIVED", syncProgressLabel(SyncProgress(60, draining = true)))
     }
 
     @Test

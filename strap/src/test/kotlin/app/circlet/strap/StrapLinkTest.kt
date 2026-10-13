@@ -150,6 +150,29 @@ class StrapLinkTest {
     }
 
     @Test
+    fun aStartWithoutAnyRecordsDoesNotStayMarkedSyncing() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        runCurrent()
+        assertTrue(rig.link.state.value.sync.draining)
+
+        advanceTimeBy(15_000)
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        advanceTimeBy(2_300)
+        runCurrent()
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        assertEquals(false, rig.link.state.value.sync.draining)
+        assertNull(rig.link.state.value.lastSync)
+    }
+
+    @Test
     fun theStoredWindowIsPublishedBeforeAnySample() = runTest {
         val rig = rig()
         rig.link.pair(strap)

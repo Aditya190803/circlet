@@ -38,7 +38,7 @@ import app.circlet.ui.design.TextEntry
 import app.circlet.ui.design.Toggle
 import app.circlet.ui.design.body
 import app.circlet.ui.design.agoWords
-import app.circlet.ui.design.minutesWords
+import app.circlet.ui.design.syncProgressLabel
 import app.circlet.ui.design.label
 import app.circlet.ui.design.words
 import app.circlet.ui.state.StrapAction
@@ -167,8 +167,7 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         Spacer(Modifier.height(12.dp))
         val syncing = strap.sync.draining || busy == StrapAction.SYNC
         val syncLabel = when {
-            strap.sync.draining && strap.sync.samplesPulled == 0L -> "SYNCING · STARTING"
-            strap.sync.draining -> "SYNCING · ${minutesWords(strap.sync.samplesPulled / 60)} PULLED"
+            strap.sync.draining -> syncProgressLabel(strap.sync)
             syncing -> "SYNCING"
             else -> "SYNC NOW"
         }

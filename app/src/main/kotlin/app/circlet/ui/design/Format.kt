@@ -6,6 +6,7 @@ import app.circlet.core.Confidence
 import app.circlet.core.CoreError
 import app.circlet.core.Sport
 import app.circlet.core.StrapError
+import app.circlet.core.SyncProgress
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -38,6 +39,17 @@ fun minutesWords(minutes: Long): String {
     val hours = minutes / 60
     val rest = minutes % 60
     return if (hours > 0) "%d H %02d MIN".format(hours, rest) else "$rest MIN"
+}
+
+/** Shows committed and in-flight one-hertz samples so a live drain doesn't look idle before its first flush. */
+fun syncProgressLabel(progress: SyncProgress): String {
+    val received = (progress.samplesPulled + progress.samplesBuffered).coerceAtLeast(0)
+    if (!progress.draining) return "SYNC NOW"
+    return when {
+        received == 0L -> "SYNCING · STARTING"
+        received < 60L -> "SYNCING · $received SEC RECEIVED"
+        else -> "SYNCING · ${minutesWords(received / 60)} RECEIVED"
+    }
 }
 
 /** How long ago [since] was, in words: "JUST NOW", "12 MIN AGO", "3 H AGO", "2 D AGO". */

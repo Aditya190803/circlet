@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
 // A stride (1.4 to 2.5 Hz) cannot be counted from one motion sample a second, so
 // this does not count steps. It finds minutes that look like walking or running,
 // wrist movement above the strap's resting noise together with a heart rate raised
-// above rest, in bouts of at least three minutes, and gives each a typical cadence
+// above rest, in bouts of at least five minutes, and gives each a conservative cadence
 // for that effort. Requiring the raised heart rate is what keeps seated hand
 // movement out; OpenStrap dropped a movement-only conversion for over-counting.
 // The heart-rate bar is set against the day's own quiet waking level, not the
@@ -28,21 +28,21 @@ import kotlin.math.roundToInt
 
 /** Gen 4 resting accelerometer noise sits near 0.03 g (p90 0.058 g, OpenStrap device.dart). */
 private const val AWAKE_DYN_G = 0.03
-private const val MOVING_DYN_G = 0.12
-private const val MOVING_RESERVE = 0.28
-private const val ABOVE_QUIET_RESERVE = 0.10
-private const val RUNNING_RESERVE = 0.55
-private const val MIN_BOUT_MINUTES = 3
+private const val MOVING_DYN_G = 0.16
+private const val MOVING_RESERVE = 0.33
+private const val ABOVE_QUIET_RESERVE = 0.12
+private const val RUNNING_RESERVE = 0.62
+private const val MIN_BOUT_MINUTES = 5
 
 /** A minute flagged as walking is seldom walked end to end. */
-private const val WALKING_DUTY = 0.7
+private const val WALKING_DUTY = 0.6
 
 /** Steps credited to one minute at this share of heart-rate reserve, above the [floor] that marks walking. */
 private fun stepsInMinute(reserve: Double, floor: Double): Double = if (reserve < RUNNING_RESERVE) {
     val effort = ((reserve - floor) / (RUNNING_RESERVE - floor).coerceAtLeast(0.05)).coerceIn(0.0, 1.0)
     (90.0 + 35.0 * effort) * WALKING_DUTY
 } else {
-    150.0 + 25.0 * ((reserve - RUNNING_RESERVE) / 0.35).coerceIn(0.0, 1.0)
+    130.0 + 25.0 * ((reserve - RUNNING_RESERVE) / 0.35).coerceIn(0.0, 1.0)
 }
 
 private fun quartile(values: List<Double>): Double? =
@@ -75,6 +75,7 @@ fun estimateSteps(
     val moving = BooleanArray(1440)
     val reserve = DoubleArray(1440)
     val dyn = DoubleArray(1440)
+    val coverage = IntArray(1440)
     for (minute in enmoSeries(accel, expectedMinutes = 1440).minutes) {
         if (minute.nSamples < 30) continue
         val index = ((minute.tsMinStartMs / 1000.0 - start) / 60.0).toInt()
@@ -83,6 +84,7 @@ fun estimateSteps(
         if (heart <= 0) continue
         reserve[index] = (heart - resting) / (maxHr - resting)
         dyn[index] = minute.dynAmp
+        coverage[index] = minute.nSamples.coerceAtMost(60)
     }
     val quiet = quartile((0 until 1440).filter { dyn[it] > AWAKE_DYN_G }.map { reserve[it] }) ?: 0.0
     val floor = maxOf(MOVING_RESERVE, quiet + ABOVE_QUIET_RESERVE)
@@ -99,7 +101,7 @@ fun estimateSteps(
         var j = i
         while (j + 1 < 1440 && moving[j + 1]) j++
         if (j - i + 1 >= MIN_BOUT_MINUTES) {
-            for (k in i..j) steps += stepsInMinute(reserve[k], floor)
+            for (k in i..j) steps += stepsInMinute(reserve[k], floor) * coverage[k] / 60.0
         }
         i = j + 1
     }

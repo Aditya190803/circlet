@@ -37,6 +37,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
+private const val SYNC_START_IDLE_TIMEOUT_MS = 20_000L
+private const val SYNC_PROGRESS_IDLE_TIMEOUT_MS = 60_000L
+
 // Ported from OpenStrap edge/lib/ble/ble_engine.dart — session, drain, live heart rate,
 // and the reconnect loop — and edge/android EdgeTrackingService's keep-alive behaviour.
 internal class StrapLink(
@@ -482,7 +485,12 @@ internal class StrapLink(
     private fun armIdle() {
         idleJob?.cancel()
         idleJob = scope.launch {
-            sleep(60_000)
+            val timeout = if (samplesPulled == 0L && samplesBuffered == 0L) {
+                SYNC_START_IDLE_TIMEOUT_MS
+            } else {
+                SYNC_PROGRESS_IDLE_TIMEOUT_MS
+            }
+            sleep(timeout)
             if (drain.onIdle() is EndResult.Retry) retryDrain()
         }
     }
@@ -506,6 +514,11 @@ internal class StrapLink(
                     error = null,
                 )
             }
+            return
+        }
+        if (samplesPulled == 0L && samplesBuffered == 0L && drainAttempt > 1) {
+            drain.abandon()
+            publish { it.copy(sync = sync(false), error = null) }
             return
         }
         if (drainAttempt > 3) {
@@ -583,7 +596,6 @@ internal class StrapLink(
         when (meta.kind) {
             MetaKind.START -> {
                 drain.onStart()
-                armIdle()
             }
             MetaKind.END -> {
                 val token = meta.token ?: return
