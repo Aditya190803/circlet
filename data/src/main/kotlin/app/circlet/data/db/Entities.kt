@@ -1,5 +1,6 @@
 package app.circlet.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -127,6 +128,19 @@ data class DirtyDayEntity(
 data class LiveWorkoutEntity(
     @PrimaryKey val id: Int = LIVE_ROW,
     val payload: String,
+)
+
+/**
+ * User override of the main sleep window for [date]. [startEpoch]/[endEpoch] are epoch seconds.
+ * [deleted] removes the main sleep for the date. [rejectedNaps] is a comma-separated list of nap start epochs.
+ */
+@Entity(tableName = "sleep_edits")
+data class SleepEditEntity(
+    @PrimaryKey val date: String,
+    @ColumnInfo(name = "start_epoch") val startEpoch: Long?,
+    @ColumnInfo(name = "end_epoch") val endEpoch: Long?,
+    val deleted: Boolean,
+    @ColumnInfo(name = "rejected_naps") val rejectedNaps: String,
 )
 
 internal const val PROFILE_ROW = 1

@@ -324,7 +324,7 @@ private fun source(activity: Activity): String =
  * [dayOf] is the time whose calendar day this one is compared with, to mark a time on another day.
  */
 @Composable
-private fun TimeStepper(title: String, at: Instant, dayOf: Instant?, format: TimeFormat, onChange: (Instant) -> Unit) {
+internal fun TimeStepper(title: String, at: Instant, dayOf: Instant?, format: TimeFormat, onChange: (Instant) -> Unit) {
     val otherDay = dayOf != null && localDay(at, format.zone) != localDay(dayOf, format.zone)
     Text(if (otherDay) "$title · ${dayLabel(localDay(at, format.zone))}" else title, style = label(12.sp, Palette.Dim))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

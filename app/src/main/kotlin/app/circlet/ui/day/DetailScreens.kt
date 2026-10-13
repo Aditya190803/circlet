@@ -182,13 +182,8 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 EmptyState(Glyph.Moon, "NO STAGES YET", "Awake, light, deep and REM draw here after a night with the strap on.")
             }
         }
-        Card("NAPS") {
-            if (day.naps.isEmpty()) GhostRow(Glyph.Moon, "NAP", "Daytime sleep is kept apart from the night")
-            day.naps.forEachIndexed { i, nap ->
-                if (i > 0) Divider()
-                TileRow(nap.timeAsleep.hoursMinutes(), Palette.Sleep, "NAP", format.range(nap.start, nap.end))
-            }
-        }
+        NapsCard(day, state.date)
+        SleepEditActions(day, state.date)
         Card("LAST 7 DAYS") {
             val week = state.week
             WeekBars(

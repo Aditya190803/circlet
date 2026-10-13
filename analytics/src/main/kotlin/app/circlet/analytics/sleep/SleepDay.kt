@@ -12,6 +12,7 @@ import app.circlet.core.Profile
 import app.circlet.core.Sample
 import app.circlet.core.SleepConsistency
 import app.circlet.core.SleepDebt
+import app.circlet.core.SleepEdit
 import app.circlet.core.SleepEpoch
 import app.circlet.core.SleepKind
 import app.circlet.core.SleepNeed
@@ -80,6 +81,7 @@ internal fun segmentDay(
     date: LocalDate,
     profile: Profile,
     history: List<DaySummary>,
+    edit: SleepEdit? = null,
 ): SleepSegments {
     profile.hashCode()
     if (!series.worn || series.accel.isEmpty()) {
@@ -106,13 +108,18 @@ internal fun segmentDay(
         habitualMidsleepSec = habitualMidsleepSecFromHistory(blocks, tzOffsetResolver = offsets),
         tzOffsetResolver = offsets,
         vanHeesMask = mask,
+        forcedWindow = edit?.window?.let { (start, end) ->
+            ForcedWindow(start.epochSecond.toInt(), end.epochSecond.toInt())
+        },
     )
     val main = when {
+        edit?.deleted == true -> Metric.absent<CoreSession>(AbsentReason.NO_SLEEP)
         !segmentation.present || segmentation.tstSec == null ->
             Metric.absent<CoreSession>(AbsentReason.NO_SLEEP)
         else -> coreValue(mainSession(date, segmentation, series), segmentation.confidence)
     }
-    val naps = napSessions(date, series, segmentation, mask)
+    val rejected = edit?.rejectedNaps?.map { it.epochSecond }.orEmpty().toSet()
+    val naps = napSessions(date, series, segmentation, mask).filter { it.start.epochSecond !in rejected }
     return SleepSegments(series, main, naps)
 }
 

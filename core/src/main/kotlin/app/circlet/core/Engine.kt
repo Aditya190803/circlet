@@ -31,6 +31,7 @@ data class DayInput(
     val now: Instant,
     val priorSkinTemp: Map<LocalDate, Double> = emptyMap(),
     val phoneSteps: List<StepReading> = emptyList(),
+    val sleepEdit: SleepEdit? = null,
 )
 
 /**

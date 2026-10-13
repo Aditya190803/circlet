@@ -138,4 +138,13 @@ interface MetricsRepository {
     suspend fun weeklyRecap(weekStart: LocalDate): Outcome<WeeklyRecap>
 
     fun observeSpotChecks(date: LocalDate): Flow<List<HrvSpotCheck>>
+
+    /** The user's correction for [date]'s night, or null when there is none. */
+    fun observeSleepEdit(date: LocalDate): Flow<SleepEdit?>
+
+    /**
+     * Stores [edit] for [date] and scores the night again. A null or empty edit restores the detected night.
+     * Fails with [CoreError.Invalid] when the window is not usable (see [rejectedSleepWindow]).
+     */
+    suspend fun saveSleepEdit(date: LocalDate, edit: SleepEdit?): Outcome<Unit>
 }

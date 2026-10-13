@@ -166,11 +166,16 @@ internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray) {
         val sqlite = database.openHelper.writableDatabase
         sqlite.execSQL("ATTACH DATABASE '$path' AS incoming")
         try {
+            val incoming = mutableSetOf<String>()
+            sqlite.query("SELECT name FROM incoming.sqlite_master WHERE type='table'").use { cursor ->
+                while (cursor.moveToNext()) incoming += cursor.getString(0)
+            }
             sqlite.beginTransaction()
             try {
                 for (table in USER_TABLES) {
                     sqlite.execSQL("DELETE FROM $table")
-                    sqlite.execSQL("INSERT INTO $table SELECT * FROM incoming.$table")
+                    // A snapshot from an older schema has no table for what came later.
+                    if (table in incoming) sqlite.execSQL("INSERT INTO $table SELECT * FROM incoming.$table")
                 }
                 sqlite.setTransactionSuccessful()
             } finally {
