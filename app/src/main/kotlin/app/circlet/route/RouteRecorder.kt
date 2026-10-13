@@ -12,7 +12,6 @@ import app.circlet.core.LiveWorkout
 import app.circlet.core.Route
 import app.circlet.core.RoutePoint
 import app.circlet.core.routeKind
-import app.circlet.strap.bg.StrapService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,7 +65,7 @@ class RouteRecorder private constructor(private val context: Context) {
         listener = fixes
         pointsState.value = store.read(id)
         activeState.value = true
-        StrapService.setLocationWanted(context, true)
+        locationService(context, true)
         return true
     }
 
@@ -83,7 +82,7 @@ class RouteRecorder private constructor(private val context: Context) {
         activeState.value = false
         pointsState.value = emptyList()
         if (activityId != null) store.rename(id, activityId) else store.delete(id)
-        StrapService.setLocationWanted(context, false)
+        locationService(context, false)
     }
 
     @Synchronized
@@ -105,6 +104,13 @@ class RouteRecorder private constructor(private val context: Context) {
     companion object {
         @Volatile
         private var instance: RouteRecorder? = null
+
+        /**
+         * Tells the foreground service whether to hold the location type. Set by the full build;
+         * the core-only build has no strap service, so it does nothing there.
+         */
+        @Volatile
+        var locationService: (Context, Boolean) -> Unit = { _, _ -> }
 
         fun get(context: Context): RouteRecorder =
             instance ?: synchronized(this) {

@@ -14,6 +14,8 @@ import app.circlet.data.DataModule
 import app.circlet.strap.StrapBindings
 import app.circlet.strap.StrapModule
 import app.circlet.strap.bg.StrapCompanion
+import app.circlet.strap.bg.StrapService
+import app.circlet.route.RouteRecorder
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
@@ -111,6 +113,7 @@ object RealBackend {
             strap = StrapModule.open(context, opened.ports, SystemTimeSource)
             data = opened
             recordPhoneSteps(context, opened)
+            RouteRecorder.locationService = { ctx, wanted -> StrapService.setLocationWanted(ctx, wanted) }
         }
     }
 
