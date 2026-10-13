@@ -107,8 +107,22 @@ internal class ProtocolWire {
             NotifyRole.EVENTS -> events
             NotifyRole.DATA -> data
         }
-        return asm.feed(chunk).map { interpret(Decoder.decode(it)) }
+        val resyncsBefore = asm.resyncs
+        val inbound = asm.feed(chunk).map { inner ->
+            val packet = Decoder.decode(inner)
+            if (packet == null && role == NotifyRole.DATA) dataFailures++
+            interpret(packet)
+        }
+        if (role == NotifyRole.DATA) dataFailures += asm.resyncs - resyncsBefore
+        return inbound
     }
+
+    /**
+     * Frames on the data characteristic that failed their CRC or could not be parsed.
+     * A history drain compares this before and after a packet.
+     */
+    var dataFailures: Int = 0
+        private set
 
     fun setClock(seq: Int, epochSeconds: Long): ByteArray = vetted(Commands.setClock(seq, epochSeconds))
 

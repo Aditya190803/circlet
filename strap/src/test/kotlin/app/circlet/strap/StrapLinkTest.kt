@@ -7,7 +7,9 @@ import app.circlet.core.FoundStrap
 import app.circlet.core.LinkState
 import app.circlet.core.Outcome
 import app.circlet.core.StrapError
+import app.circlet.core.SyncOutcome
 import app.circlet.protocol.Frames
+import app.circlet.strap.diag.SyncRecorder
 import app.circlet.strap.link.GattOperationQueue
 import app.circlet.strap.link.NotifyRole
 import app.circlet.strap.link.StrapLink
@@ -71,7 +73,47 @@ class StrapLinkTest {
         assertEquals(0x17, ack[2].toInt() and 0xFF)
         assertEquals(0x01, ack[3].toInt() and 0xFF)
         assertTrue(ack.copyOfRange(4, 12).contentEquals(token))
-        assertEquals(rig.time.now(), rig.prefs.synced)
+        assertNull(rig.prefs.synced)
+        assertNull(rig.link.state.value.sync.lastOutcome)
+    }
+
+    @Test
+    fun aFailedAckIsRecordedAndTheBatchStaysCommitted() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.failOpcode = 0x17
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        assertEquals(1, rig.sink.batches.size)
+        assertEquals(SyncOutcome.ACK_FAILED, rig.link.state.value.sync.lastOutcome)
+        assertEquals(rig.time.now(), rig.link.state.value.sync.lastOutcomeAt)
+        assertNull(rig.prefs.synced)
+        rig.transport.failOpcode = -1
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        assertEquals(1, rig.sink.batches.size)
+        assertEquals(1, acks(rig.transport).size)
+    }
+
+    @Test
+    fun aCorruptHistoryPacketDropsTheBatchAndTheLateEndIsNotAcknowledged() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        runCurrent()
+        val corrupt = recordFrame()
+        corrupt[corrupt.size - 1] = (corrupt[corrupt.size - 1].toInt() xor 0x55).toByte()
+        rig.transport.emit(NotifyRole.DATA, corrupt)
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        assertEquals(SyncOutcome.DECODE_FAILED, rig.link.state.value.sync.lastOutcome)
+        assertTrue(rig.sink.batches.isEmpty())
+        assertTrue(acks(rig.transport).isEmpty())
     }
 
     @Test
@@ -89,7 +131,8 @@ class StrapLinkTest {
 
     @Test
     fun aCompleteMarkerIsNotAcknowledged() = runTest {
-        val rig = rig()
+        val diag = CountingRecorder()
+        val rig = rig(diag)
         rig.link.pair(strap)
         runCurrent()
         rig.transport.emit(NotifyRole.DATA, metaFrame(1))
@@ -99,6 +142,12 @@ class StrapLinkTest {
         assertTrue(acks(rig.transport).isEmpty())
         assertEquals(false, rig.link.state.value.sync.draining)
         assertEquals(rig.time.now(), rig.prefs.synced)
+        assertEquals(rig.time.now(), rig.link.state.value.lastSync)
+        assertEquals(SyncOutcome.COMPLETED, rig.link.state.value.sync.lastOutcome)
+        assertEquals(rig.time.now(), rig.link.state.value.sync.lastOutcomeAt)
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        assertEquals(listOf(SyncOutcome.COMPLETED), diag.outcomes)
     }
 
     @Test
@@ -113,6 +162,8 @@ class StrapLinkTest {
         runCurrent()
         assertTrue(rig.sink.batches.isEmpty())
         assertTrue(acks(rig.transport).isEmpty())
+        assertEquals(SyncOutcome.DISCONNECTED, rig.link.state.value.sync.lastOutcome)
+        assertNull(rig.link.state.value.lastSync)
         assertEquals(listOf(false, true), rig.transport.connects)
         assertEquals(LinkState.RECONNECTING, rig.link.state.value.link)
     }
@@ -170,6 +221,7 @@ class StrapLinkTest {
 
         assertEquals(false, rig.link.state.value.sync.draining)
         assertNull(rig.link.state.value.lastSync)
+        assertEquals(SyncOutcome.STALLED, rig.link.state.value.sync.lastOutcome)
     }
 
     @Test
@@ -257,7 +309,16 @@ class StrapLinkTest {
         assertNull(rig.prefs.address)
     }
 
-    private fun TestScope.rig(): Rig {
+    private class CountingRecorder : SyncRecorder {
+        val outcomes = mutableListOf<SyncOutcome>()
+        override fun log(message: String) = Unit
+        override fun outcome(outcome: SyncOutcome, pulled: Long) {
+            outcomes += outcome
+        }
+        override fun samples(count: Int) = Unit
+    }
+
+    private fun TestScope.rig(diag: SyncRecorder = SyncRecorder.None): Rig {
         val time = ManualTimeSource(Instant.parse("2026-10-12T00:00:00Z"), ZoneId.of("Pacific/Auckland"))
         val transport = FakeTransport()
         val sink = RecordingSink()
@@ -270,6 +331,7 @@ class StrapLinkTest {
             time = time,
             scope = backgroundScope,
             host = host,
+            diag = diag,
         )
         return Rig(link, transport, sink, prefs, host, time)
     }

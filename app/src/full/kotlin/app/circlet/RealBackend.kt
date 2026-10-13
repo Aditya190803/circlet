@@ -139,6 +139,7 @@ object RealBackend {
             settings = data.settings,
             portability = data.portability,
             onboarding = data.onboarding,
+            diagnostics = strap.diagnostics,
         )
     }
 }

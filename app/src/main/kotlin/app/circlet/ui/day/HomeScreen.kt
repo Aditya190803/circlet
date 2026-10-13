@@ -63,6 +63,7 @@ import app.circlet.ui.design.forKind
 import app.circlet.ui.design.glyph
 import app.circlet.ui.design.grouped
 import app.circlet.ui.design.hoursMinutes
+import app.circlet.ui.design.stalled
 import app.circlet.ui.design.syncProgressLabel
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
@@ -215,6 +216,7 @@ fun DayNotice(notice: Notice, onAction: () -> Unit) {
 
 private fun StrapState.status(): String = when {
     sync.draining -> syncProgressLabel(sync)
+    link == LinkState.CONNECTED && sync.stalled() -> "SYNC STALLED"
     link == LinkState.CONNECTED && onWrist == false -> "OFF WRIST"
     link == LinkState.CONNECTED -> "LIVE"
     link == LinkState.CONNECTING || link == LinkState.RECONNECTING -> "SEARCHING"

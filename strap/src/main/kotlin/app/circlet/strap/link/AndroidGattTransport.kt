@@ -23,6 +23,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import app.circlet.core.FoundStrap
+import app.circlet.strap.diag.SyncRecorder
 import app.circlet.strap.wire.StrapUuids
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
@@ -48,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 @SuppressLint("MissingPermission")
 internal class AndroidGattTransport(
     private val context: Context,
+    private val diag: SyncRecorder = SyncRecorder.None,
 ) : GattTransport {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val hits = MutableSharedFlow<FoundStrap>(extraBufferCapacity = 32)
@@ -163,7 +165,8 @@ internal class AndroidGattTransport(
         withContext(Dispatchers.Main.immediate) {
             try {
                 scanner.stopScan(scanCallback)
-            } catch (_: SecurityException) {
+            } catch (failed: SecurityException) {
+                diag.swallowed("transport", failed)
             }
         }
     }
@@ -179,7 +182,8 @@ internal class AndroidGattTransport(
                 val radio = adapter() ?: return@withContext ConnectStatus.Off.also { connectWaiter = null }
                 val device = try {
                     radio.getRemoteDevice(address)
-                } catch (_: IllegalArgumentException) {
+                } catch (failed: IllegalArgumentException) {
+                    diag.swallowed("transport", failed)
                     connectWaiter = null
                     return@withContext ConnectStatus.Down(0)
                 }
@@ -206,7 +210,8 @@ internal class AndroidGattTransport(
                 } else {
                     result
                 }
-            } catch (_: SecurityException) {
+            } catch (failed: SecurityException) {
+                diag.swallowed("transport", failed)
                 shutdown(emitDown = false)
                 ConnectStatus.Denied
             } finally {
@@ -253,9 +258,11 @@ internal class AndroidGattTransport(
     override fun bonded(address: String): Boolean {
         val device = try {
             adapter()?.getRemoteDevice(address)
-        } catch (_: IllegalArgumentException) {
+        } catch (failed: IllegalArgumentException) {
+            diag.swallowed("transport", failed)
             null
-        } catch (_: SecurityException) {
+        } catch (failed: SecurityException) {
+            diag.swallowed("transport", failed)
             null
         }
         return device?.bondState == BluetoothDevice.BOND_BONDED
@@ -265,7 +272,8 @@ internal class AndroidGattTransport(
         if (!hasConnectPermission()) return BondStatus.FAILED
         val device = try {
             adapter()?.getRemoteDevice(address)
-        } catch (_: IllegalArgumentException) {
+        } catch (failed: IllegalArgumentException) {
+            diag.swallowed("transport", failed)
             null
         } ?: return BondStatus.FAILED
         if (device.bondState == BluetoothDevice.BOND_BONDED) return BondStatus.BONDED
@@ -300,12 +308,14 @@ internal class AndroidGattTransport(
             } else {
                 withTimeoutOrNull(20_000) { result.await() } ?: BondStatus.FAILED
             }
-        } catch (_: SecurityException) {
+        } catch (failed: SecurityException) {
+            diag.swallowed("transport", failed)
             BondStatus.FAILED
         } finally {
             try {
                 context.unregisterReceiver(receiver)
-            } catch (_: IllegalArgumentException) {
+            } catch (failed: IllegalArgumentException) {
+                diag.swallowed("transport", failed)
             }
         }
     }
@@ -325,7 +335,8 @@ internal class AndroidGattTransport(
         if (current != null) {
             try {
                 current.disconnect()
-            } catch (_: SecurityException) {
+            } catch (failed: SecurityException) {
+                diag.swallowed("transport", failed)
             }
             current.close()
         }

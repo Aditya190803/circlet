@@ -38,6 +38,7 @@ import app.circlet.ui.design.TextEntry
 import app.circlet.ui.design.Toggle
 import app.circlet.ui.design.body
 import app.circlet.ui.design.agoWords
+import app.circlet.ui.design.stalled
 import app.circlet.ui.design.syncProgressLabel
 import app.circlet.ui.design.label
 import app.circlet.ui.design.words
@@ -67,6 +68,7 @@ class MoreActions(
     val workouts: () -> Unit = {},
     val data: () -> Unit = {},
     val importHistory: () -> Unit = {},
+    val diagnostics: () -> Unit = {},
     val gallery: (() -> Unit)? = null,
 )
 
@@ -125,6 +127,8 @@ fun MoreScreen(
                 Divider()
                 ListRow("Import WHOOP history", Glyph.Import, "Bring in your earlier days and baseline", onClick = actions.importHistory)
                 Divider()
+                ListRow("Sync diagnostics", Glyph.Info, "How recent syncs ended, with a log you can save", onClick = actions.diagnostics)
+                Divider()
                 ListRow("Profile", Glyph.Person, "Age, height, weight and max heart rate", onClick = actions.profile)
                 Divider()
                 ListRow("Units", Glyph.Ruler, "Weight and clock", onClick = actions.units)
@@ -169,6 +173,7 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         val syncLabel = when {
             strap.sync.draining -> syncProgressLabel(strap.sync)
             syncing -> "SYNCING"
+            strap.sync.stalled() -> "RETRY SYNC"
             else -> "SYNC NOW"
         }
         PrimaryButton(

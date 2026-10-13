@@ -8,7 +8,9 @@ import app.circlet.core.MetricsRepository
 import app.circlet.core.OnboardingState
 import app.circlet.core.ProfileRepository
 import app.circlet.core.SettingsRepository
+import app.circlet.core.NoSyncDiagnostics
 import app.circlet.core.StrapController
+import app.circlet.core.SyncDiagnostics
 import app.circlet.core.SystemTimeSource
 import app.circlet.core.TimeSource
 import app.circlet.core.WorkoutController
@@ -31,6 +33,7 @@ class AppContainer(
     val settings: SettingsRepository,
     val portability: DataPortability,
     val onboarding: OnboardingState,
+    val diagnostics: SyncDiagnostics = NoSyncDiagnostics,
 ) {
     companion object {
         @Volatile

@@ -10,10 +10,12 @@ import app.circlet.core.StrapError
 import app.circlet.core.StrapEvent
 import app.circlet.core.StrapPorts
 import app.circlet.core.StrapState
+import app.circlet.core.SyncOutcome
 import app.circlet.core.SyncProgress
 import app.circlet.core.TimeSource
 import app.circlet.strap.StrapHost
 import app.circlet.strap.alarm.AlarmRadio
+import app.circlet.strap.diag.SyncRecorder
 import app.circlet.strap.sync.DrainSchedule
 import app.circlet.strap.sync.DrainTrigger
 import app.circlet.strap.sync.EndResult
@@ -50,6 +52,7 @@ internal class StrapLink(
     private val scope: CoroutineScope,
     private val host: StrapHost,
     private val sleep: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
+    private val diag: SyncRecorder = SyncRecorder.None,
 ) : StrapController, AlarmRadio, HeartDemand {
     private val stateFlow = MutableStateFlow(StrapState())
     private val scanningFlow = MutableStateFlow(false)
@@ -78,6 +81,9 @@ internal class StrapLink(
     private var strapStoredSeconds: Long? = null
     private var drainAttempt = 0
     private var drainHeard = false
+    private var drainFault: SyncOutcome? = null
+    private var lastOutcome: SyncOutcome? = null
+    private var lastOutcomeAt: Instant? = null
     private var lastDrainStart: Instant? = null
     private var lastRx: Instant = time.now()
     private var heartListener: (Int?) -> Unit = {}
@@ -113,11 +119,15 @@ internal class StrapLink(
             transport.notifications.collect { notice ->
                 try {
                     lastRx = time.now()
-                    for (inbound in wire.feed(notice.role, notice.bytes)) onInbound(inbound)
+                    val failuresBefore = wire.dataFailures
+                    val inbound = wire.feed(notice.role, notice.bytes)
+                    if (wire.dataFailures != failuresBefore) onDecodeFailure()
+                    for (packet in inbound) onInbound(packet)
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
-                } catch (_: Throwable) {
+                } catch (failed: Throwable) {
                     // One bad packet, or a sink that threw, must not end the session.
+                    diag.swallowed("notification", failed)
                 }
             }
         }
@@ -303,6 +313,8 @@ internal class StrapLink(
         cancelDrainJobs()
         heartOn = false
         samplesBuffered = 0
+        if (drain.open) endDrain(SyncOutcome.DISCONNECTED)
+        drain.onDisconnect()
         publish {
             it.copy(
                 link = if (it.link == LinkState.UNPAIRED) LinkState.UNPAIRED else LinkState.DISCONNECTED,
@@ -319,6 +331,7 @@ internal class StrapLink(
         heartOn = false
         samplesBuffered = 0
         cancelDrainJobs()
+        if (drain.open) endDrain(SyncOutcome.DISCONNECTED)
         drain.onDisconnect()
         periodicJob?.cancel()
         livenessJob?.cancel()
@@ -445,6 +458,8 @@ internal class StrapLink(
         samplesPulled = 0
         samplesBuffered = 0
         drainHeard = false
+        drainFault = null
+        diag.log("drain start")
         drain.begin()
         lastDrainStart = time.now()
         publish { it.copy(sync = sync(true), error = null) }
@@ -478,7 +493,10 @@ internal class StrapLink(
         stallJob?.cancel()
         stallJob = scope.launch {
             sleep(10_000)
-            if (drain.onStall() is EndResult.Retry) retryDrain()
+            if (drain.onStall() is EndResult.Retry) {
+                diag.log("start timeout attempt=${drainAttempt + 1}")
+                retryDrain()
+            }
         }
     }
 
@@ -491,7 +509,10 @@ internal class StrapLink(
                 SYNC_PROGRESS_IDLE_TIMEOUT_MS
             }
             sleep(timeout)
-            if (drain.onIdle() is EndResult.Retry) retryDrain()
+            if (drain.onIdle() is EndResult.Retry) {
+                diag.log("idle timeout attempt=${drainAttempt + 1}")
+                retryDrain()
+            }
         }
     }
 
@@ -506,7 +527,12 @@ internal class StrapLink(
             drain.abandon()
             val alive = Duration.between(lastRx, time.now()) < Duration.ofSeconds(90)
             val now = time.now()
-            if (alive) scope.launch { ports.prefs.setLastSync(now) }
+            if (alive) {
+                scope.launch { ports.prefs.setLastSync(now) }
+                endDrain(SyncOutcome.COMPLETED)
+            } else {
+                endDrain(SyncOutcome.STALLED)
+            }
             publish {
                 it.copy(
                     sync = sync(false),
@@ -518,6 +544,7 @@ internal class StrapLink(
         }
         if (samplesPulled == 0L && samplesBuffered == 0L && drainAttempt > 1) {
             drain.abandon()
+            endDrain(SyncOutcome.STALLED)
             publish { it.copy(sync = sync(false), error = null) }
             return
         }
@@ -525,6 +552,7 @@ internal class StrapLink(
             // A drain that started and then stalled is picked up by the next periodic
             // drain; the records already committed are kept. It is not shown as an error.
             drain.abandon()
+            endDrain(SyncOutcome.STALLED)
             publish { it.copy(sync = sync(false), error = null) }
             return
         }
@@ -583,7 +611,10 @@ internal class StrapLink(
         stallJob?.cancel()
         armIdle()
         val flushed = if (pending >= HISTORY_FLUSH_EVERY) drain.flush() else 0
-        if (flushed > 0) samplesPulled += flushed
+        if (flushed > 0) {
+            samplesPulled += flushed
+            diag.samples(flushed)
+        }
         val buffered = drain.bufferedSamples()
         val moved = flushed > 0 || (pending > 0 && (before == 0 || buffered % 10 == 0))
         samplesBuffered = buffered.toLong()
@@ -602,28 +633,66 @@ internal class StrapLink(
                 when (val result = drain.onEnd(token)) {
                     is EndResult.Ack -> {
                         samplesPulled += result.committed
+                        diag.samples(result.committed)
                         samplesBuffered = drain.bufferedSamples().toLong()
-                        val now = time.now()
-                        ports.prefs.setLastSync(now)
-                        publish { it.copy(sync = sync(true), lastSync = now) }
-                        if (write(wire.historyAck(seq.ack(), result.token)) is Outcome.Ok) drain.ackLanded()
+                        publish { it.copy(sync = sync(true)) }
+                        acknowledge(result.token)
                         armIdle()
                     }
-                    is EndResult.AckAgain -> {
-                        if (write(wire.historyAck(seq.ack(), result.token)) is Outcome.Ok) drain.ackLanded()
-                    }
+                    is EndResult.AckAgain -> acknowledge(result.token)
                     EndResult.Duplicate, EndResult.Ignored, EndResult.Completed, EndResult.Retry -> Unit
                 }
             }
             MetaKind.COMPLETE -> {
+                val wasOpen = drain.open
                 drain.onComplete()
                 samplesBuffered = 0
                 cancelDrainJobs()
+                if (!wasOpen) return
                 val now = time.now()
                 ports.prefs.setLastSync(now)
+                endDrain(SyncOutcome.COMPLETED)
                 publish { it.copy(sync = sync(false), lastSync = now) }
             }
         }
+    }
+
+    private suspend fun acknowledge(token: ByteArray) {
+        if (write(wire.historyAck(seq.ack(), token)) is Outcome.Ok) {
+            drain.ackLanded()
+        } else {
+            faultDrain(SyncOutcome.ACK_FAILED)
+        }
+    }
+
+    private fun onDecodeFailure() {
+        if (!drain.open) return
+        drainHeard = true
+        diag.log("history packet failed CRC or parse")
+        faultDrain(SyncOutcome.DECODE_FAILED)
+        if (drain.awaitingStart) return
+        cancelDrainJobs()
+        retryDrain()
+    }
+
+    /** Records the first fault of a drain as the outcome. Later faults in the same drain are only logged. */
+    private fun faultDrain(fault: SyncOutcome) {
+        if (drainFault != null) return
+        drainFault = fault
+        recordOutcome(fault)
+        publish { it.copy(sync = sync(it.sync.draining)) }
+    }
+
+    /** The drain is over. A fault already recorded for it is kept unless the drain completed. */
+    private fun endDrain(outcome: SyncOutcome) {
+        if (drainFault != null && outcome != SyncOutcome.COMPLETED) return
+        recordOutcome(outcome)
+    }
+
+    private fun recordOutcome(outcome: SyncOutcome) {
+        lastOutcome = outcome
+        lastOutcomeAt = time.now()
+        diag.outcome(outcome, samplesPulled)
     }
 
     private suspend fun onSignal(signal: Inbound.Signal) {
@@ -697,8 +766,14 @@ internal class StrapLink(
 
     private suspend fun write(frame: ByteArray): Outcome<Unit> = when (queue.submit { transport.write(frame) }) {
         is QueueOutcome.Done -> Outcome.Ok(Unit)
-        QueueOutcome.TimedOut -> strap(StrapError.TimedOut)
-        is QueueOutcome.Failed -> strap(StrapError.LinkLost)
+        QueueOutcome.TimedOut -> {
+            diag.log("write timed out")
+            strap(StrapError.TimedOut)
+        }
+        is QueueOutcome.Failed -> {
+            diag.log("write failed")
+            strap(StrapError.LinkLost)
+        }
     }
 
     private suspend fun emit(event: StrapEvent) {
@@ -716,6 +791,8 @@ internal class StrapLink(
         draining = draining,
         samplesBuffered = samplesBuffered,
         strapStoredSeconds = strapStoredSeconds,
+        lastOutcome = lastOutcome,
+        lastOutcomeAt = lastOutcomeAt,
     )
 
     private fun publish(block: (StrapState) -> StrapState) {

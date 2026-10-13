@@ -68,6 +68,7 @@ import app.circlet.ui.design.Palette
 import app.circlet.ui.design.TimeFormat
 import app.circlet.ui.design.label
 import app.circlet.ui.more.AboutScreen
+import app.circlet.ui.more.DiagnosticsScreen
 import app.circlet.ui.more.MoreActions
 import app.circlet.ui.more.MoreScreen
 import app.circlet.ui.more.PairScreen
@@ -112,7 +113,7 @@ enum class Tab(val route: String, val title: String, val glyph: Glyph) {
  * Screens pushed on top of a tab.
  *
  * Route table:
- * - more/profile, more/units, more/about, more/pair, more/data, more/import: More rows and setup screens
+ * - more/profile, more/units, more/about, more/pair, more/data, more/import, more/diagnostics: More rows and setup screens
  * - trends: TrendsScreen. trends/metric/{kind}: MetricTrendScreen. trends/recap: WeeklyRecapScreen. trends/records: RecordsScreen
  * - alarms: AlarmsScreen
  * - stress/{date}: StressScreen
@@ -129,6 +130,7 @@ object Routes {
     const val PAIR = "more/pair"
     const val DATA = "more/data"
     const val IMPORT = "more/import"
+    const val DIAGNOSTICS = "more/diagnostics"
     const val TRENDS = "trends"
     const val RECAP = "trends/recap"
     const val RECORDS = "trends/records"
@@ -328,6 +330,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             workouts = { nav.navigate(Routes.workouts(state.date)) },
                             data = { nav.navigate(Routes.DATA) },
                             importHistory = { nav.navigate(Routes.IMPORT) },
+                            diagnostics = { nav.navigate(Routes.DIAGNOSTICS) },
                             gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
                         ),
                     )
@@ -369,6 +372,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                 }
                 composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
                 composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
+                composable(Routes.DIAGNOSTICS) { DiagnosticsScreen { nav.popBackStack() } }
                 composable(Routes.TRENDS) {
                     TrendsScreen(
                         onBack = { nav.popBackStack() },
