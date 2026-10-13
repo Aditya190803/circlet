@@ -2,6 +2,7 @@ package app.circlet.strap
 
 import android.content.Context
 import app.circlet.core.AlarmController
+import app.circlet.core.Haptic
 import app.circlet.core.StrapController
 import app.circlet.core.StrapPorts
 import app.circlet.core.TimeSource
@@ -15,6 +16,7 @@ import app.circlet.strap.link.GattOperationQueue
 import app.circlet.strap.link.StrapLink
 import app.circlet.strap.notify.StatusNote
 import app.circlet.strap.workout.StrapWorkouts
+import app.circlet.strap.workout.ZoneBuzzer
 import java.time.Duration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +67,11 @@ object StrapModule {
             host = host,
         )
         val alarms = StrapAlarms(ports.prefs, time, ports.sleepStage, ports.doubleTap, link)
-        val workouts = StrapWorkouts(ports.workouts, time, ports.liveLoad, link)
+        val workouts = StrapWorkouts(
+            ports.workouts, time, ports.liveLoad, link,
+            ports.zoneBuzz,
+            ZoneBuzzer { scope.launch { link.buzz(Haptic.TEST) } },
+        )
         link.onSessionReady = {
             alarms.onConnected()
             workouts.onConnected()

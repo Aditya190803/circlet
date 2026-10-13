@@ -155,6 +155,7 @@ internal fun defaultSettings(): UserSettings = UserSettings(
     clock = ClockStyle.MATCH_SYSTEM,
     doubleTap = DoubleTapAction.STOP_ALARM,
     heartRateBroadcast = false,
+    zoneBuzz = false,
 )
 
 internal fun defaultBackup(): BackupSettings = BackupSettings(
@@ -189,6 +190,7 @@ internal fun readSettings(db: CircletDatabase): UserSettings {
         quietStartMinute = db.kv().get(Keys.QUIET_START)?.toIntOrNull()?.takeIf { it in 0..1439 },
         quietEndMinute = db.kv().get(Keys.QUIET_END)?.toIntOrNull()?.takeIf { it in 0..1439 },
         countPhoneSteps = db.kv().get(Keys.PHONE_STEPS) == "true",
+        zoneBuzz = db.kv().get(Keys.ZONE_BUZZ) == "true",
     )
 }
 

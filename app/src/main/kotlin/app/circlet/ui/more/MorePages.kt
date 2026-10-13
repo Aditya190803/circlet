@@ -32,6 +32,7 @@ import app.circlet.ui.design.ErrorState
 import app.circlet.ui.design.LocalTimeFormat
 import app.circlet.ui.design.Palette
 import app.circlet.ui.design.PrimaryButton
+import app.circlet.ui.design.SecondaryButton
 import app.circlet.ui.design.Segmented
 import app.circlet.ui.design.Shapes
 import app.circlet.ui.design.Skeleton
@@ -45,7 +46,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun ProfileScreen(profile: Profile, unit: MassUnit, error: String?, onSave: (Profile, () -> Unit) -> Unit, onBack: () -> Unit) {
+fun ProfileScreen(
+    profile: Profile,
+    unit: MassUnit,
+    error: String?,
+    onSave: (Profile, () -> Unit) -> Unit,
+    onZones: () -> Unit,
+    onBack: () -> Unit,
+) {
     val today = LocalDate.now(LocalTimeFormat.current.zone)
     val draft = rememberProfileDraft(profile, unit, today)
     var saved by remember { mutableStateOf(false) }
@@ -65,6 +73,7 @@ fun ProfileScreen(profile: Profile, unit: MassUnit, error: String?, onSave: (Pro
             PrimaryButton(if (saved) "SAVED" else "SAVE PROFILE", enabled = !saved && parsed != null) {
                 parsed?.let { onSave(it) { saved = true } }
             }
+            SecondaryButton("HEART RATE ZONES", onClick = onZones)
         }
     }
 }

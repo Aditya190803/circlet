@@ -14,6 +14,7 @@ import app.circlet.core.Sport
 import app.circlet.core.TimeSource
 import app.circlet.core.WorkoutController
 import app.circlet.core.WorkoutStore
+import app.circlet.core.ZoneBuzzPolicy
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.rejectedActivityWindow
 import java.util.UUID
@@ -33,7 +34,10 @@ internal class StrapWorkouts(
     private val time: TimeSource,
     private val estimator: LiveStrainEstimator,
     private val heart: HeartDemand,
+    private val zoneBuzz: ZoneBuzzPolicy = ZoneBuzzPolicy { false },
+    private val buzzer: ZoneBuzzer = ZoneBuzzer {},
 ) : WorkoutController {
+    private var buzzState = ZoneBuzzState()
     private val liveState = MutableStateFlow<LiveWorkout?>(null)
     private val beats = ArrayList<Int>()
     private val gate = Mutex()
@@ -63,6 +67,7 @@ internal class StrapWorkouts(
             )
             synchronized(heartLock) {
                 beats.clear()
+                buzzState = ZoneBuzzState()
                 liveState.value = workout
             }
             store.saveLive(LiveSession(workout, emptyList()))
@@ -80,6 +85,7 @@ internal class StrapWorkouts(
             synchronized(heartLock) {
                 if (liveState.value != null) return@synchronized
                 beats.clear()
+                buzzState = ZoneBuzzState()
                 beats.addAll(saved.beats)
                 liveState.value = saved.workout
             }
@@ -139,6 +145,7 @@ internal class StrapWorkouts(
                 val snapshot = beats.toList()
                 val numbers = estimator.load(closed.activeDuration(end), snapshot)
                 beats.clear()
+                buzzState = ZoneBuzzState()
                 liveState.value = null
                 Activity(
                     id = UUID.randomUUID().toString(),
@@ -224,6 +231,15 @@ internal class StrapWorkouts(
         synchronized(heartLock) {
             val current = liveState.value ?: return
             val measured = bpm?.takeIf { it in 25..230 }
+            val step = stepZoneBuzz(
+                buzzState,
+                measured?.let(estimator::zoneOf),
+                time.now().toEpochMilli(),
+                zoneBuzz.enabled(),
+                current.paused,
+            )
+            buzzState = step.state
+            if (step.buzz) buzzer.buzz()
             if (current.paused) {
                 if (measured != null) liveState.value = current.copy(heartRateBpm = measured)
                 return

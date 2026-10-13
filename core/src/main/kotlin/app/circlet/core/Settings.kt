@@ -27,6 +27,7 @@ enum class DoubleTapAction {
  * [lowBatteryThreshold] is a percent. Quiet hours are minutes after local midnight;
  * both null means quiet hours are off.
  * [countPhoneSteps] records this phone's step counter, the only source of the step count.
+ * [zoneBuzz] buzzes the strap when the heart-rate zone changes during a workout.
  */
 data class UserSettings(
     val mass: MassUnit,
@@ -39,6 +40,7 @@ data class UserSettings(
     val quietStartMinute: Int? = null,
     val quietEndMinute: Int? = null,
     val countPhoneSteps: Boolean = false,
+    val zoneBuzz: Boolean = false,
 )
 
 /** Units, clock, double tap, and heart-rate broadcast. */

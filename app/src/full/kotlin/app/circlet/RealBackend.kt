@@ -6,7 +6,9 @@ import android.content.Context
 import android.util.Log
 import app.circlet.analytics.engine.CircletDayEngine
 import app.circlet.analytics.engine.circletInsightEngine
+import app.circlet.analytics.strain.defaultZoneBounds
 import app.circlet.core.SystemTimeSource
+import app.circlet.core.ZoneDefaults
 import app.circlet.data.CircletData
 import app.circlet.data.DataModule
 import app.circlet.strap.StrapBindings
@@ -152,6 +154,7 @@ object RealBackend {
             settings = data.settings,
             portability = data.portability,
             onboarding = data.onboarding,
+            zoneDefaults = ZoneDefaults { profile, on, resting -> defaultZoneBounds(profile, on, resting) },
         )
     }
 }
