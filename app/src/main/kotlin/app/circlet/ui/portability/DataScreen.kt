@@ -1,5 +1,6 @@
 package app.circlet.ui.portability
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -53,7 +54,7 @@ import kotlinx.coroutines.withContext
 /** Health Connect, export, backup and restore, with the privacy line that applies to all of them. */
 @Composable
 fun DataScreen(onBack: () -> Unit) {
-    val vm = containerViewModel { container, _ -> DataViewModel(container.portability) }
+    val vm = containerViewModel { container, _ -> DataViewModel(container.portability, container.settings) }
     val messenger = LocalMessenger.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -70,6 +71,11 @@ fun DataScreen(onBack: () -> Unit) {
     // The platform sheet lists each kind of value; whatever is allowed there is what gets written.
     val askHealth = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
         vm.setHealthConnect(true)
+    }
+
+    val countSteps by vm.countPhoneSteps.collectAsState(false)
+    val askActivity = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.setCountPhoneSteps(true) else messenger.show("Step counting needs the physical activity permission.")
     }
 
     val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
@@ -100,6 +106,19 @@ fun DataScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         DetailHeader("DATA", onBack = onBack)
         ScreenColumn {
+            Card("STEPS") {
+                Text(
+                    "Steps come from this phone's step counter, only while the phone is with you. " +
+                        "Without it the step count stays empty.",
+                    style = body(14.sp, Palette.Dim),
+                )
+                Spacer(Modifier.height(Space.sm))
+                Toggle(
+                    checked = countSteps,
+                    description = "Count steps with this phone",
+                ) { on -> if (on) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION) else vm.setCountPhoneSteps(false) }
+            }
+
             Card("HEALTH CONNECT") {
                 Text(
                     when {

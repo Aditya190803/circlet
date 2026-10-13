@@ -24,12 +24,14 @@ enum class DoubleTapAction {
 /**
  * Preferences that do not change the physiology.
  * [heartRateBroadcast] is the standard heart-rate profile toggle for gym equipment.
+ * [countPhoneSteps] records this phone's step counter, the only source of the step count.
  */
 data class UserSettings(
     val mass: MassUnit,
     val clock: ClockStyle,
     val doubleTap: DoubleTapAction,
     val heartRateBroadcast: Boolean,
+    val countPhoneSteps: Boolean = false,
 )
 
 /** Units, clock, double tap, and heart-rate broadcast. */

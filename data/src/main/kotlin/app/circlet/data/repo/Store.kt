@@ -182,6 +182,7 @@ internal fun readSettings(db: CircletDatabase): UserSettings {
         clock = db.kv().get(Keys.CLOCK)?.let { runCatching { ClockStyle.valueOf(it) }.getOrNull() } ?: defaults.clock,
         doubleTap = db.kv().get(Keys.DOUBLE_TAP)?.let { runCatching { DoubleTapAction.valueOf(it) }.getOrNull() } ?: defaults.doubleTap,
         heartRateBroadcast = db.kv().get(Keys.HR_BROADCAST) == "true",
+        countPhoneSteps = db.kv().get(Keys.PHONE_STEPS) == "true",
     )
 }
 

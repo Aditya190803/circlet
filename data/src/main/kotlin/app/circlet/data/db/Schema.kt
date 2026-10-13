@@ -25,6 +25,7 @@ internal object Keys {
     const val HEALTH_ENABLED = "health_connect_enabled"
     const val EXPORT_DOCUMENT = "export_document_uri"
     const val ZONE = "time_zone"
+    const val PHONE_STEPS = "count_phone_steps"
 }
 
 /** User tables copied by restore. Room's master table is not one of them. */

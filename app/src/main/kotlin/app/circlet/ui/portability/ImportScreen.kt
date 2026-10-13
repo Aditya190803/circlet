@@ -27,7 +27,7 @@ import app.circlet.ui.state.containerViewModel
 /** Adds the days from a WHOOP data export to this phone. Reached from More, not from onboarding. */
 @Composable
 fun ImportScreen(onBack: () -> Unit) {
-    val vm = containerViewModel { container, _ -> DataViewModel(container.portability) }
+    val vm = containerViewModel { container, _ -> DataViewModel(container.portability, container.settings) }
     val importing by vm.importing.collectAsState()
     val result by vm.importResult.collectAsState()
 

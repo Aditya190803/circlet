@@ -136,6 +136,7 @@ internal class SettingsRepositoryImpl(
             kv.put(KvEntity(Keys.CLOCK, settings.clock.name))
             kv.put(KvEntity(Keys.DOUBLE_TAP, settings.doubleTap.name))
             kv.put(KvEntity(Keys.HR_BROADCAST, settings.heartRateBroadcast.toString()))
+            kv.put(KvEntity(Keys.PHONE_STEPS, settings.countPhoneSteps.toString()))
         }
         memory.settings.value = settings
         return Outcome.Ok(settings)

@@ -2,7 +2,7 @@ package app.circlet.core
 
 /**
  * Step count for a local day.
- * The count is an estimate from 1 Hz motion, so a present value stays at [Confidence.LOW].
+ * The count comes from the phone's step counter only; it is absent on a day with no phone readings.
  */
 data class Steps(
     val count: Metric<Int>,
