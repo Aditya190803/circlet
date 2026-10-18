@@ -48,8 +48,7 @@ class HistoryDrainTest {
         val drain = open(sink)
         drain.onRecord(sample, raw)
         assertTrue(drain.onEnd(token) is EndResult.Ack)
-        drain.ackLanded()
-        assertTrue(drain.onEnd(token.copyOf()) is EndResult.Duplicate)
+        assertTrue(drain.onEnd(token.copyOf()) is EndResult.AckAgain)
         assertEquals(1, sink.batches.size)
     }
 
@@ -77,15 +76,13 @@ class HistoryDrainTest {
     }
 
     @Test
-    fun recordsBeforeTheStartAreDropped() = runTest {
+    fun gen4RecordsBeforeTheStartAreCommitted() = runTest {
         val sink = RecordingSink()
         val drain = HistoryDrain(sink)
         drain.begin()
         drain.onRecord(sample, raw)
-        val ack = drain.onEnd(token)
-        assertTrue(ack is EndResult.Ack)
-        assertEquals(0, (ack as EndResult.Ack).committed)
-        assertTrue(sink.batches.single().second.isEmpty())
+        assertEquals(1, (drain.onEnd(token) as EndResult.Ack).committed)
+        assertEquals(listOf(sample), sink.batches.single().first)
     }
 
     @Test
@@ -136,13 +133,42 @@ class HistoryDrainTest {
     }
 
     @Test
-    fun completeCarriesNoToken() = runTest {
+    fun completeCommitsTheTailWithoutRequestingAnAck() = runTest {
         val sink = RecordingSink()
         val drain = open(sink)
         drain.onRecord(sample, raw)
-        assertTrue(drain.onComplete() is EndResult.Completed)
-        assertTrue(sink.batches.isEmpty())
+        assertEquals(1, (drain.onComplete() as EndResult.Completed).committed)
+        assertEquals(listOf(sample), sink.batches.single().first)
         assertTrue(drain.onEnd(token) is EndResult.Ignored)
+    }
+
+    @Test
+    fun aCommitFromADisconnectedSessionCannotAcknowledgeOrClearTheReplacementBatch() = runTest {
+        val sink = RecordingSink()
+        val gate = CompletableDeferred<Unit>()
+        sink.gate = gate
+        val drain = open(sink)
+        drain.onRecord(sample, raw)
+        var result: EndResult? = null
+        val job = launch { result = drain.onEnd(token) }
+        runCurrent()
+        drain.onDisconnect()
+        drain.begin()
+        drain.onStart()
+        drain.onRecord(sample.copy(epochSecond = sample.epochSecond + 1), raw)
+        gate.complete(Unit)
+        job.join()
+        assertTrue(result is EndResult.Ignored)
+        assertEquals(1, drain.bufferedSamples())
+    }
+
+    @Test
+    fun gen4EndCanBeTheFirstHistoryResponse() = runTest {
+        val sink = RecordingSink()
+        val drain = HistoryDrain(sink)
+        drain.begin()
+        assertEquals(0, (drain.onEnd(token) as EndResult.Ack).committed)
+        assertTrue(sink.batches.single().first.isEmpty())
     }
 
     private fun open(sink: RecordingSink): HistoryDrain {

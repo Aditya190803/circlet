@@ -41,6 +41,54 @@ class StrapLinkTest {
     private val token = byteArrayOf(9, 8, 7, 6, 5, 4, 3, 2)
 
     @Test
+    fun aManualRetryInterruptsBackgroundAutoConnectAndConnectsDirectly() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.autoConnectGate = CompletableDeferred()
+        rig.transport.down()
+        runCurrent()
+        assertEquals(listOf(false, true), rig.transport.connects)
+        assertEquals(LinkState.RECONNECTING, rig.link.state.value.link)
+        assertTrue(rig.link.syncNow() is Outcome.Ok)
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(listOf(false, true, false), rig.transport.connects)
+        assertEquals(LinkState.CONNECTED, rig.link.state.value.link)
+        assertEquals(2, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+    }
+
+    @Test
+    fun aRetryAfterAbortAcceptsGen4RecordsWithoutAnotherStart() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, heartFrame())
+        runCurrent()
+        advanceTimeBy(63_001)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, heartFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        assertEquals(SyncOutcome.COMPLETED, rig.link.state.value.sync.lastOutcome)
+        assertEquals(1L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(1, rig.sink.batches.single().first.size)
+    }
+
+    @Test
+    fun foregroundSessionsSendLinkValidHeartbeats() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.link.setLiveHeartRate(true)
+        advanceTimeBy(10_001)
+        runCurrent()
+        val heartbeat = rig.transport.writes.single { opcodeOf(it) == 0x01 }
+        assertEquals(0, innerOf(heartbeat)[3].toInt())
+    }
+
+    @Test
     fun pairWritesTheClockBeforeItDrains() = runTest {
         val rig = rig()
         val outcome = rig.link.pair(strap)
@@ -78,24 +126,24 @@ class StrapLinkTest {
     }
 
     @Test
-    fun aFailedAckIsRecordedAndTheBatchStaysCommitted() = runTest {
+    fun aTransientAckFailureRetriesTheSameCommittedBatchWithoutAborting() = runTest {
         val rig = rig()
         rig.link.pair(strap)
         runCurrent()
         rig.transport.failOpcode = 0x17
+        rig.transport.failuresRemaining = 1
         rig.transport.emit(NotifyRole.DATA, metaFrame(1))
         rig.transport.emit(NotifyRole.DATA, recordFrame())
         rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
         runCurrent()
         assertEquals(1, rig.sink.batches.size)
-        assertEquals(SyncOutcome.ACK_FAILED, rig.link.state.value.sync.lastOutcome)
-        assertEquals(rig.time.now(), rig.link.state.value.sync.lastOutcomeAt)
+        assertNull(rig.link.state.value.sync.lastOutcome)
         assertNull(rig.prefs.synced)
-        rig.transport.failOpcode = -1
-        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        advanceTimeBy(201)
         runCurrent()
         assertEquals(1, rig.sink.batches.size)
         assertEquals(1, acks(rig.transport).size)
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
     }
 
     @Test
@@ -126,7 +174,92 @@ class StrapLinkTest {
         rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
         runCurrent()
         assertEquals(1, rig.sink.batches.size)
+        assertEquals(2, acks(rig.transport).size)
+    }
+
+    @Test
+    fun aCommitFinishingAfterReconnectNeverWritesTheOldTokenToTheNewLink() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        rig.sink.gate = gate
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        rig.transport.down()
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(acks(rig.transport).isEmpty())
+        assertEquals(0L, rig.link.state.value.sync.samplesPulled)
+        assertNull(rig.prefs.synced)
+        assertTrue(rig.link.state.value.sync.draining)
+    }
+
+    @Test
+    fun repeatedCheckpointsAreReacknowledgedWithoutPrematureAbort() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        repeat(8) {
+            rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+            runCurrent()
+        }
+        advanceTimeBy(2_301)
+        runCurrent()
+        assertEquals(1, rig.sink.batches.size)
+        assertEquals(9, acks(rig.transport).size)
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        assertNull(rig.prefs.synced)
+    }
+
+    @Test
+    fun gen4EndBeforeStartSatisfiesTheFirstResponseWatchdog() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        advanceTimeBy(12_301)
+        runCurrent()
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
         assertEquals(1, acks(rig.transport).size)
+        assertTrue(rig.sink.batches.single().first.isEmpty())
+    }
+
+    @Test
+    fun aRejectedHistoryRequestRetriesWithoutWaitingForTheStartTimeout() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.COMMANDS, Frames.wrap(byteArrayOf(0x24, 0, 0x16, 4, 0)))
+        runCurrent()
+        advanceTimeBy(3_001)
+        runCurrent()
+        assertEquals(2, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertNull(rig.prefs.synced)
+    }
+
+    @Test
+    fun anUnrelatedHistoryResponseDoesNotRestartTheCurrentRequest() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.COMMANDS, Frames.wrap(byteArrayOf(0x24, 0, 0x16, 3, 0)))
+        runCurrent()
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
     }
 
     @Test
@@ -179,29 +312,61 @@ class StrapLinkTest {
         runCurrent()
         assertEquals(historical, rig.transport.writes.count { opcodeOf(it) == 0x16 })
         assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x14 })
-        advanceTimeBy(300)
+        advanceTimeBy(1_001)
         runCurrent()
         assertEquals(historical + 1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
         assertTrue(rig.sink.batches.isEmpty())
     }
 
     @Test
-    fun aManualSyncRestartsADrainThatHasNotStarted() = runTest {
+    fun theFirstStartDeadlineBeginsAfterTheHistoricalWriteCompletes() = runTest {
+        val rig = rig()
+        rig.transport.delayedOpcode = 0x16
+        rig.transport.writeDelayMs = 7_500
+        rig.link.pair(strap)
+        runCurrent()
+        advanceTimeBy(9_000)
+        runCurrent()
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        assertTrue(rig.link.state.value.sync.draining)
+    }
+
+    @Test
+    fun aManualSyncDoesNotInterruptADrainThatHasNotStarted() = runTest {
         val rig = rig()
         rig.link.pair(strap)
         runCurrent()
         val historical = rig.transport.writes.count { opcodeOf(it) == 0x16 }
         assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
-        assertTrue(rig.link.syncNow() is Outcome.Ok)
+        repeat(5) { assertTrue(rig.link.syncNow() is Outcome.Ok) }
         runCurrent()
-        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x14 })
-        assertEquals(historical + 1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        assertEquals(historical, rig.transport.writes.count { opcodeOf(it) == 0x16 })
         assertEquals(true, rig.link.state.value.sync.draining)
         assertEquals(0L, rig.link.state.value.sync.samplesPulled)
     }
 
     @Test
-    fun aStartWithoutAnyRecordsDoesNotStayMarkedSyncing() = runTest {
+    fun aRetryAlsoReceivesAFullStartWindowAfterItsWriteCompletes() = runTest {
+        val rig = rig()
+        rig.transport.delayedOpcode = 0x16
+        rig.transport.writeDelayMs = 7_500
+        rig.link.pair(strap)
+        runCurrent()
+        advanceTimeBy(10_001)
+        runCurrent()
+        advanceTimeBy(2_301)
+        runCurrent()
+        advanceTimeBy(7_500)
+        runCurrent()
+        advanceTimeBy(9_000)
+        runCurrent()
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        assertEquals(2, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+    }
+
+    @Test
+    fun aStartAllowsSixtySecondsForTheFirstRecords() = runTest {
         val rig = rig()
         rig.link.pair(strap)
         runCurrent()
@@ -209,19 +374,72 @@ class StrapLinkTest {
         runCurrent()
         assertTrue(rig.link.state.value.sync.draining)
 
-        advanceTimeBy(15_000)
-        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        advanceTimeBy(59_999)
         runCurrent()
-        advanceTimeBy(5_000)
+        assertTrue(rig.link.state.value.sync.draining)
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        advanceTimeBy(2_301)
         runCurrent()
-        advanceTimeBy(2_300)
+        advanceTimeBy(300)
         runCurrent()
-        advanceTimeBy(10_000)
-        runCurrent()
-
-        assertEquals(false, rig.link.state.value.sync.draining)
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x14 })
         assertNull(rig.link.state.value.lastSync)
+    }
+
+    @Test
+    fun unansweredHistoryStopsAfterOneRetryAndLeavesTheLinkAvailableForManualRetry() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertNull(rig.prefs.synced)
+        assertNull(rig.link.state.value.lastSync)
+        assertTrue(rig.link.state.value.sync.lastOutcome != SyncOutcome.COMPLETED)
+        assertEquals(listOf(false), rig.transport.connects)
+        assertEquals(LinkState.CONNECTED, rig.link.state.value.link)
         assertEquals(SyncOutcome.STALLED, rig.link.state.value.sync.lastOutcome)
+        assertEquals(false, rig.link.state.value.sync.draining)
+        assertEquals(2, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertTrue(rig.link.syncNow() is Outcome.Ok)
+        assertEquals(3, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+    }
+
+    @Test
+    fun aSlowDatabaseCommitIsNotAbortedByTheRadioIdleTimer() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.sink.gate = CompletableDeferred()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        advanceTimeBy(65_000)
+        runCurrent()
+        assertTrue(acks(rig.transport).isEmpty())
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        rig.sink.gate!!.complete(Unit)
+        runCurrent()
+        assertEquals(1, rig.sink.batches.size)
+        assertEquals(1, acks(rig.transport).size)
+    }
+
+    @Test
+    fun aFailedAckAutomaticallyRequestsTheUnacknowledgedHistoryAgain() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.failOpcode = 0x17
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        advanceTimeBy(3_601)
+        runCurrent()
+        assertEquals(1, rig.sink.batches.size)
+        assertEquals(2, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertNull(rig.prefs.synced)
     }
 
     @Test
@@ -316,6 +534,65 @@ class StrapLinkTest {
             outcomes += outcome
         }
         override fun samples(count: Int) = Unit
+    }
+
+    @Test
+    fun completeDoesNotPublishSuccessUntilTheTailIsDurable() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.sink.gate = CompletableDeferred()
+        rig.transport.emit(NotifyRole.DATA, heartFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        advanceTimeBy(65_000)
+        runCurrent()
+        assertNull(rig.prefs.synced)
+        assertTrue(acks(rig.transport).isEmpty())
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        rig.sink.gate!!.complete(Unit)
+        runCurrent()
+        assertEquals(1L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(SyncOutcome.COMPLETED, rig.link.state.value.sync.lastOutcome)
+        assertEquals(rig.time.now(), rig.prefs.synced)
+    }
+
+    @Test
+    fun gen4RecordsBeforeAnyStartAreSavedAndCompleteCommitsTheTail() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        repeat(5) { rig.transport.emit(NotifyRole.DATA, heartFrame()) }
+        runCurrent()
+        // Buffered progress publishes the first record and then every ten records.
+        assertEquals(1L, rig.link.state.value.sync.samplesBuffered)
+        advanceTimeBy(11_000)
+        runCurrent()
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        assertEquals(5L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(5, rig.sink.batches.single().first.size)
+        assertEquals(SyncOutcome.COMPLETED, rig.link.state.value.sync.lastOutcome)
+        assertEquals(rig.time.now(), rig.prefs.synced)
+        assertTrue(acks(rig.transport).isEmpty())
+    }
+
+    @Test
+    fun gen4CanSendConsecutiveBatchesWithoutStartMarkers() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        repeat(2) { batch ->
+            repeat(3) { rig.transport.emit(NotifyRole.DATA, heartFrame()) }
+            rig.transport.emit(NotifyRole.DATA, metaFrame(2, token.copyOf().also { it[0] = batch.toByte() }))
+            runCurrent()
+        }
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        assertEquals(6L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(2, acks(rig.transport).size)
+        assertEquals(SyncOutcome.COMPLETED, rig.link.state.value.sync.lastOutcome)
     }
 
     private fun TestScope.rig(diag: SyncRecorder = SyncRecorder.None): Rig {

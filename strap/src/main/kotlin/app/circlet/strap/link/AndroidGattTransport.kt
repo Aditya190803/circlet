@@ -61,12 +61,17 @@ internal class AndroidGattTransport(
     override val notifications: Flow<GattNotice> = notices.receiveAsFlow()
 
     private var gatt: BluetoothGatt? = null
+    @Volatile
+    override var connectionGeneration: Long = 0
+        private set
     private var wasUp = false
     private var connectWaiter: CompletableDeferred<ConnectStatus>? = null
     private var pending: kotlinx.coroutines.CancellableContinuation<Int>? = null
+    private var pendingKey: GattCallbackKey? = null
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            if (gatt !== this@AndroidGattTransport.gatt) return
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     if (status == BluetoothGatt.GATT_SUCCESS) {
@@ -89,17 +94,18 @@ internal class AndroidGattTransport(
             }
         }
 
-        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) = resume(status)
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) = resume(gatt, GattOperation.MTU, null, status)
 
-        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) = resume(status)
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) = resume(gatt, GattOperation.DISCOVER, null, status)
 
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) =
-            resume(status)
+            resume(gatt, GattOperation.DESCRIPTOR, descriptor.characteristic.uuid, status)
 
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) =
-            resume(status)
+            resume(gatt, GattOperation.WRITE, characteristic.uuid, status)
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            if (gatt !== this@AndroidGattTransport.gatt) return
             if (Build.VERSION.SDK_INT >= 33) return
             @Suppress("DEPRECATION")
             val value = characteristic.value ?: return
@@ -111,6 +117,7 @@ internal class AndroidGattTransport(
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray,
         ) {
+            if (gatt !== this@AndroidGattTransport.gatt) return
             emit(characteristic.uuid, value)
         }
     }
@@ -176,6 +183,7 @@ internal class AndroidGattTransport(
         if (!bluetoothEnabled()) return ConnectStatus.Off
         return withContext(Dispatchers.Main.immediate) {
             shutdown(emitDown = false)
+            connectionGeneration++
             val deferred = CompletableDeferred<ConnectStatus>()
             connectWaiter = deferred
             try {
@@ -227,13 +235,13 @@ internal class AndroidGattTransport(
     override suspend fun requestMtu(mtu: Int) {
         // A missing callback must not hold the queue. The session continues at the default MTU.
         withTimeoutOrNull(4_000) {
-            val status = awaitStatus { gatt?.requestMtu(mtu) == true }
+            val status = awaitStatus(GattOperation.MTU) { gatt?.requestMtu(mtu) == true }
             if (status != BluetoothGatt.GATT_SUCCESS) error("mtu $status")
         }
     }
 
     override suspend fun discover(): Boolean {
-        val status = awaitStatus { gatt?.discoverServices() == true }
+        val status = awaitStatus(GattOperation.DISCOVER) { gatt?.discoverServices() == true }
         if (status != BluetoothGatt.GATT_SUCCESS) return false
         val service = gatt?.getService(StrapUuids.SERVICE) ?: return false
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
@@ -327,6 +335,10 @@ internal class AndroidGattTransport(
     }
 
     private fun shutdown(emitDown: Boolean) {
+        val waiter = pending
+        pending = null
+        pendingKey = null
+        if (waiter?.isActive == true) waiter.resumeWith(Result.failure(IllegalStateException("Bluetooth disconnected")))
         val up = wasUp
         wasUp = false
         finishConnect(ConnectStatus.Down(0))
@@ -344,7 +356,7 @@ internal class AndroidGattTransport(
     }
 
     private suspend fun writeCharacteristic(characteristic: BluetoothGattCharacteristic, value: ByteArray): Int =
-        awaitStatus {
+        awaitStatus(GattOperation.WRITE, characteristic.uuid) {
             val current = gatt ?: return@awaitStatus false
             if (Build.VERSION.SDK_INT >= 33) {
                 current.writeCharacteristic(
@@ -362,7 +374,7 @@ internal class AndroidGattTransport(
         }
 
     private suspend fun writeDescriptor(descriptor: BluetoothGattDescriptor, value: ByteArray): Int =
-        awaitStatus {
+        awaitStatus(GattOperation.DESCRIPTOR, descriptor.characteristic.uuid) {
             val current = gatt ?: return@awaitStatus false
             if (Build.VERSION.SDK_INT >= 33) {
                 current.writeDescriptor(descriptor, value) == BluetoothStatusCodes.SUCCESS
@@ -374,33 +386,48 @@ internal class AndroidGattTransport(
             }
         }
 
-    private suspend fun awaitStatus(start: () -> Boolean): Int = withContext(Dispatchers.Main.immediate) {
+    private suspend fun awaitStatus(operation: GattOperation, uuid: UUID? = null, start: () -> Boolean): Int = withContext(Dispatchers.Main.immediate) {
+        val connection = gatt ?: error("Bluetooth disconnected")
         suspendCancellableCoroutine { continuation ->
             pending = continuation
-            continuation.invokeOnCancellation { if (pending === continuation) pending = null }
+            pendingKey = GattCallbackKey(connection, operation, uuid)
+            continuation.invokeOnCancellation {
+                mainHandler.post {
+                    if (pending === continuation) {
+                        pending = null
+                        pendingKey = null
+                    }
+                    // A timed-out write can still complete later; never reuse that connection.
+                    if (operation != GattOperation.MTU && gatt === connection) shutdown(emitDown = true)
+                }
+            }
             val started = try {
                 start()
             } catch (failed: SecurityException) {
                 pending = null
+                pendingKey = null
                 continuation.resumeWith(Result.failure(failed))
                 return@suspendCancellableCoroutine
             }
             if (!started && continuation.isActive) {
                 pending = null
+                pendingKey = null
                 continuation.resumeWith(Result.failure(IllegalStateException("Bluetooth did not start the operation")))
             }
         }
     }
 
-    private fun resume(status: Int) {
+    private fun resume(connection: BluetoothGatt, operation: GattOperation, uuid: UUID?, status: Int) {
+        if (pendingKey?.matches(connection, operation, uuid) != true) return
         val continuation = pending ?: return
         pending = null
+        pendingKey = null
         if (continuation.isActive) continuation.resumeWith(Result.success(status))
     }
 
     private fun emit(uuid: UUID, value: ByteArray) {
         val role = roleOf(uuid) ?: return
-        notices.trySend(GattNotice(role, value.copyOf()))
+        notices.trySend(GattNotice(role, value.copyOf(), connectionGeneration))
     }
 
     private fun roleOf(uuid: UUID): NotifyRole? = when (uuid) {

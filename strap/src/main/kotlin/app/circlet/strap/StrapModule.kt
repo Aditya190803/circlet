@@ -57,7 +57,8 @@ object StrapModule {
     }
 
     private fun boot(context: Context, ports: StrapPorts, time: TimeSource): StrapBindings {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        // Serialize link state with UI commands and Android GATT callbacks; storage ports switch to IO.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val note = StatusNote(context, ports.settings)
         StrapService.hooksNote = note
         val host = AndroidHost(context, note)

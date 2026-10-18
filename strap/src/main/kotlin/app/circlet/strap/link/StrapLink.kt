@@ -73,6 +73,7 @@ internal class StrapLink(
     /** True once a strap address is stored and this process should keep the link up. */
     private var keep = false
     private var opening = false
+    private var directReconnect = false
     private var foregroundHeart = false
     private var workoutHeart = false
     private var heartOn = false
@@ -81,6 +82,11 @@ internal class StrapLink(
     private var strapStoredSeconds: Long? = null
     private var drainAttempt = 0
     private var drainHeard = false
+    private var historyGeneration = 0L
+    private var historyRequested = false
+    private var historySequence: Int? = null
+    private var acknowledgementSequence: Int? = null
+    private var historyRecordsReceived = 0L
     private var drainFault: SyncOutcome? = null
     private var lastOutcome: SyncOutcome? = null
     private var lastOutcomeAt: Instant? = null
@@ -117,6 +123,8 @@ internal class StrapLink(
         }
         scope.launch {
             transport.notifications.collect { notice ->
+                if (notice.connectionGeneration != transport.connectionGeneration) return@collect
+                val owner = historyGeneration
                 try {
                     lastRx = time.now()
                     val failuresBefore = wire.dataFailures
@@ -128,6 +136,7 @@ internal class StrapLink(
                 } catch (failed: Throwable) {
                     // One bad packet, or a sink that threw, must not end the session.
                     diag.swallowed("notification", failed)
+                    if (drain.open && owner == historyGeneration) retryDrain()
                 }
             }
         }
@@ -185,6 +194,7 @@ internal class StrapLink(
         if (!user.tryLock()) return busy()
         try {
             keep = false
+            invalidateHistory()
             reconnectJob?.cancel()
             periodicJob?.cancel()
             livenessJob?.cancel()
@@ -207,11 +217,14 @@ internal class StrapLink(
     override suspend fun syncNow(): Outcome<Unit> {
         if (ports.prefs.pairedAddress().isNullOrBlank()) return notPaired()
         if (stateFlow.value.link != LinkState.CONNECTED) {
-            if (keep && reconnectJob?.isActive != true) kickReconnect()
-            return strap(StrapError.LinkLost)
+            if (!transport.bluetoothEnabled()) return strap(StrapError.BluetoothOff)
+            if (!transport.hasConnectPermission()) return strap(StrapError.PermissionMissing)
+            keep = true
+            if (!directReconnect) kickReconnect(directFirst = true)
+            return Outcome.Ok(Unit)
         }
         if (drain.open) {
-            if (drain.awaitingStart && samplesPulled == 0L && samplesBuffered == 0L) restartQuietDrain()
+            diag.log("sync already pending; keeping current history request")
             return Outcome.Ok(Unit)
         }
         requestDrain(DrainTrigger.MANUAL)
@@ -221,6 +234,12 @@ internal class StrapLink(
     override suspend fun setLiveHeartRate(enabled: Boolean): Outcome<Unit> {
         if (ports.prefs.pairedAddress().isNullOrBlank()) return notPaired()
         foregroundHeart = enabled
+        if (enabled && stateFlow.value.link != LinkState.CONNECTED &&
+            stateFlow.value.link != LinkState.CONNECTING && transport.bluetoothEnabled() && !directReconnect
+        ) {
+            keep = true
+            kickReconnect(directFirst = true)
+        }
         reconcileHeart()
         if (enabled) requestDrain(DrainTrigger.FOREGROUND)
         return Outcome.Ok(Unit)
@@ -307,6 +326,7 @@ internal class StrapLink(
     }
 
     private fun onBluetoothOff() {
+        invalidateHistory()
         reconnectJob?.cancel()
         periodicJob?.cancel()
         livenessJob?.cancel()
@@ -328,6 +348,8 @@ internal class StrapLink(
     private fun onLinkDown() {
         if (!keep || opening) return
         if (stateFlow.value.link == LinkState.UNPAIRED) return
+        diag.log("link disconnected pulled=$samplesPulled buffered=$samplesBuffered")
+        invalidateHistory()
         heartOn = false
         samplesBuffered = 0
         cancelDrainJobs()
@@ -346,9 +368,12 @@ internal class StrapLink(
         kickReconnect()
     }
 
-    private fun kickReconnect() {
-        reconnectJob?.cancel()
+    private fun kickReconnect(directFirst: Boolean = false) {
+        val previous = reconnectJob
+        previous?.cancel()
+        directReconnect = directFirst
         reconnectJob = scope.launch {
+            previous?.join()
             var attempt = 0
             while (isActive && keep) {
                 val address = ports.prefs.pairedAddress() ?: return@launch
@@ -362,7 +387,8 @@ internal class StrapLink(
                     sleep(ReconnectPolicy.STALE_ATTEMPT.toMillis())
                     transport.disconnect()
                 }
-                val outcome = open(address, autoConnect = true)
+                val outcome = open(address, autoConnect = !(directFirst && attempt == 0))
+                directReconnect = false
                 watch.cancel()
                 if (outcome is Outcome.Ok) {
                     sessionReady()
@@ -389,13 +415,18 @@ internal class StrapLink(
 
     private suspend fun open(address: String, autoConnect: Boolean): Outcome<Unit> {
         opening = true
+        var owner = historyGeneration
         try {
             return bringUp.run(
                 address = address,
                 now = time.now(),
                 autoConnect = autoConnect,
                 trace = mutableListOf(),
-                beforeHistorical = { armDrainState() },
+                beforeHistorical = {
+                    armDrainState()
+                    owner = historyGeneration
+                },
+                afterHistorical = { armRequestWatchdogs(owner) },
             )
         } finally {
             opening = false
@@ -403,6 +434,7 @@ internal class StrapLink(
     }
 
     private suspend fun sessionReady() {
+        diag.log("link session ready")
         lastRx = time.now()
         publish { it.copy(link = LinkState.CONNECTED, error = null) }
         armPeriodic()
@@ -427,8 +459,19 @@ internal class StrapLink(
     private fun armLiveness() {
         livenessJob?.cancel()
         livenessJob = scope.launch {
+            var elapsed = 0L
+            val connection = transport.connectionGeneration
             while (isActive && stateFlow.value.link == LinkState.CONNECTED) {
-                sleep(30_000)
+                sleep(10_000)
+                if (connection != transport.connectionGeneration) return@launch
+                elapsed += 10_000
+                if (foregroundHeart || workoutHeart || elapsed % 60_000L == 0L) {
+                    write(wire.linkValid(seq.live()))
+                }
+                if (Duration.between(lastRx, time.now()).seconds >= 60 && elapsed % 30_000L == 0L) {
+                    write(wire.battery(seq.live()))
+                }
+                if (connection != transport.connectionGeneration) return@launch
                 val silent = Duration.between(lastRx, time.now())
                 val action = ReconnectPolicy.decide(
                     paired = true,
@@ -451,10 +494,15 @@ internal class StrapLink(
         lastDrainStart = time.now()
         drainAttempt = 0
         armDrainState()
-        if (write(wire.historical(seq.live())) !is Outcome.Ok) retryDrain()
+        sendHistoryRequest()
     }
 
     private fun armDrainState() {
+        historyGeneration++
+        drainAttempt = 0
+        historyRequested = true
+        historySequence = 4
+        historyRecordsReceived = 0
         samplesPulled = 0
         samplesBuffered = 0
         drainHeard = false
@@ -463,30 +511,20 @@ internal class StrapLink(
         drain.begin()
         lastDrainStart = time.now()
         publish { it.copy(sync = sync(true), error = null) }
-        armStall()
-        armIdle()
     }
 
-    /**
-     * A manual sync found a drain that was announced and has still received nothing.
-     * Abort it and ask again now, instead of waiting out the stall timer.
-     */
-    private suspend fun restartQuietDrain() {
-        cancelDrainJobs()
-        drainAttempt = 0
-        drainHeard = false
-        samplesBuffered = 0
-        drain.abortOpen()
-        if (write(wire.abort(seq.live())) !is Outcome.Ok) {
-            retryDrain()
-            return
-        }
-        sleep(300)
-        if (!keep || stateFlow.value.link != LinkState.CONNECTED || !drain.open) return
+    private suspend fun sendHistoryRequest() {
+        val owner = historyGeneration
+        val result = write(historyRequest())
+        if (owner != historyGeneration || !drain.open) return
+        if (result is Outcome.Ok) armRequestWatchdogs(owner) else retryDrain()
+    }
+
+    private fun armRequestWatchdogs(owner: Long) {
+        if (owner != historyGeneration || !historyRequested || !drain.open || drainHeard) return
+        diag.log("history write completed; waiting for Gen 4 history response")
         armStall()
         armIdle()
-        publish { it.copy(sync = sync(true)) }
-        if (write(wire.historical(seq.live())) !is Outcome.Ok) retryDrain()
     }
 
     private fun armStall() {
@@ -503,7 +541,7 @@ internal class StrapLink(
     private fun armIdle() {
         idleJob?.cancel()
         idleJob = scope.launch {
-            val timeout = if (samplesPulled == 0L && samplesBuffered == 0L) {
+            val timeout = if (!drainHeard) {
                 SYNC_START_IDLE_TIMEOUT_MS
             } else {
                 SYNC_PROGRESS_IDLE_TIMEOUT_MS
@@ -517,56 +555,37 @@ internal class StrapLink(
     }
 
     private fun retryDrain() {
+        val limit = if (!drainHeard && samplesPulled == 0L) 1 else 3
         cancelDrainJobs()
+        invalidateHistory()
+        val owner = historyGeneration
         drain.abortOpen()
         samplesBuffered = 0
         drainAttempt++
-        // A strap with nothing new to hand over stays silent after the request. Two
-        // unanswered asks on a live link mean it is up to date, which is not a fault.
-        if (!drainHeard && drainAttempt > 1) {
-            drain.abandon()
-            val alive = Duration.between(lastRx, time.now()) < Duration.ofSeconds(90)
-            val now = time.now()
-            if (alive) {
-                scope.launch { ports.prefs.setLastSync(now) }
-                endDrain(SyncOutcome.COMPLETED)
-            } else {
-                endDrain(SyncOutcome.STALLED)
-            }
-            publish {
-                it.copy(
-                    sync = sync(false),
-                    lastSync = if (alive) now else it.lastSync,
-                    error = null,
-                )
-            }
-            return
-        }
-        if (samplesPulled == 0L && samplesBuffered == 0L && drainAttempt > 1) {
+        if (drainAttempt > limit) {
             drain.abandon()
             endDrain(SyncOutcome.STALLED)
             publish { it.copy(sync = sync(false), error = null) }
+            scope.launch {
+                if (owner == historyGeneration && stateFlow.value.link == LinkState.CONNECTED) {
+                    write(wire.abort(seq.live()))
+                }
+            }
             return
         }
-        if (drainAttempt > 3) {
-            // A drain that started and then stalled is picked up by the next periodic
-            // drain; the records already committed are kept. It is not shown as an error.
-            drain.abandon()
-            endDrain(SyncOutcome.STALLED)
-            publish { it.copy(sync = sync(false), error = null) }
-            return
-        }
-        val wait = Backoff.delay(drainAttempt).toMillis()
         retryJob = scope.launch {
-            sleep(wait)
-            if (!keep || stateFlow.value.link != LinkState.CONNECTED || !drain.open) return@launch
-            write(wire.abort(seq.live()))
-            sleep(300)
-            if (!drain.open) return@launch
-            armStall()
-            armIdle()
+            if (!currentHistory(owner)) return@launch
+            if (write(wire.abort(seq.live())) !is Outcome.Ok) {
+                retryDrain()
+                return@launch
+            }
+            // OpenStrap leaves the abort three seconds to settle before a fresh request.
+            sleep(3_000)
+            if (!currentHistory(owner)) return@launch
+            drain.resumeAfterAbort()
+            historyRequested = true
             publish { it.copy(sync = sync(true)) }
-            write(wire.historical(seq.live()))
+            sendHistoryRequest()
         }
     }
 
@@ -575,6 +594,25 @@ internal class StrapLink(
         stallJob?.cancel()
         retryJob?.cancel()
     }
+
+    private fun invalidateHistory() {
+        historyGeneration++
+        historyRequested = false
+        historySequence = null
+        acknowledgementSequence = null
+        drainHeard = false
+        historyRecordsReceived = 0
+    }
+
+    private fun historyRequest(): ByteArray {
+        val sequence = seq.live()
+        historySequence = sequence
+        diag.log("history requested sequence=$sequence generation=$historyGeneration")
+        return wire.historical(sequence)
+    }
+
+    private fun currentHistory(owner: Long): Boolean =
+        owner == historyGeneration && keep && stateFlow.value.link == LinkState.CONNECTED && drain.open
 
     private suspend fun onInbound(inbound: Inbound) {
         when (inbound) {
@@ -592,6 +630,16 @@ internal class StrapLink(
             }
             is Inbound.Sampled -> onSample(inbound)
             is Inbound.Heart -> onHeart(inbound.bpm)
+            is Inbound.HistoryReply -> {
+                val expected = if (inbound.opcode == 0x16) historySequence else acknowledgementSequence
+                if (historyRequested && drain.open && inbound.sequence == expected) {
+                    diag.log("history response opcode=${inbound.opcode} result=${inbound.result}")
+                    if (inbound.result != 1) {
+                        if (inbound.opcode == 0x17) faultDrain(SyncOutcome.ACK_FAILED)
+                        retryDrain()
+                    }
+                }
+            }
             is Inbound.Meta -> onMeta(inbound)
             is Inbound.Signal -> onSignal(inbound)
             is Inbound.Range -> {
@@ -604,13 +652,20 @@ internal class StrapLink(
     }
 
     private suspend fun onSample(inbound: Inbound.Sampled) {
-        drainHeard = true
+        if (!historyRequested || !drain.open) return
+        if (historyRecordsReceived++ == 0L) {
+            val revision = inbound.raw.bytes.getOrNull(1)?.toInt()?.and(255)
+            diag.log("first history record revision=$revision decoded=${inbound.sample != null} awaitingStart=${drain.awaitingStart}")
+        }
+        val owner = historyGeneration
         val before = drain.bufferedSamples()
-        drain.onRecord(inbound.sample, inbound.raw)
+        if (!drain.onRecord(inbound.sample, inbound.raw)) return
+        drainHeard = true
         val pending = drain.bufferedSamples()
         stallJob?.cancel()
-        armIdle()
+        idleJob?.cancel()
         val flushed = if (pending >= HISTORY_FLUSH_EVERY) drain.flush() else 0
+        if (owner != historyGeneration || !drain.open) return
         if (flushed > 0) {
             samplesPulled += flushed
             diag.samples(flushed)
@@ -619,50 +674,89 @@ internal class StrapLink(
         val moved = flushed > 0 || (pending > 0 && (before == 0 || buffered % 10 == 0))
         samplesBuffered = buffered.toLong()
         if (moved) publish { it.copy(sync = sync(true)) }
+        armIdle()
     }
 
     private suspend fun onMeta(meta: Inbound.Meta) {
-        drainHeard = true
-        stallJob?.cancel()
+        if (!historyRequested || !drain.open) return
+        val owner = historyGeneration
         when (meta.kind) {
             MetaKind.START -> {
+                drainHeard = true
+                stallJob?.cancel()
+                val awaiting = drain.awaitingStart
                 drain.onStart()
+                diag.log("history start generation=$owner")
+                if (awaiting) armIdle()
             }
             MetaKind.END -> {
                 val token = meta.token ?: return
+                val repeated = drain.isCommittedToken(token)
+                drainHeard = true
+                stallJob?.cancel()
+                if (!repeated) idleJob?.cancel()
+                diag.log("history end repeated=$repeated buffered=${drain.bufferedSamples()}")
                 when (val result = drain.onEnd(token)) {
                     is EndResult.Ack -> {
+                        if (owner != historyGeneration || !drain.open) return
                         samplesPulled += result.committed
                         diag.samples(result.committed)
                         samplesBuffered = drain.bufferedSamples().toLong()
                         publish { it.copy(sync = sync(true)) }
-                        acknowledge(result.token)
-                        armIdle()
+                        if (acknowledge(result.token, owner)) {
+                            drainAttempt = 0
+                            armIdle()
+                        }
                     }
-                    is EndResult.AckAgain -> acknowledge(result.token)
-                    EndResult.Duplicate, EndResult.Ignored, EndResult.Completed, EndResult.Retry -> Unit
+                    is EndResult.AckAgain -> {
+                        samplesBuffered = drain.bufferedSamples().toLong()
+                        acknowledge(result.token, owner)
+                    }
+                    EndResult.Ignored, is EndResult.Completed, EndResult.Retry -> Unit
                 }
             }
             MetaKind.COMPLETE -> {
-                val wasOpen = drain.open
-                drain.onComplete()
+                idleJob?.cancel()
+                stallJob?.cancel()
+                val result = drain.onComplete()
+                if (owner != historyGeneration) return
+                if (result !is EndResult.Completed) {
+                    diag.log("history complete refused: an earlier batch was discarded")
+                    retryDrain()
+                    return
+                }
+                samplesPulled += result.committed
+                diag.samples(result.committed)
                 samplesBuffered = 0
                 cancelDrainJobs()
-                if (!wasOpen) return
+                historyRequested = false
                 val now = time.now()
                 ports.prefs.setLastSync(now)
+                if (owner != historyGeneration) return
                 endDrain(SyncOutcome.COMPLETED)
                 publish { it.copy(sync = sync(false), lastSync = now) }
             }
         }
     }
 
-    private suspend fun acknowledge(token: ByteArray) {
-        if (write(wire.historyAck(seq.ack(), token)) is Outcome.Ok) {
-            drain.ackLanded()
-        } else {
-            faultDrain(SyncOutcome.ACK_FAILED)
+    private suspend fun acknowledge(token: ByteArray, owner: Long): Boolean {
+        val sequence = seq.ack()
+        acknowledgementSequence = sequence
+        val frame = wire.historyAck(sequence, token)
+        repeat(3) { attempt ->
+            if (owner != historyGeneration || !drain.open) return false
+            if (write(frame) is Outcome.Ok) {
+                if (owner != historyGeneration || !drain.open) return false
+                diag.log("history ack written attempt=${attempt + 1}")
+                return true
+            }
+            diag.log("history ack failed attempt=${attempt + 1}")
+            if (attempt < 2) sleep(200L * (attempt + 1))
         }
+        if (owner != historyGeneration || !drain.open) return false
+        faultDrain(SyncOutcome.ACK_FAILED)
+        retryDrain()
+        return false
     }
 
     private fun onDecodeFailure() {
@@ -767,11 +861,11 @@ internal class StrapLink(
     private suspend fun write(frame: ByteArray): Outcome<Unit> = when (queue.submit { transport.write(frame) }) {
         is QueueOutcome.Done -> Outcome.Ok(Unit)
         QueueOutcome.TimedOut -> {
-            diag.log("write timed out")
+            diag.log("write timed out opcode=${frame.getOrNull(6)?.toInt()?.and(255)}")
             strap(StrapError.TimedOut)
         }
         is QueueOutcome.Failed -> {
-            diag.log("write failed")
+            diag.log("write failed opcode=${frame.getOrNull(6)?.toInt()?.and(255)}")
             strap(StrapError.LinkLost)
         }
     }

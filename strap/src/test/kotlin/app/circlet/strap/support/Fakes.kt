@@ -74,6 +74,8 @@ internal class FakeHost : StrapHost {
 }
 
 internal class FakeTransport : GattTransport {
+    override var connectionGeneration: Long = 0
+        private set
     private val noteFlow = MutableSharedFlow<GattNotice>(extraBufferCapacity = 64)
     private val eventFlow = MutableSharedFlow<ConnectionEvent>(extraBufferCapacity = 16)
     private val hitFlow = MutableSharedFlow<FoundStrap>(extraBufferCapacity = 16)
@@ -91,13 +93,17 @@ internal class FakeTransport : GattTransport {
     var alreadyBonded = true
     var bondStatus = BondStatus.BONDED
     var connectStatus: ConnectStatus = ConnectStatus.Up
+    var autoConnectGate: CompletableDeferred<Unit>? = null
     var discoverValue = true
     var discoverDelayMs = 0L
     var mtuFails = false
     var failOpcode = -1
+    var failuresRemaining: Int? = null
+    var delayedOpcode = -1
+    var writeDelayMs = 0L
 
     fun emit(role: NotifyRole, frame: ByteArray) {
-        check(noteFlow.tryEmit(GattNotice(role, frame)))
+        check(noteFlow.tryEmit(GattNotice(role, frame, connectionGeneration)))
     }
 
     fun down(status: Int = 8) {
@@ -116,7 +122,9 @@ internal class FakeTransport : GattTransport {
     override suspend fun stopScan() = Unit
 
     override suspend fun connect(address: String, autoConnect: Boolean): ConnectStatus {
+        connectionGeneration++
         connects += autoConnect
+        if (autoConnect) autoConnectGate?.await()
         return connectStatus
     }
 
@@ -132,7 +140,11 @@ internal class FakeTransport : GattTransport {
 
     override suspend fun subscribe(role: NotifyRole) = Unit
     override suspend fun write(frame: ByteArray) {
-        if (failOpcode >= 0 && opcodeOf(frame) == failOpcode) error("write refused")
+        if (opcodeOf(frame) == delayedOpcode) delay(writeDelayMs)
+        if (failOpcode >= 0 && opcodeOf(frame) == failOpcode && failuresRemaining != 0) {
+            failuresRemaining = failuresRemaining?.minus(1)
+            error("write refused")
+        }
         writes += frame.copyOf()
     }
 

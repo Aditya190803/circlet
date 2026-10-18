@@ -121,7 +121,7 @@ class MoreViewModel(
     private val messageChannel = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = messageChannel.receiveAsFlow()
 
-    fun sync() = run(StrapAction.SYNC, "Synced.") { strap.syncNow() }
+    fun sync() = run(StrapAction.SYNC, "Sync requested.") { strap.syncNow() }
 
     fun buzz() = run(StrapAction.BUZZ, "Buzz sent.") { strap.buzz(Haptic.TEST) }
 
@@ -161,11 +161,14 @@ class MoreViewModel(
         if (busy.value != null) return
         busy.value = action
         viewModelScope.launch {
-            when (val result = call()) {
-                is Outcome.Ok -> done?.let { messageChannel.send(it) }
-                is Outcome.Err -> messageChannel.send(result.error.words())
+            try {
+                when (val result = call()) {
+                    is Outcome.Ok -> done?.let { messageChannel.send(it) }
+                    is Outcome.Err -> messageChannel.send(result.error.words())
+                }
+            } finally {
+                busy.value = null
             }
-            busy.value = null
         }
     }
 }

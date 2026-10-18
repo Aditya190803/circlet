@@ -29,6 +29,7 @@ internal class SessionBringUp(
         now: Instant,
         autoConnect: Boolean,
         trace: MutableList<String>,
+        afterHistorical: suspend () -> Unit = {},
         beforeHistorical: suspend () -> Unit = {},
     ): Outcome<Unit> {
         seq.reset()
@@ -87,6 +88,7 @@ internal class SessionBringUp(
         beforeHistorical()
         trace += "send-historical"
         if (!write(wire.historical(4))) return strap(StrapError.LinkLost)
+        afterHistorical()
         return Outcome.Ok(Unit)
     }
 

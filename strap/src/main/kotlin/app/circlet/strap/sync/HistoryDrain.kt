@@ -14,7 +14,7 @@ import app.circlet.core.SampleSink
 
 internal const val HISTORY_FLUSH_EVERY = 60
 /**
- * History batches between a start marker and an end marker.
+ * Gen 4 history batches. START is optional; data or END can be the first answer.
  *
  * [onEnd] calls [SampleSink.commit] and returns [EndResult.Ack] only after that call returns.
  * A second end with the same token does not commit again. [onComplete] never asks for an ack.
@@ -28,60 +28,75 @@ class HistoryDrain(
         private set
 
     private var finished = false
+    private var generation = 0L
     private val samples = ArrayList<Sample>()
     private val raws = ArrayList<RawRecord>()
     private var lastToken: ByteArray? = null
-    private var oweAck = false
 
     /** A batch was dropped and no start marker has arrived since, so an end marker belongs to the dropped batch. */
     private var staleEnd = false
 
     /** A new session. Clears the duplicate-token memory because this connection has not acked yet. */
     fun begin() {
+        generation++
         open = true
         awaitingStart = true
         finished = false
         samples.clear()
         raws.clear()
         lastToken = null
-        oweAck = false
         staleEnd = false
     }
 
     /** The drain is over without an acknowledgement. A later [begin] can start another. */
     fun abandon() {
+        generation++
         samples.clear()
         raws.clear()
         open = false
         finished = true
         awaitingStart = false
-        oweAck = false
     }
 
     /** Drop the unacked batch and keep the tokens already committed on this connection. */
     fun abortOpen() {
+        generation++
+        staleEnd = staleEnd || !awaitingStart || samples.isNotEmpty() || raws.isNotEmpty()
         samples.clear()
         raws.clear()
         awaitingStart = true
-        staleEnd = true
+    }
+
+    /** Called only after ABORT has settled; Gen 4 need not emit another START. */
+    fun resumeAfterAbort() {
+        if (!open || finished) return
+        generation++
+        staleEnd = false
+        awaitingStart = true
     }
 
     fun onStart() {
         if (!open || finished) return
+        generation++
         samples.clear()
         raws.clear()
         awaitingStart = false
         staleEnd = false
     }
 
-    fun onRecord(sample: Sample?, raw: RawRecord) {
-        if (!open || finished || awaitingStart) return
+    fun onRecord(sample: Sample?, raw: RawRecord): Boolean {
+        if (!open || finished || staleEnd) return false
+        awaitingStart = false
         if (sample != null) samples += sample
         raws += raw
+        return true
     }
 
     /** Samples held in the open batch and not committed yet. */
     fun bufferedSamples(): Int = if (!open || finished || awaitingStart) 0 else samples.size
+
+    fun isCommittedToken(token: ByteArray): Boolean =
+        open && !finished && !staleEnd && lastToken?.contentEquals(token) == true
 
     /**
      * Stores the open batch without acknowledging it.
@@ -92,7 +107,9 @@ class HistoryDrain(
         if (samples.isEmpty() && raws.isEmpty()) return 0
         val committedSamples = samples.toList()
         val committedRaw = raws.toList()
+        val owner = generation
         sink.commit(committedSamples, committedRaw)
+        if (owner != generation) return 0
         samples.clear()
         raws.clear()
         return committedSamples.size
@@ -100,34 +117,40 @@ class HistoryDrain(
 
     suspend fun onEnd(token: ByteArray): EndResult {
         if (!open || finished || token.size != 8) return EndResult.Ignored
+        if (staleEnd) return EndResult.Ignored
         val previous = lastToken
         if (previous != null && previous.contentEquals(token)) {
-            return if (oweAck) EndResult.AckAgain(token.copyOf()) else EndResult.Duplicate
+            // A successful GATT write does not prove the strap advanced its checkpoint.
+            samples.clear()
+            raws.clear()
+            awaitingStart = true
+            return EndResult.AckAgain(token.copyOf())
         }
-        if (staleEnd) return EndResult.Ignored
         val committedSamples = samples.toList()
         val committedRaw = raws.toList()
+        val owner = generation
         sink.commit(committedSamples, committedRaw)
+        if (owner != generation) return EndResult.Ignored
         samples.clear()
         raws.clear()
         lastToken = token.copyOf()
-        oweAck = true
         awaitingStart = true
         return EndResult.Ack(token.copyOf(), committedSamples.size)
     }
 
-    /** The acknowledgement write completed. A repeat of this token is not written again. */
-    fun ackLanded() {
-        oweAck = false
-    }
-
-    fun onComplete(): EndResult {
+    suspend fun onComplete(): EndResult {
+        if (!open || finished) return EndResult.Ignored
+        if (staleEnd) return EndResult.Retry
+        val owner = generation
+        val committed = flush()
+        if (owner != generation) return EndResult.Ignored
+        generation++
         samples.clear()
         raws.clear()
         open = false
         finished = true
         awaitingStart = false
-        return EndResult.Completed
+        return EndResult.Completed(committed)
     }
 
     /** Silence mid-drain. The open batch is dropped and not acknowledged. */
@@ -146,23 +169,22 @@ class HistoryDrain(
 
     /** The link dropped with a batch still open. Those records are not committed. */
     fun onDisconnect() {
+        generation++
         samples.clear()
         raws.clear()
         open = false
         finished = false
         awaitingStart = false
         lastToken = null
-        oweAck = false
     }
 }
 
 sealed interface EndResult {
     data object Ignored : EndResult
-    data object Duplicate : EndResult
     data class Ack(val token: ByteArray, val committed: Int) : EndResult
 
-    /** Same token as the batch already committed, whose acknowledgement has not landed. */
+    /** Same durable checkpoint was offered again; echo it without committing twice. */
     data class AckAgain(val token: ByteArray) : EndResult
-    data object Completed : EndResult
+    data class Completed(val committed: Int) : EndResult
     data object Retry : EndResult
 }

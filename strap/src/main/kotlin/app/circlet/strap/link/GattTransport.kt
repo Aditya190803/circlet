@@ -15,7 +15,7 @@ enum class NotifyRole {
     DATA,
 }
 
-data class GattNotice(val role: NotifyRole, val bytes: ByteArray)
+data class GattNotice(val role: NotifyRole, val bytes: ByteArray, val connectionGeneration: Long = 0)
 
 enum class BondStatus {
     BONDED,
@@ -41,6 +41,7 @@ sealed interface ConnectionEvent {
  * Tests use a fake, so the session and the queue never touch Android Bluetooth.
  */
 interface GattTransport {
+    val connectionGeneration: Long get() = 0
     val notifications: Flow<GattNotice>
     val connections: Flow<ConnectionEvent>
     val scanHits: Flow<FoundStrap>

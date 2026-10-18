@@ -49,6 +49,8 @@ object Commands {
 
     fun getHello(seq: Int): ByteArray = command(seq, GET_HELLO, byteArrayOf(0x00))
 
+    fun linkValid(seq: Int): ByteArray = command(seq, 0x01, byteArrayOf(0x00))
+
     /** Empty body, matching OpenStrap `cmdGetBattery`. Padding supplies the trailing zero. */
     fun getBattery(seq: Int): ByteArray = command(seq, GET_BATTERY, ByteArray(0))
 

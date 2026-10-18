@@ -64,6 +64,7 @@ internal sealed interface Inbound {
     data class Name(val name: String) : Inbound
     data class Sampled(val sample: Sample?, val raw: RawRecord) : Inbound
     data class Heart(val bpm: Int) : Inbound
+    data class HistoryReply(val opcode: Int, val sequence: Int, val result: Int) : Inbound
     data class Meta(val kind: MetaKind, val token: ByteArray?) : Inbound
     data class Signal(val signal: StrapSignal, val epochSecond: Long, val battery: Double?, val charging: Boolean?) : Inbound
 
@@ -130,6 +131,8 @@ internal class ProtocolWire {
 
     fun battery(seq: Int): ByteArray = vetted(Commands.getBattery(seq))
 
+    fun linkValid(seq: Int): ByteArray = vetted(Commands.linkValid(seq))
+
     fun advertisingName(seq: Int): ByteArray = vetted(Commands.getAdvertisingName(seq))
 
     fun dataRange(seq: Int): ByteArray = vetted(Commands.getDataRange(seq))
@@ -188,6 +191,7 @@ internal class ProtocolWire {
     }
 
     private fun response(packet: Packet.Response): Inbound = when (packet.opcode) {
+        0x16, 0x17 -> Inbound.HistoryReply(packet.opcode, packet.originSeq, packet.result)
         0x23 -> {
             val info = hello(packet.body)
             Inbound.HelloInfo(info.serial, info.firmware, info.batteryPercent)

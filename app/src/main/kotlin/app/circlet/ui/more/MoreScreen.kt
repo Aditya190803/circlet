@@ -179,12 +179,13 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         val syncLabel = when {
             strap.sync.draining -> syncProgressLabel(strap.sync)
             syncing -> "SYNCING"
+            !connected -> "RECONNECT AND SYNC"
             strap.sync.stalled() -> "RETRY SYNC"
             else -> "SYNC NOW"
         }
         PrimaryButton(
             syncLabel,
-            enabled = connected && (busy == null || busy == StrapAction.SYNC),
+            enabled = strap.link != LinkState.UNPAIRED && strap.link != LinkState.CONNECTING && busy == null,
             loading = syncing,
             onClick = actions.sync,
         )
