@@ -128,7 +128,8 @@ private fun demoDay(scenario: FakeScenario): DayUiState {
     val fake = remember(scenario) { FakeCirclet(SystemTimeSource, scenario) }
     val today = remember { SystemTimeSource.today() }
     val flow = remember(fake) { dayUiState(fake, fake, SystemTimeSource, flowOf(today)) }
-    val state by flow.collectAsStateWithLifecycle(DayUiState(today, today, Loadable.Loading, emptyList(), fake.state.value))
+    val initial = remember(fake, today) { DayUiState(today, today, Loadable.Loading, emptyList(), fake.state.value) }
+    val state by flow.collectAsStateWithLifecycle(initial)
     return state
 }
 

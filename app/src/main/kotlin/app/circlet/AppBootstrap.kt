@@ -4,8 +4,6 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.util.Log
-import app.circlet.core.SystemTimeSource
-import app.circlet.core.fake.FakeCirclet
 import kotlin.concurrent.thread
 
 /**
@@ -46,21 +44,15 @@ object AppBootstrap {
         }
     }
 
-    /**
-     * The real container. Opening is cheap (Room builds lazily, the pipeline only
-     * launches a coroutine); demo seeding continues on a worker and the UI observes
-     * the days as the recompute finishes. Falls back to the fake if the real
-     * backend failed to load, so wiring can never crash launch.
-     */
+    /** Opens the real backend or propagates the failure to the startup error state. */
     fun openReal(context: Context): AppContainer {
         val real = backend
-        if (real == null) return AppContainer.of(FakeCirclet(SystemTimeSource, AppContainer.demo), SystemTimeSource)
+        checkNotNull(real) { "Circlet's local storage could not be opened" }
         try {
             return real.javaClass.getMethod("open", Context::class.java)
                 .invoke(real, context.applicationContext) as AppContainer
         } catch (error: Exception) {
-            Log.w(TAG, "real backend failed, using fake", error)
-            return AppContainer.of(FakeCirclet(SystemTimeSource, AppContainer.demo), SystemTimeSource)
+            throw IllegalStateException("Circlet's local storage could not be opened", error)
         }
     }
 
@@ -71,6 +63,10 @@ object AppBootstrap {
 
     fun detach(activity: Activity) {
         call("detach", Activity::class.java, activity)
+    }
+
+    fun onResume(activity: Activity) {
+        call("refreshStepRecording", Context::class.java, activity.applicationContext)
     }
 
     /** True when the request code belonged to the strap association dialog. */

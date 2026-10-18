@@ -31,4 +31,9 @@ class MainActivity : ComponentActivity() {
         AppBootstrap.detach(this)
         super.onDestroy()
     }
+
+    override fun onResume() {
+        super.onResume()
+        AppBootstrap.onResume(this)
+    }
 }

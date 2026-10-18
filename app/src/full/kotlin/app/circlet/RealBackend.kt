@@ -53,11 +53,15 @@ object RealBackend {
     @Volatile
     private var seedLaunched = false
 
+    @Volatile
+    private var stepRecorder: PhoneStepRecorder? = null
+
     private val workers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Fast: Room builds lazily and the pipeline only launches a coroutine. */
     fun open(context: Context): AppContainer {
         ensure(context.applicationContext)
+        runBlocking { data!!.awaitReady() }
         launchSeed(context.applicationContext)
         return container()
     }
@@ -80,6 +84,12 @@ object RealBackend {
     }
 
     fun attach(activity: Activity) = StrapCompanion.attach(activity)
+
+    fun refreshStepRecording(context: Context) {
+        ensure(context.applicationContext)
+        val opened = data ?: return
+        stepRecorder?.setEnabled(opened.settings.settings.value.countPhoneSteps)
+    }
 
     fun detach(activity: Activity) = StrapCompanion.detach(activity)
 
@@ -122,6 +132,7 @@ object RealBackend {
         val recorder = PhoneStepRecorder(context) { date ->
             workers.launch { opened.refreshDates(listOf(date)) }
         }
+        stepRecorder = recorder
         workers.launch {
             opened.settings.settings.map { it.countPhoneSteps }.distinctUntilChanged().collect(recorder::setEnabled)
         }

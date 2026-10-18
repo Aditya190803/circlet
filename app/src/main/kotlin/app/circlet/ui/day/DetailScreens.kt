@@ -304,7 +304,8 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
     Card("SKIN TEMPERATURE") {
         when {
             skin == null -> Text(
-                "Skin temperature is not scored for this night. It needs the strap worn through the night.",
+                "Current body temperature is unavailable: WHOOP 4.0 does not provide a verified reading in °C or °F through this connection. " +
+                    "Nightly relative readings appear here when enough usable history is available.",
                 style = body(13.sp, Palette.Faint),
             )
             skin.importedCelsius != null -> {

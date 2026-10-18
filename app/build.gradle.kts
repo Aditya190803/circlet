@@ -12,8 +12,8 @@ android {
         applicationId = "app.circlet"
         minSdk = 31
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.4.0"
+        versionCode = 15
+        versionName = "0.4.3"
     }
 
     buildTypes {
@@ -35,6 +35,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/notice"))

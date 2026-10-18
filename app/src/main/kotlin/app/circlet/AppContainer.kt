@@ -54,7 +54,7 @@ class AppContainer(
          * switch `circlet_debug` / `prefer_fake` is set. That switch defaults to off.
          */
         private fun bind(context: Context): AppContainer {
-            if (!AppBootstrap.bindsInApplication || BackendSwitch.preferFake(context)) {
+            if (BuildConfig.DEBUG && (!AppBootstrap.bindsInApplication || BackendSwitch.preferFake(context))) {
                 return of(FakeCirclet(SystemTimeSource, demo), SystemTimeSource)
             }
             return AppBootstrap.openReal(context)

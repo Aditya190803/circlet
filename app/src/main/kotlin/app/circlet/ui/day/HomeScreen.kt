@@ -16,6 +16,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
@@ -330,9 +331,10 @@ private fun MyDayCard(
 /** The workout being recorded, shown above everything else on Home. Tapping it opens the live page. */
 @Composable
 private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
-    val now by produceState(Instant.now(), live.startedAt) {
+    var now by androidx.compose.runtime.remember(live.startedAt) { androidx.compose.runtime.mutableStateOf(Instant.now()) }
+    androidx.compose.runtime.LaunchedEffect(live.startedAt) {
         while (true) {
-            value = Instant.now()
+            now = Instant.now()
             delay(1_000)
         }
     }
@@ -408,7 +410,7 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         StatRow(
             "SKIN TEMPERATURE", deviation?.signedDeviation(), "SD",
             note = when {
-                skin == null -> "Not scored for this night"
+                skin == null -> "Current temperature unavailable from this strap"
                 !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
                 else -> "Deviation from your own nights"
             },

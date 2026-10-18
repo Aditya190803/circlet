@@ -102,6 +102,10 @@ import app.circlet.ui.strap.rememberAccess
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import java.time.ZoneId
 
 /** The five destinations on the bottom bar. */
 enum class Tab(val route: String, val title: String, val glyph: Glyph) {
@@ -182,7 +186,30 @@ val LocalMessenger = staticCompositionLocalOf { Messenger() }
 @Composable
 fun CircletRoot() {
     val context = LocalContext.current
-    val container = remember { AppContainer.get(context) }
+    var attempt by remember { mutableIntStateOf(0) }
+    var opened by remember { mutableStateOf<Result<AppContainer>?>(null) }
+    LaunchedEffect(attempt) {
+        opened = null
+        opened = withContext(Dispatchers.IO) {
+            try {
+                Result.success(AppContainer.get(context))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failed: Exception) {
+                Result.failure(failed)
+            }
+        }
+    }
+    val container = opened?.getOrNull()
+    if (container == null) {
+        CircletTheme(TimeFormat(ZoneId.systemDefault(), DateFormat.is24HourFormat(context))) {
+            Box(Modifier.fillMaxSize().background(Palette.Background).padding(24.dp), contentAlignment = Alignment.Center) {
+                if (opened == null) Text("Opening your data…", color = Palette.Dim)
+                else app.circlet.ui.design.ErrorState("Your local data could not be opened. Restart Circlet and try again. Your saved data has not been replaced.") { attempt++ }
+            }
+        }
+        return
+    }
     val settings by container.settings.settings.collectAsStateWithLifecycle()
     val timeFormat = remember(settings.clock) {
         TimeFormat(

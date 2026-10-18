@@ -100,8 +100,9 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
     var editingTime by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val ready = (state as? Loadable.Ready<Activity>)?.value
-    val route by produceState<List<RoutePoint>?>(null, activityId, ready?.sport) {
-        value = ready?.let { vm.route(activityId, it.sport) }
+    var route by remember(activityId, ready?.sport) { mutableStateOf<List<RoutePoint>?>(null) }
+    androidx.compose.runtime.LaunchedEffect(activityId, ready?.sport) {
+        route = ready?.let { vm.route(activityId, it.sport) }
     }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri: Uri? ->
         val points = route
