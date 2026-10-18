@@ -153,6 +153,8 @@ interface AlarmDao {
 
 @Dao
 interface KvDao {
+    @Query("SELECT * FROM kv WHERE key LIKE :prefix || '%' ORDER BY key")
+    fun withPrefix(prefix: String): List<KvEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun put(row: KvEntity)
 

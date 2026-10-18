@@ -48,6 +48,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -216,18 +217,27 @@ class PureTest {
     }
 
     @Test
-    fun healthExportDeletesByClientIdBeforeInsert() = runBlocking {
+    fun healthExportUpsertsWithoutDeletingExistingRecords() = runBlocking {
         val client = RecordingClient()
         val writes = healthWrites(measuredDay(), ZoneOffset.UTC, Instant.parse("2026-06-16T18:00:00Z"))
         writeMeasured(client, writes)
         writeMeasured(client, writes)
-        val kinds = writes.map { it.kind }.distinct()
-        assertEquals(kinds.size * 2, client.deleted.size)
-        val firstPass = client.deleted.take(kinds.size).flatMap { it.second }.toSet()
-        val secondPass = client.deleted.drop(kinds.size).flatMap { it.second }.toSet()
-        assertEquals(writes.map { it.clientRecordId }.toSet(), firstPass)
-        assertEquals(firstPass, secondPass)
+        assertTrue(client.deleted.isEmpty())
         assertEquals(writes.size * 2, client.inserted.size)
+    }
+
+    @Test
+    fun failedHealthInsertLeavesThePreviouslyExportedRecordsAlone() = runBlocking {
+        val client = object : HealthRecordClient {
+            var deletes = 0
+            override suspend fun status(enabled: Boolean) = app.circlet.core.HealthConnectStatus(true, enabled, HealthKind.entries.toSet())
+            override suspend fun delete(kind: HealthKind, clientRecordIds: List<String>) { deletes++ }
+            override suspend fun insert(writes: List<HealthWrite>) { error("provider unavailable") }
+        }
+        val writes = healthWrites(measuredDay(), ZoneOffset.UTC, Instant.parse("2026-06-16T18:00:00Z"))
+        val failure = runCatching { writeMeasured(client, writes) }.exceptionOrNull()
+        assertNotNull(failure)
+        assertEquals(0, client.deletes)
     }
 
     @Test
@@ -340,6 +350,7 @@ class PureTest {
 private class RecordingClient : HealthRecordClient {
     val deleted = mutableListOf<Pair<HealthKind, List<String>>>()
     val inserted = mutableListOf<HealthWrite>()
+    override suspend fun status(enabled: Boolean) = app.circlet.core.HealthConnectStatus(true, enabled, HealthKind.entries.toSet())
 
     override suspend fun delete(kind: HealthKind, clientRecordIds: List<String>) {
         deleted += kind to clientRecordIds

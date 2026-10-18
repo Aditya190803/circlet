@@ -22,7 +22,7 @@ import java.time.ZoneOffset
 import kotlin.reflect.KClass
 
 internal class HealthConnectGateway(private val context: Context) : HealthRecordClient {
-    suspend fun status(enabled: Boolean): HealthConnectStatus {
+    override suspend fun status(enabled: Boolean): HealthConnectStatus {
         val available = sdkAvailable()
         val granted = if (available) grantedKinds() else emptySet()
         return HealthConnectStatus(available = available, enabled = enabled, granted = granted)
@@ -94,9 +94,9 @@ private val WATCH = Device(manufacturer = "Circlet", model = "WHOOP 4.0", type =
 private fun HealthWrite.toRecord(): Record {
     val offset = ZoneOffset.ofTotalSeconds(offsetTotalSeconds)
     val metadata = if (manual) {
-        Metadata.activelyRecorded(device = WATCH, clientRecordId = clientRecordId)
+        Metadata.activelyRecorded(device = WATCH, clientRecordId = clientRecordId, clientRecordVersion = version)
     } else {
-        Metadata.autoRecorded(device = WATCH, clientRecordId = clientRecordId)
+        Metadata.autoRecorded(device = WATCH, clientRecordId = clientRecordId, clientRecordVersion = version)
     }
     return when (kind) {
         HealthKind.SLEEP -> SleepSessionRecord(

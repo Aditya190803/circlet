@@ -498,6 +498,43 @@ class StoreTest {
 
     private fun noon(date: LocalDate) = sample(date.atTime(12, 0).atZone(zone).toEpochSecond(), 64, emptyList())
 
+    @Test(timeout = 60_000)
+    fun healthExportRetriesSurviveReopenAndRespectPartialPermissions() = runBlocking {
+        val fileName = "health-retry-${System.nanoTime()}.db"
+        val date = LocalDate.of(2026, 6, 14)
+        val client = AuditHealthClient()
+        var opened = open(fileName = fileName, healthExportClient = client)
+        try {
+            val base = emptyDay(date, AbsentReason.NOT_ENOUGH_DATA)
+            val day = base.copy(
+                steps = app.circlet.core.Steps(Metric.of(50, Confidence.HIGH)),
+                heart = base.heart.copy(resting = app.circlet.core.RestingHeartRate(Metric.of(60, Confidence.HIGH))),
+            )
+            val db = opened.data.database
+            db.days().upsert(app.circlet.data.db.DaySummaryEntity(date.toString(), 1, 0, DayCodec.encode(day)))
+            db.kv().put(app.circlet.data.db.KvEntity(Keys.HEALTH_ENABLED, "true"))
+            db.kv().put(app.circlet.data.db.KvEntity("health_pending:$date", "7"))
+            opened.data.retryHealthExports()
+            assertNotNull(db.kv().get("health_pending:$date"))
+            opened.close()
+            opened = open(fileName = fileName, healthExportClient = client)
+            client.failed = false
+            opened.data.retryHealthExports()
+            assertEquals(setOf(app.circlet.core.HealthKind.STEPS), client.rows.values.map { it.kind }.toSet())
+            assertNotNull(opened.data.database.kv().get("health_pending:$date"))
+            client.granted = app.circlet.core.HealthKind.entries.toSet()
+            opened.data.retryHealthExports()
+            assertNull(opened.data.database.kv().get("health_pending:$date"))
+            assertTrue(client.rows.values.all { it.version == 7L })
+            val count = client.rows.size
+            opened.data.retryHealthExports()
+            assertEquals(count, client.rows.size)
+        } finally {
+            opened.close()
+            context.deleteDatabase(fileName)
+        }
+    }
+
     private fun sample(epoch: Long, heart: Int, rr: List<Int>) = Sample(
         epochSecond = epoch,
         heartRateBpm = heart,
@@ -526,6 +563,7 @@ class StoreTest {
         debounceMs: Long = 50,
         startPipeline: Boolean = false,
         fileName: String? = null,
+        healthExportClient: app.circlet.data.health.HealthRecordClient? = null,
     ): Opened {
         val engine = FakeDayEngine()
         val database = if (fileName == null) openMemoryDatabase(context) else openNamedDatabase(context, fileName)
@@ -539,9 +577,23 @@ class StoreTest {
             io = Dispatchers.IO,
             debounceMs = debounceMs,
             startPipeline = startPipeline,
+            healthExportClient = healthExportClient,
         )
         data.awaitReady()
         return Opened(data, engine)
+    }
+}
+
+private class AuditHealthClient : app.circlet.data.health.HealthRecordClient {
+    var failed = true
+    var granted = setOf(app.circlet.core.HealthKind.STEPS)
+    val rows = mutableMapOf<String, app.circlet.data.health.HealthWrite>()
+    override suspend fun status(enabled: Boolean) = app.circlet.core.HealthConnectStatus(true, enabled, granted)
+    override suspend fun delete(kind: app.circlet.core.HealthKind, clientRecordIds: List<String>) { error("Must not delete before upsert") }
+    override suspend fun insert(writes: List<app.circlet.data.health.HealthWrite>) {
+        if (failed) error("provider unavailable")
+        require(writes.all { it.kind in granted })
+        writes.forEach { rows[it.clientRecordId] = it }
     }
 }
 

@@ -95,6 +95,7 @@ object DataModule {
         io: CoroutineDispatcher,
         debounceMs: Long,
         startPipeline: Boolean,
+        healthExportClient: app.circlet.data.health.HealthRecordClient? = null,
     ): CircletData {
         val job = SupervisorJob()
         val effective = if (scope == null) {
@@ -114,7 +115,7 @@ object DataModule {
         )
         val memory = Memory(store)
         val gateway = HealthConnectGateway(context.applicationContext)
-        val pipeline = RecomputePipeline(store, gateway)
+        val pipeline = RecomputePipeline(store, healthExportClient ?: gateway)
         val metrics = MetricsRepositoryImpl(store, pipeline)
         val portability = DataPortabilityImpl(store, memory, gateway, documentStore(context.applicationContext), pipeline)
         val data = CircletData(
@@ -180,6 +181,7 @@ class CircletData internal constructor(
 
     /** Flushes dirty days now. Sample bursts normally wait for [DataModule.DEBOUNCE_MS]. */
     internal suspend fun recomputeNow() = pipeline.recomputeDirty()
+    internal suspend fun retryHealthExports() = pipeline.retryHealthExports()
 
     fun healthWritePermissions(): Set<String> = portabilityImpl.writePermissions()
 

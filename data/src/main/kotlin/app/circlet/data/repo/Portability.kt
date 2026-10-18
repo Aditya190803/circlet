@@ -99,11 +99,15 @@ internal class DataPortabilityImpl(
         } catch (error: Exception) {
             return Outcome.Err(CoreError.Storage(error.message ?: "unreadable"))
         }
-        val problem = validateSnapshot(bytes)
+        val problem = try {
+            store.io { validateSnapshot(bytes) }
+        } catch (error: Exception) {
+            return Outcome.Err(CoreError.Storage(error.message ?: "Invalid backup"))
+        }
         if (problem != null) return Outcome.Err(CoreError.Storage(problem))
         return catchStorage {
             store.lock.withLock {
-                store.io { restoreSnapshot(store.database, bytes) }
+                store.io { restoreSnapshot(store.database, bytes, store.context) }
                 memory.readIntoMemory()
             }
             store.generation.value = store.generation.value + 1
@@ -184,6 +188,7 @@ internal class DataPortabilityImpl(
         }
         store.io { store.database.kv().put(KvEntity(Keys.HEALTH_ENABLED, "true")) }
         memory.health.value = status
+        pipeline.queueAllHealthExports()
         return Outcome.Ok(Unit)
     }
 

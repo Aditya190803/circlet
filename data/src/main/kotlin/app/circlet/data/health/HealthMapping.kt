@@ -29,6 +29,7 @@ data class HealthWrite(
     val steps: Long? = null,
     val sport: Sport? = null,
     val manual: Boolean = false,
+    val version: Long = 1,
 )
 
 data class HealthStage(
@@ -168,15 +169,13 @@ private fun maxOf(left: Instant, right: Instant): Instant = if (left.isAfter(rig
 
 private fun minOf(left: Instant, right: Instant): Instant = if (left.isBefore(right)) left else right
 
-/** Deletes then inserts, so a second call with the same client ids replaces the previous rows. */
+/** Health Connect upserts stable client IDs using their monotonically increasing version. */
 internal suspend fun writeMeasured(client: HealthRecordClient, writes: List<HealthWrite>) {
-    writes.groupBy { it.kind }.forEach { (kind, rows) ->
-        client.delete(kind, rows.map { it.clientRecordId })
-    }
     if (writes.isNotEmpty()) client.insert(writes)
 }
 
 internal interface HealthRecordClient {
+    suspend fun status(enabled: Boolean): app.circlet.core.HealthConnectStatus
     suspend fun delete(kind: HealthKind, clientRecordIds: List<String>)
     suspend fun insert(writes: List<HealthWrite>)
 }

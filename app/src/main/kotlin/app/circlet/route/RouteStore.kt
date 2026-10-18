@@ -13,7 +13,7 @@ class RouteStore(context: Context) {
 
     fun exists(id: String): Boolean = file(id).exists()
 
-    fun append(id: String, point: RoutePoint) {
+    fun append(id: String, point: RoutePoint) = app.circlet.core.RecordingFiles.locked {
         dir.mkdirs()
         val line = JSONObject()
             .put("t", point.epochMs)
@@ -23,10 +23,10 @@ class RouteStore(context: Context) {
         file(id).appendText(line.toString() + "\n")
     }
 
-    fun read(id: String): List<RoutePoint> {
+    fun read(id: String): List<RoutePoint> = app.circlet.core.RecordingFiles.locked {
         val source = file(id)
-        if (!source.exists()) return emptyList()
-        return source.readLines().mapNotNull { line ->
+        if (!source.exists()) return@locked emptyList()
+        source.readLines().mapNotNull { line ->
             runCatching {
                 val json = JSONObject(line)
                 RoutePoint(json.getLong("t"), json.getDouble("lat"), json.getDouble("lon"), json.getDouble("acc"))
@@ -34,12 +34,12 @@ class RouteStore(context: Context) {
         }
     }
 
-    fun rename(from: String, to: String) {
+    fun rename(from: String, to: String) = app.circlet.core.RecordingFiles.locked {
         val source = file(from)
         if (source.exists()) source.renameTo(file(to))
     }
 
-    fun delete(id: String) {
+    fun delete(id: String) = app.circlet.core.RecordingFiles.locked {
         file(id).delete()
     }
 }

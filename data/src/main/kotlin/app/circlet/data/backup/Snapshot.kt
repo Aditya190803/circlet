@@ -8,6 +8,7 @@ import app.circlet.data.db.CircletDatabase
 import app.circlet.data.db.Keys
 import app.circlet.data.db.SCHEMA_IDENTITY
 import app.circlet.data.db.USER_TABLES
+import app.circlet.core.RecordingFiles
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -130,6 +131,7 @@ internal fun snapshotBytes(database: CircletDatabase, context: Context): ByteArr
             for (table in USER_TABLES) {
                 sqlite.execSQL("CREATE TABLE snap.$table AS SELECT * FROM $table")
             }
+            RecordingFiles.locked { archiveRecordings(sqlite, context) }
         } finally {
             sqlite.execSQL("DETACH DATABASE snap")
         }
@@ -158,7 +160,7 @@ internal fun validateSnapshot(bytes: ByteArray): String? {
  * Replaces every user table from a validated snapshot without closing the database,
  * so open flows keep their connection and see the new rows.
  */
-internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray) {
+internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray, context: Context? = null) {
     val temp = File.createTempFile("circlet-restore", ".db")
     try {
         temp.writeBytes(bytes)
@@ -170,16 +172,41 @@ internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray) {
             sqlite.query("SELECT name FROM incoming.sqlite_master WHERE type='table'").use { cursor ->
                 while (cursor.moveToNext()) incoming += cursor.getString(0)
             }
-            sqlite.beginTransaction()
-            try {
-                for (table in USER_TABLES) {
-                    sqlite.execSQL("DELETE FROM $table")
-                    // A snapshot from an older schema has no table for what came later.
-                    if (table in incoming) sqlite.execSQL("INSERT INTO $table SELECT * FROM incoming.$table")
+            RecordingFiles.locked {
+                val recordings = if (context != null && "recording_files" in incoming) readRecordings(sqlite) else null
+                val previous = if (recordings != null) recordingFiles(context!!) else null
+                var changedFiles = false
+                try {
+                    sqlite.beginTransaction()
+                    try {
+                        for (table in USER_TABLES) {
+                            sqlite.execSQL("DELETE FROM $table")
+                            if (table in incoming) {
+                                val columns = tableColumns(sqlite, "incoming", table)
+                                val common = tableColumns(sqlite, "main", table).filter { it in columns }
+                                    .joinToString(",") { "\"$it\"" }
+                                check(common.isNotEmpty()) { "Incompatible backup table $table" }
+                                sqlite.execSQL("INSERT INTO $table ($common) SELECT $common FROM incoming.$table")
+                            }
+                        }
+                        if (recordings != null) {
+                            changedFiles = true
+                            replaceRecordings(context!!, recordings)
+                        }
+                        sqlite.setTransactionSuccessful()
+                    } finally {
+                        sqlite.endTransaction()
+                    }
+                } catch (failed: Exception) {
+                    if (changedFiles && previous != null) {
+                        try {
+                            replaceRecordings(context!!, previous)
+                        } catch (rollback: Exception) {
+                            failed.addSuppressed(rollback)
+                        }
+                    }
+                    throw failed
                 }
-                sqlite.setTransactionSuccessful()
-            } finally {
-                sqlite.endTransaction()
             }
         } finally {
             sqlite.execSQL("DETACH DATABASE incoming")
@@ -188,6 +215,11 @@ internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray) {
         temp.delete()
     }
 }
+
+private fun tableColumns(sqlite: androidx.sqlite.db.SupportSQLiteDatabase, schema: String, table: String): List<String> =
+    sqlite.query("PRAGMA $schema.table_info('$table')").use { cursor ->
+        buildList { while (cursor.moveToNext()) add(cursor.getString(1)) }
+    }
 
 private fun inspect(file: File): String? {
     val db = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
