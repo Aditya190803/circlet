@@ -38,7 +38,7 @@ class StrapAlarmRemoveTest {
             }
             override suspend fun buzz(): Outcome<Unit> = Outcome.Ok(Unit)
             override suspend fun stop(): Outcome<Unit> = Outcome.Ok(Unit)
-            override fun connected(): Boolean = false
+            override fun connected(): Boolean = true
         },
     )
 
@@ -64,5 +64,36 @@ class StrapAlarmRemoveTest {
         assertEquals(listOf("late"), controller.alarms.value.map { it.id })
         assertEquals(listOf("late"), prefs.stored.map { it.id })
         assertEquals(Instant.parse("2026-10-12T09:00:00Z"), controller.next.value!!.at)
+    }
+
+    @Test
+    fun failedDeliveryIsReportedAndRetriedOnTheNextTick() = runBlocking {
+        var failed = true
+        var writes = 0
+        val radio = object : AlarmRadio {
+            override suspend fun arm(at: Instant): Outcome<Unit> {
+                writes++
+                return if (failed) Outcome.Err(app.circlet.core.CoreError.Strap(app.circlet.core.StrapError.TimedOut)) else Outcome.Ok(Unit)
+            }
+            override suspend fun disarm(): Outcome<Unit> = arm(monday)
+            override suspend fun buzz(): Outcome<Unit> = Outcome.Ok(Unit)
+            override suspend fun stop(): Outcome<Unit> = Outcome.Ok(Unit)
+            override fun connected(): Boolean = true
+        }
+        val prefs = MemoryPrefs()
+        val controller = StrapAlarms(prefs, ManualTimeSource(monday, zone), SleepStageEstimate.UNKNOWN,
+            DoubleTapPolicy { DoubleTapAction.MARK_MOMENT }, radio)
+        assertTrue(controller.set(alarm("wake", LocalTime.of(9, 0))) is Outcome.Err)
+        assertEquals(1, prefs.stored.size)
+        failed = false
+        controller.tick()
+        assertEquals(2, writes)
+        controller.tick()
+        assertEquals(2, writes)
+        failed = true
+        assertTrue(controller.disable("wake") is Outcome.Err)
+        failed = false
+        controller.tick()
+        assertEquals(4, writes)
     }
 }

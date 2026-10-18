@@ -8,6 +8,7 @@ import app.circlet.core.ScheduledAlarm
 import app.circlet.core.SleepStageEstimate
 import app.circlet.core.StrapAlarm
 import app.circlet.core.StrapPrefs
+import app.circlet.core.StrapError
 import app.circlet.core.TimeSource
 import java.time.Duration
 import java.time.Instant
@@ -44,6 +45,9 @@ internal class StrapAlarms(
     private val gate = Mutex()
     private val buzzedEarly = HashSet<String>()
     private var armedFor: Instant? = null
+    private var desiredAt: Instant? = null
+    private var deliveryPending = true
+    private var earlyThrough: Instant? = null
 
     override val alarms: StateFlow<List<StrapAlarm>> = alarmsState
     override val next: StateFlow<ScheduledAlarm?> = nextState
@@ -79,7 +83,6 @@ internal class StrapAlarms(
         alarmsState.value = alarmsState.value.filter { it.id != alarm.id } + alarm
         prefs.setAlarms(alarmsState.value)
         armSoonest()
-        Outcome.Ok(Unit)
     }
 
     override suspend fun disable(id: String): Outcome<Unit> = gate.withLock {
@@ -88,7 +91,6 @@ internal class StrapAlarms(
         alarmsState.value = current.map { if (it.id == id) it.copy(enabled = false) else it }
         prefs.setAlarms(alarmsState.value)
         armSoonest()
-        Outcome.Ok(Unit)
     }
 
     override suspend fun remove(id: String): Outcome<Unit> = gate.withLock {
@@ -97,7 +99,6 @@ internal class StrapAlarms(
         alarmsState.value = current.filter { it.id != id }
         prefs.setAlarms(alarmsState.value)
         armSoonest()
-        Outcome.Ok(Unit)
     }
 
     override suspend fun setSmartWake(id: String, window: Duration): Outcome<Unit> = gate.withLock {
@@ -111,6 +112,10 @@ internal class StrapAlarms(
     }
 
     internal suspend fun tick() = gate.withLock {
+        if (deliveryPending) {
+            armSoonest()
+            return@withLock
+        }
         val decision = decideTick(
             alarms = alarmsState.value,
             armedFor = armedFor,
@@ -123,38 +128,52 @@ internal class StrapAlarms(
         when (decision) {
             AlarmTick.None -> publishNext()
             AlarmTick.Disarm -> {
-                armedFor = null
-                if (radio.connected()) radio.disarm()
+                desiredAt = null
+                deliveryPending = true
+                deliver()
                 publishNext()
             }
             is AlarmTick.Rearm -> {
-                armedFor = decision.at
-                if (radio.connected()) radio.arm(decision.at)
+                desiredAt = decision.at
+                deliveryPending = true
+                deliver()
                 publishNext()
             }
             is AlarmTick.FireEarly -> {
-                buzzedEarly += key(decision.alarm, decision.occurrence)
-                if (radio.connected()) {
-                    radio.buzz()
-                    if (decision.then != null) radio.arm(decision.then)
-                    else radio.disarm()
+                if (radio.connected() && radio.buzz() is Outcome.Ok) {
+                    buzzedEarly += key(decision.alarm, decision.occurrence)
+                    earlyThrough = decision.occurrence
+                    armSoonest()
                 }
-                armedFor = decision.then
                 publishNext()
             }
         }
     }
 
-    private suspend fun armSoonest() {
-        val upcoming = AlarmScheduler.next(alarmsState.value, time.now(), time.zone())
-        armedFor = upcoming?.at
+    private suspend fun armSoonest(): Outcome<Unit> {
+        val now = time.now()
+        val after = earlyThrough?.takeIf { it.isAfter(now) } ?: now
+        val upcoming = AlarmScheduler.next(alarmsState.value, after, time.zone())
+        desiredAt = upcoming?.at
+        deliveryPending = true
         nextState.value = upcoming
-        if (!radio.connected()) return
-        if (upcoming == null) radio.disarm() else radio.arm(upcoming.at)
+        return deliver()
+    }
+
+    private suspend fun deliver(): Outcome<Unit> {
+        if (!radio.connected()) return Outcome.Err(CoreError.Strap(StrapError.LinkLost))
+        val target = desiredAt
+        val result = if (target == null) radio.disarm() else radio.arm(target)
+        if (result is Outcome.Ok) {
+            armedFor = target
+            deliveryPending = false
+        }
+        return result
     }
 
     private fun publishNext() {
-        nextState.value = AlarmScheduler.next(alarmsState.value, time.now(), time.zone())
+        val now = time.now()
+        nextState.value = AlarmScheduler.next(alarmsState.value, earlyThrough?.takeIf { it.isAfter(now) } ?: now, time.zone())
     }
 
     private fun key(alarm: StrapAlarm, at: Instant): String = "${alarm.id}@${at.epochSecond}"
