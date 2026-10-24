@@ -2,6 +2,7 @@ package app.circlet.ui.design
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.MetricKind
@@ -68,38 +70,67 @@ fun List<MetricReference>.forKind(kind: MetricKind): MetricReference? = firstOrN
 fun Double.signedDeviation(digits: Int = 1): String = (if (this < 0) "−" else "+") + abs(this).decimal(digits)
 
 /**
- * One track holding both bands: the typical band as a wide muted stretch, the user's own
- * usual band as a solid stretch inside it, and a dot at [value]. Null [value] draws no dot.
+ * A thin track with the two bands drawn so they never compete: the user's own usual band
+ * as a solid stretch in [accent], the ideal band as an outline around the track, and a
+ * marker at [value]. Null [value] draws no marker.
  */
 @Composable
-fun RangeBar(value: Double?, personal: ReferenceRange?, ideal: ReferenceRange?, modifier: Modifier = Modifier) {
+fun RangeBar(
+    value: Double?,
+    personal: ReferenceRange?,
+    ideal: ReferenceRange?,
+    modifier: Modifier = Modifier,
+    accent: Color = Palette.Teal,
+) {
     val axis = rangeAxis(value, personal, ideal)
-    Canvas(modifier.fillMaxWidth().height(14.dp)) {
-        val track = 8.dp.toPx()
-        val top = (size.height - track) / 2
-        val radius = CornerRadius(track / 2)
+    Canvas(modifier.fillMaxWidth().height(22.dp)) {
+        val middle = size.height / 2
         val width = size.width
-        fun band(range: ReferenceRange, color: Color) {
+        fun span(range: ReferenceRange, minimum: Float): Pair<Float, Float> {
             val left = axis.fraction(range.low) * width
-            val length = (axis.fraction(range.high) * width - left).coerceAtLeast(track)
-            drawRoundRect(color, Offset(left.coerceAtMost(width - length), top), Size(length, track), radius)
+            val length = (axis.fraction(range.high) * width - left).coerceAtLeast(minimum)
+            return left.coerceAtMost(width - length) to length
         }
-        drawRoundRect(Palette.Track, Offset(0f, top), Size(width, track), radius)
-        ideal?.let { band(it, TypicalBand) }
-        personal?.let { band(it, Palette.Teal) }
+        val track = 4.dp.toPx()
+        drawRoundRect(Palette.Track, Offset(0f, middle - track / 2), Size(width, track), CornerRadius(track / 2))
+        ideal?.let {
+            val outline = 14.dp.toPx()
+            val stroke = 1.dp.toPx()
+            val (left, length) = span(it, outline)
+            drawRoundRect(
+                IdealLine,
+                Offset(left + stroke / 2, middle - outline / 2),
+                Size(length - stroke, outline),
+                CornerRadius(outline / 2),
+                style = Stroke(stroke),
+            )
+        }
+        personal?.let {
+            val band = 6.dp.toPx()
+            val (left, length) = span(it, band)
+            drawRoundRect(accent, Offset(left, middle - band / 2), Size(length, band), CornerRadius(band / 2))
+        }
         if (value != null) {
-            val centre = Offset(axis.fraction(value) * width, size.height / 2)
-            drawCircle(Palette.Card, 7.dp.toPx(), centre)
-            drawCircle(Palette.White, 5.dp.toPx(), centre)
+            val x = axis.fraction(value) * width
+            val marker = Size(4.dp.toPx(), size.height - 4.dp.toPx())
+            val halo = 2.dp.toPx()
+            val left = (x - marker.width / 2).coerceIn(halo, width - marker.width - halo)
+            drawRoundRect(
+                Palette.Card,
+                Offset(left - halo, 0f),
+                Size(marker.width + halo * 2, size.height),
+                CornerRadius(marker.width / 2 + halo),
+            )
+            drawRoundRect(Palette.White, Offset(left, halo), marker, CornerRadius(marker.width / 2))
         }
     }
 }
 
-private val TypicalBand = Palette.Sleep.copy(alpha = 0.4f)
+private val IdealLine = Palette.Faint
 
 /**
- * The key under a [RangeBar]: the user's own band on the left, the typical band on
- * the right, each beside the colour it is drawn in. [format] turns a band edge into the metric's unit.
+ * The key under a [RangeBar], drawn with the same marks as the bar: a solid swatch for the
+ * user's own band, an outlined one for the ideal band. [format] turns a band edge into the metric's unit.
  */
 @Composable
 fun RangeLegend(
@@ -108,21 +139,22 @@ fun RangeLegend(
     ideal: ReferenceRange?,
     format: (Double) -> String,
     modifier: Modifier = Modifier,
+    accent: Color = Palette.Teal,
 ) {
-    Row(modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(Palette.Teal))
+    Row(modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(width = 12.dp, height = 6.dp).clip(CircleShape).background(accent))
         Spacer(Modifier.width(6.dp))
-        val text = if (personal != null) {
-            "YOUR USUAL  ${format(personal.low)} – ${format(personal.high)}"
-        } else {
-            "YOUR USUAL  BUILDING · $personalDays DAYS"
-        }
-        Text(text, style = label(10.sp, Palette.Dim))
+        Text("USUAL ", style = label(10.sp, Palette.Faint))
+        Text(
+            if (personal != null) "${format(personal.low)}–${format(personal.high)}" else "BUILDING · $personalDays DAYS",
+            style = if (personal != null) number(12.sp, Palette.Dim) else label(10.sp, Palette.Faint),
+        )
         if (ideal != null) {
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size(8.dp).clip(CircleShape).background(TypicalBand))
+            Box(Modifier.size(width = 14.dp, height = 10.dp).border(1.dp, IdealLine, CircleShape))
             Spacer(Modifier.width(6.dp))
-            Text("IDEAL  ${format(ideal.low)} – ${format(ideal.high)}", style = label(10.sp, Palette.Faint))
+            Text("IDEAL ", style = label(10.sp, Palette.Faint))
+            Text("${format(ideal.low)}–${format(ideal.high)}", style = number(12.sp, Palette.Dim))
         }
     }
 }

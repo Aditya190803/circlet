@@ -179,6 +179,33 @@ fun <T : Any> MetricRow(
 }
 
 /**
+ * One value in a grid of statistics: the name above, the number below.
+ * A null [value] draws the dash, and [absent] says why.
+ */
+@Composable
+fun StatCell(
+    name: String,
+    value: String?,
+    unit: String = "",
+    absent: AbsentReason? = null,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.padding(vertical = 10.dp)) {
+        Text(name, style = label(10.sp, Palette.Faint), maxLines = 1)
+        Spacer(Modifier.height(4.dp))
+        if (value == null) {
+            AbsentDash(Modifier.padding(vertical = 11.dp))
+            if (absent != null) Text(absent.words(), style = body(12.sp, Palette.Faint))
+        } else {
+            Row {
+                Text(value, style = number(22.sp), modifier = Modifier.alignByBaseline())
+                if (unit.isNotEmpty()) Text(" $unit", style = label(10.sp, Palette.Faint), modifier = Modifier.alignByBaseline())
+            }
+        }
+    }
+}
+
+/**
  * A large number over its caption, used in pairs across a card.
  * A null [value] draws the dash, and [absent] says why under the caption.
  */

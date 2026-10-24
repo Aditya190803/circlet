@@ -37,11 +37,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.circlet.core.SleepEpoch
 import app.circlet.core.SleepSession
 import app.circlet.core.SleepStage
 import app.circlet.core.StressPoint
@@ -200,64 +199,152 @@ fun HeartRateChart(
     }
 }
 
-/** Sleep stages across the night, one lane per stage, with the cycles bracketed along the top. */
+/** A stretch of the night spent in one stage: touching epochs of the same stage, merged. */
+internal data class StageRun(val stage: SleepStage, val start: Instant, val end: Instant)
+
+internal fun stageRuns(epochs: List<SleepEpoch>): List<StageRun> {
+    val runs = mutableListOf<StageRun>()
+    for (epoch in epochs.sortedBy { it.start }) {
+        val end = epoch.start.plus(epoch.duration)
+        val last = runs.lastOrNull()
+        if (last != null && last.stage == epoch.stage && !epoch.start.isAfter(last.end)) {
+            runs[runs.lastIndex] = last.copy(end = maxOf(last.end, end))
+        } else {
+            runs += StageRun(epoch.stage, epoch.start, end)
+        }
+    }
+    return runs
+}
+
+/** The run a touch at [at] reads. In a gap or past the end it holds the run that last began. */
+internal fun runAt(runs: List<StageRun>, at: Instant): StageRun? =
+    runs.lastOrNull { !it.start.isAfter(at) } ?: runs.firstOrNull()
+
+/** Lanes top to bottom, lightest to deepest, as hypnograms are read. */
+private val StageLanes = listOf(SleepStage.AWAKE, SleepStage.REM, SleepStage.LIGHT, SleepStage.DEEP)
+
+private val StageLane = 26.dp
+private val StageGutter = 44.dp
+
+/**
+ * Sleep stages across the night as one continuous line stepping between named lanes.
+ * Press and hold, then drag: the stretch under the finger stays lit, the rest dims, and
+ * the readout gives its stage, the time and how long it lasted.
+ */
 @Composable
 fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
-    val order = listOf(SleepStage.AWAKE, SleepStage.REM, SleepStage.LIGHT, SleepStage.DEEP)
-    val measurer = rememberTextMeasurer()
-    val cycleStyle = label(9.sp, Palette.Faint)
+    val format = LocalTimeFormat.current
+    val runs = remember(session.id, session.epochs) { stageRuns(session.epochs) }
     val span = Duration.between(session.start, session.end).seconds.coerceAtLeast(1).toFloat()
-    val cycles = session.cycles
-    val timeFormat = LocalTimeFormat.current
     var touch by remember(session.id) { mutableStateOf<Float?>(null) }
     val touchedAt = touch?.let { session.start.plusSeconds((span * it).toLong()) }
-    val touched = touchedAt?.let { at ->
-        session.epochs.lastOrNull { !it.start.isAfter(at) && at.isBefore(it.start.plus(it.duration)) }
-    }
+    val held = touchedAt?.let { runAt(runs, it) }
     Column(modifier) {
-    ScrubReadout(
-        value = touched?.let { stageWords(it.stage) },
-        detail = touchedAt?.takeIf { touched != null }?.let { timeFormat.time(it) },
-        idle = null,
-    )
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(if (cycles.isEmpty()) 96.dp else 116.dp)
-            .scrub(session.id) { touch = it }
-            .semantics { contentDescription = "Sleep stages across the night, ${cycles.size} cycles" },
-    ) {
-        fun x(at: Instant) = size.width * Duration.between(session.start, at).seconds / span
-        val top = if (cycles.isEmpty()) 0f else 20.dp.toPx()
-        for (cycle in cycles) {
-            val from = x(cycle.start)
-            val to = x(cycle.end)
-            val y = 13.dp.toPx()
-            val tick = 3.dp.toPx()
-            drawLine(Palette.Ghost, Offset(from, y), Offset(to, y), 1.dp.toPx())
-            drawLine(Palette.Ghost, Offset(from, y - tick), Offset(from, y + tick), 1.dp.toPx())
-            drawLine(Palette.Ghost, Offset(to, y - tick), Offset(to, y + tick), 1.dp.toPx())
-            val text = measurer.measure(cycle.number.toString(), cycleStyle)
-            if (to - from > text.size.width + 4.dp.toPx()) {
-                drawText(text, topLeft = Offset((from + to - text.size.width) / 2, 0f))
+        Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (held != null && touchedAt != null) {
+                Box(Modifier.size(8.dp).clip(Shapes.pill).background(Palette.stage(held.stage)))
+                Spacer(Modifier.width(8.dp))
+                Text(stageWords(held.stage), style = number(14.sp, Palette.White))
+                val at = touchedAt.coerceIn(held.start, held.end)
+                Text("  ${format.time(at)}", style = label(11.sp, Palette.Dim))
+                Spacer(Modifier.weight(1f))
+                Text(minutesWords(Duration.between(held.start, held.end).toMinutes()), style = label(10.sp, Palette.Faint))
+            } else {
+                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Ghost))
             }
         }
-        val lane = (size.height - top) / order.size
-        for (epoch in session.epochs) {
-            val from = x(epoch.start)
-            val width = (size.width * epoch.duration.seconds / span).coerceAtLeast(1.5f)
-            drawRoundRect(
-                Palette.stage(epoch.stage),
-                Offset(from, top + order.indexOf(epoch.stage) * lane + lane * 0.15f),
-                Size(width, lane * 0.7f),
-                CornerRadius(3f, 3f),
-            )
+        Spacer(Modifier.height(8.dp))
+        Row {
+            Column(Modifier.width(StageGutter)) {
+                for (stage in StageLanes) {
+                    Box(Modifier.height(StageLane), contentAlignment = Alignment.CenterStart) {
+                        Text(stageShort(stage), style = label(9.sp, if (held?.stage == stage) Palette.White else Palette.Faint))
+                    }
+                }
+            }
+            Canvas(
+                Modifier
+                    .weight(1f)
+                    .height(StageLane * StageLanes.size)
+                    .scrub(session.id) { touch = it }
+                    .semantics { contentDescription = "Sleep stages across the night, ${session.cycles.size} cycles" },
+            ) {
+                val lane = size.height / StageLanes.size
+                fun x(at: Instant) = size.width * Duration.between(session.start, at).seconds / span
+                fun y(stage: SleepStage) = lane * (StageLanes.indexOf(stage) + 0.5f)
+                for (stage in StageLanes) {
+                    drawLine(Palette.CardLine, Offset(0f, y(stage)), Offset(size.width, y(stage)), 1.dp.toPx())
+                }
+                val step = 1.5.dp.toPx()
+                for ((from, to) in runs.zipWithNext()) {
+                    val at = x(to.start)
+                    val dim = held != null && held != from && held != to
+                    drawLine(if (dim) Palette.CardLine else Palette.Ghost, Offset(at, y(from.stage)), Offset(at, y(to.stage)), step)
+                }
+                val bar = 10.dp.toPx()
+                for (run in runs) {
+                    val left = x(run.start)
+                    val color = Palette.stage(run.stage)
+                    drawRoundRect(
+                        if (held != null && held != run) color.copy(alpha = 0.3f) else color,
+                        Offset(left, y(run.stage) - bar / 2),
+                        Size((x(run.end) - left).coerceAtLeast(2.dp.toPx()), bar),
+                        CornerRadius(bar / 2),
+                    )
+                }
+                touch?.let {
+                    val line = size.width * it
+                    drawLine(Palette.Dim, Offset(line, 0f), Offset(line, size.height), 1.dp.toPx())
+                }
+            }
         }
-        touch?.let {
-            val line = size.width * it
-            drawLine(Palette.Dim, Offset(line, top), Offset(line, size.height), 1.dp.toPx())
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth().padding(start = StageGutter), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(format.time(session.start), style = label(10.sp, Palette.Faint))
+            Text(format.time(session.end), style = label(10.sp, Palette.Faint))
         }
     }
+}
+
+/**
+ * How the time in bed split across the stages: one stacked bar in the hypnogram's colours,
+ * then each stage's time and its share of the time in bed.
+ */
+@Composable
+fun StageBreakdown(session: SleepSession, modifier: Modifier = Modifier) {
+    val minutes = StageLanes.associateWith { stage ->
+        session.epochs.filter { it.stage == stage }.sumOf { it.duration.toMinutes() }
+    }
+    val staged = minutes.values.sum().coerceAtLeast(1)
+    val inBed = session.timeInBed.toMinutes().coerceAtLeast(1)
+    Column(modifier) {
+        Canvas(Modifier.fillMaxWidth().height(8.dp)) {
+            val shown = StageLanes.filter { minutes.getValue(it) > 0 }
+            val gap = 3.dp.toPx()
+            val usable = size.width - gap * (shown.size - 1).coerceAtLeast(0)
+            var left = 0f
+            for (stage in shown) {
+                val width = usable * minutes.getValue(stage) / staged
+                drawRoundRect(Palette.stage(stage), Offset(left, 0f), Size(width, size.height), CornerRadius(size.height / 2))
+                left += width + gap
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth()) {
+            for (stage in StageLanes) {
+                val spent = minutes.getValue(stage)
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).clip(Shapes.pill).background(Palette.stage(stage)))
+                        Spacer(Modifier.width(5.dp))
+                        Text(stageShort(stage), style = label(10.sp, Palette.Faint))
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(hoursMinutes(spent.toInt()), style = number(18.sp))
+                    Text("${spent * 100 / inBed}%", style = label(10.sp, Palette.Faint))
+                }
+            }
+        }
     }
 }
 
@@ -265,6 +352,13 @@ private fun stageWords(stage: SleepStage): String = when (stage) {
     SleepStage.AWAKE -> "AWAKE"
     SleepStage.LIGHT -> "LIGHT"
     SleepStage.DEEP -> "SWS (DEEP)"
+    SleepStage.REM -> "REM"
+}
+
+private fun stageShort(stage: SleepStage): String = when (stage) {
+    SleepStage.AWAKE -> "AWAKE"
+    SleepStage.LIGHT -> "LIGHT"
+    SleepStage.DEEP -> "DEEP"
     SleepStage.REM -> "REM"
 }
 

@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.AbsentReason
@@ -26,8 +28,12 @@ import app.circlet.core.RecoveryDriverKind
 import app.circlet.core.SkinTempFlag
 import app.circlet.core.SkinTemperature
 import app.circlet.core.SleepSession
-import app.circlet.core.SleepStage
 import app.circlet.ui.design.AbsentDash
+import app.circlet.ui.design.StatCell
+import app.circlet.ui.design.StageBreakdown
+import app.circlet.ui.design.Space
+import app.circlet.ui.design.SecondaryButton
+import app.circlet.ui.design.IconButton
 import app.circlet.ui.design.Card
 import app.circlet.ui.design.DivergingBar
 import app.circlet.ui.design.Divider
@@ -76,10 +82,15 @@ private fun DetailFrame(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     loadingCaption: String,
+    action: (@Composable (DaySummary) -> Unit)? = null,
     content: @Composable ColumnScope.(DaySummary) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        DetailHeader(title, dateTitle(state.date, state.today), onBack)
+        val ready = (state.day as? Loadable.Ready)?.value
+        DetailHeader(
+            title, dateTitle(state.date, state.today), onBack,
+            action = if (ready != null && action != null) ({ action(ready) }) else null,
+        )
         ScreenColumn {
             when (val day = state.day) {
                 Loadable.Loading -> {
@@ -103,10 +114,11 @@ private fun DetailFrame(
 
 /** A range bar and its legend for one reference. Draws nothing when the day has no reference for the metric. */
 @Composable
-private fun RangeBlock(ref: MetricReference?, value: Double?, format: (Double) -> String) {
+private fun RangeBlock(ref: MetricReference?, value: Double?, accent: Color = Palette.Teal, format: (Double) -> String) {
     if (ref == null) return
-    RangeBar(value, ref.personal, ref.ideal)
-    RangeLegend(ref.personal, ref.personalDays, ref.ideal, format)
+    Spacer(Modifier.height(4.dp))
+    RangeBar(value, ref.personal, ref.ideal, accent = accent)
+    RangeLegend(ref.personal, ref.personalDays, ref.ideal, format, accent = accent)
 }
 
 /** "Avg of last 12 days" over the days before the selected one, or null with fewer than two. */
@@ -117,7 +129,13 @@ private fun <T : Any> DayUiState.typical(pick: (DaySummary) -> T?, format: (Doub
 
 @Composable
 fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
-    DetailFrame("SLEEP", state, onBack, onRetry, "SLEEP PERFORMANCE") { day ->
+    val editor = remember(state.date) { SleepEditor() }
+    DetailFrame(
+        "SLEEP", state, onBack, onRetry, "SLEEP PERFORMANCE",
+        action = { day ->
+            if (day.sleep.value != null) IconButton(Glyph.Edit, "Edit sleep", Palette.Dim) { editor.editing = true }
+        },
+    ) { day ->
         val format = LocalTimeFormat.current
         val sleep = day.sleep.value
         val performance = day.sleepPerformance.percent
@@ -126,64 +144,77 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             "SLEEP PERFORMANCE", Glyph.Moon, Palette.Sleep, percent?.toString(), "%", percent?.div(100f),
             when {
                 percent == null && (day.sleep.absentReason ?: performance.absentReason) == AbsentReason.NO_SLEEP ->
-                    "No sleep was found for this day. Wear the strap overnight and it is picked up on its own, then shown here after the morning sync."
+                    "No sleep found for this day. Wear the strap overnight and it shows here after the morning sync."
                 percent == null ->
-                    "${(performance.absentReason ?: AbsentReason.NOT_ENOUGH_DATA).words()}. Sleep is picked up on its own overnight and shown here after the morning sync."
-                percent >= 85 -> "You got enough sleep to meet your need. Keep it up."
-                percent >= 70 -> "You got most of the sleep you needed. A little more will help your recovery."
-                else -> "You fell well short of your sleep need. Try to get to bed earlier tonight."
+                    "${(performance.absentReason ?: AbsentReason.NOT_ENOUGH_DATA).words()}. Sleep shows here after the morning sync."
+                percent >= 85 -> "You met your sleep need."
+                percent >= 70 -> "You got most of the sleep you needed."
+                else -> "You fell well short of your sleep need."
             },
         )
+        if (sleep != null) {
+            NightCard(sleep)
+        } else {
+            Card("SLEEP STAGES") {
+                EmptyState(Glyph.Moon, "NO SLEEP RECORDED", "Stages draw here after a night with the strap on, or add the night yourself.")
+                Spacer(Modifier.height(Space.sm))
+                SecondaryButton("ADD SLEEP", glyph = Glyph.Plus) { editor.editing = true }
+                RestoreSleepButton(state.date)
+            }
+        }
         Card("HOURS VS. NEEDED") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(
-                    sleep?.timeAsleep?.hoursMinutes(), "HOURS OF SLEEP",
+                    sleep?.timeAsleep?.hoursMinutes(), "ASLEEP",
                     absent = day.sleep.absentReason, modifier = Modifier.weight(1f),
                 )
                 Figure(
-                    day.sleepNeed.duration.value?.hoursMinutes(), if (sleep != null) "SLEEP NEEDED" else "NEEDED TONIGHT", Palette.Sleep,
+                    day.sleepNeed.duration.value?.hoursMinutes(), if (sleep != null) "NEEDED" else "NEEDED TONIGHT", Palette.Sleep,
                     absent = day.sleepNeed.duration.absentReason, alignEnd = true,
                     modifier = Modifier.weight(1f),
                 )
             }
-            RangeBlock(day.references.forKind(MetricKind.SLEEP_DURATION), sleep?.timeAsleep?.toMinutes()?.toDouble()) { hoursMinutes(it.toInt()) }
-            val debt = day.sleepDebt.shortfall.value
-            val bedtime = day.sleepNeed.recommendedBedtime
-            val lines = listOfNotNull(
-                debt?.takeIf { !it.isZero }?.let { "You are carrying ${it.hoursMinutes()} of sleep debt." },
-                bedtime?.takeIf { state.isToday }?.let { "Be in bed by ${format.time(it)} tonight to meet your need." },
-            )
-            if (lines.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                Text(lines.joinToString(" "), style = body(13.sp, Palette.Faint))
+            RangeBlock(day.references.forKind(MetricKind.SLEEP_DURATION), sleep?.timeAsleep?.toMinutes()?.toDouble(), Palette.Sleep) {
+                hoursMinutes(it.toInt())
+            }
+            val debt = day.sleepDebt.shortfall.value?.takeIf { !it.isZero }
+            val bedtime = day.sleepNeed.recommendedBedtime?.takeIf { state.isToday }
+            if (debt != null || bedtime != null) {
+                Divider()
+                if (bedtime != null) StatRow("BED BY", format.time(bedtime), note = "To meet tonight's need")
+                if (debt != null) StatRow("SLEEP DEBT", debt.hoursMinutes())
             }
         }
         if (sleep != null) {
-            StagesCard(sleep)
             Card("SLEEP STATISTICS") {
-                StatRow("TIME IN BED", sleep.timeInBed.hoursMinutes())
-                Divider()
-                MetricRow("SLEEP EFFICIENCY", sleep.efficiency, "%") { it.toString() }
-                RangeBlock(day.references.forKind(MetricKind.SLEEP_EFFICIENCY), sleep.efficiency.value?.toDouble()) { "${it.decimal(0)}%" }
-                Divider()
-                StatRow("TIME TO FALL ASLEEP", sleep.latency.toMinutes().toString(), "MIN")
-                Divider()
-                StatRow(
-                    "WAKE EVENTS", sleep.wakeEvents.size.toString(),
-                    note = sleep.wakeEvents.takeIf { it.isNotEmpty() }?.let { events -> "${events.sumOf { it.duration.toMinutes() }} min awake in total" },
-                )
-                Divider()
-                MetricRow("CONSISTENCY", day.sleepConsistency.index, "%", note = "How closely recent bedtimes agree") { it.decimal(0) }
-                Divider()
-                MetricRow("RESPIRATORY RATE", day.heart.respiratoryRate.breathsPerMinute, "RPM") { it.decimal() }
-            }
-        } else {
-            Card("SLEEP STAGES") {
-                EmptyState(Glyph.Moon, "NO STAGES YET", "Awake, light, deep and REM draw here after a night with the strap on.")
+                Row(Modifier.fillMaxWidth()) {
+                    StatCell("TIME IN BED", sleep.timeInBed.hoursMinutes(), modifier = Modifier.weight(1f))
+                    StatCell(
+                        "EFFICIENCY", sleep.efficiency.value?.toString(), "%",
+                        absent = sleep.efficiency.absentReason, modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(Modifier.fillMaxWidth()) {
+                    StatCell("FELL ASLEEP IN", sleep.latency.toMinutes().toString(), "MIN", modifier = Modifier.weight(1f))
+                    val awake = sleep.wakeEvents.sumOf { it.duration.toMinutes() }
+                    StatCell(
+                        "WAKE EVENTS", sleep.wakeEvents.size.toString(), if (awake > 0) "· $awake MIN" else "",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(Modifier.fillMaxWidth()) {
+                    StatCell(
+                        "CONSISTENCY", day.sleepConsistency.index.value?.decimal(0), "%",
+                        absent = day.sleepConsistency.index.absentReason, modifier = Modifier.weight(1f),
+                    )
+                    StatCell(
+                        "RESPIRATORY RATE", day.heart.respiratoryRate.breathsPerMinute.value?.decimal(), "RPM",
+                        absent = day.heart.respiratoryRate.breathsPerMinute.absentReason, modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
         NapsCard(day, state.date)
-        SleepEditActions(day, state.date)
         Card("LAST 7 DAYS") {
             val week = state.week
             WeekBars(
@@ -191,31 +222,17 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 week.map { Palette.Sleep }, week.map { it.sleep.value?.timeAsleep?.hoursMinutes() ?: "" },
             )
         }
+        SleepEditSheets(editor, day, state.date)
     }
 }
 
+/** The night itself: the scrubbable hypnogram over how its time split across the stages. */
 @Composable
-private fun StagesCard(sleep: SleepSession) {
-    val format = LocalTimeFormat.current
+private fun NightCard(sleep: SleepSession) {
     Card("SLEEP STAGES") {
         Hypnogram(sleep)
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(format.time(sleep.start), style = label(10.sp, Palette.Faint))
-            if (sleep.cycles.isNotEmpty()) {
-                Text("${sleep.cycles.size} ${if (sleep.cycles.size == 1) "CYCLE" else "CYCLES"}", style = label(10.sp, Palette.Faint))
-            }
-            Text(format.time(sleep.end), style = label(10.sp, Palette.Faint))
-        }
-        Spacer(Modifier.height(8.dp))
-        val inBed = sleep.timeInBed.toMinutes().coerceAtLeast(1)
-        for ((name, stage) in listOf("AWAKE" to SleepStage.AWAKE, "LIGHT" to SleepStage.LIGHT, "SWS (DEEP)" to SleepStage.DEEP, "REM" to SleepStage.REM)) {
-            Divider()
-            val minutes = sleep.epochs.filter { it.stage == stage }.sumOf { it.duration.toMinutes() }
-            StatRow(name, hoursMinutes(minutes.toInt()), "${minutes * 100 / inBed}%", Palette.stage(stage))
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("Stages are estimated from movement, heart rate and its variability.", style = body(12.sp, Palette.Faint))
+        Spacer(Modifier.height(18.dp))
+        StageBreakdown(sleep)
     }
 }
 
@@ -413,7 +430,7 @@ fun StrainScreen(
                     absent = target.absentReason, alignEnd = true, modifier = Modifier.weight(1f),
                 )
             }
-            RangeBlock(day.references.forKind(MetricKind.STRAIN), strain) { it.decimal() }
+            RangeBlock(day.references.forKind(MetricKind.STRAIN), strain, Palette.Strain) { it.decimal() }
             val goal = target.value
             if (strain != null && goal != null) {
                 Spacer(Modifier.height(12.dp))
@@ -435,7 +452,7 @@ fun StrainScreen(
         }
         Card("FITNESS") {
             MetricRow("VO2 MAX", day.vo2Max.mlPerKgMin, "ML/KG/MIN") { it.decimal() }
-            RangeBlock(day.references.forKind(MetricKind.VO2_MAX), day.vo2Max.mlPerKgMin.value) { it.decimal() }
+            RangeBlock(day.references.forKind(MetricKind.VO2_MAX), day.vo2Max.mlPerKgMin.value, Palette.Strain) { it.decimal() }
         }
         Card("HEART RATE ZONES") {
             ZoneBars(day.strain.zoneMinutes.takeIf { strain != null })

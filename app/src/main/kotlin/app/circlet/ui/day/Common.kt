@@ -54,9 +54,17 @@ fun ScreenColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope
     }
 }
 
-/** Title bar for a detail or pushed screen. A null [onBack] leaves the back slot empty. */
+/**
+ * Title bar for a detail or pushed screen. A null [onBack] leaves the back slot empty;
+ * [action] fills the slot opposite it with one touch-sized control.
+ */
 @Composable
-fun DetailHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null) {
+fun DetailHeader(
+    title: String,
+    subtitle: String? = null,
+    onBack: (() -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -68,7 +76,7 @@ fun DetailHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? 
             Text(title, style = label(15.sp, Palette.White))
             if (subtitle != null) Text(subtitle, style = label(11.sp, Palette.Faint))
         }
-        Spacer(Modifier.width(Space.touch))
+        if (action != null) action() else Spacer(Modifier.width(Space.touch))
     }
 }
 
