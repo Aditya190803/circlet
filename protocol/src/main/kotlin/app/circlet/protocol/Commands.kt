@@ -26,6 +26,8 @@ object Commands {
     private const val HISTORY_RESULT = 0x17
     private const val SET_CLOCK = 0x0A
     private const val TOGGLE_REALTIME_HR = 0x03
+    private const val SEND_R10_R11_REALTIME = 0x3F
+    private const val TOGGLE_IMU_STREAM = 0x6A
     private const val GENERIC_HR_PROFILE = 0x0E
     private const val RUN_HAPTICS = 0x4F
     private const val STOP_HAPTICS = 0x7A
@@ -74,6 +76,17 @@ object Commands {
 
     fun toggleRealtimeHr(seq: Int, on: Boolean): ByteArray =
         command(seq, TOGGLE_REALTIME_HR, byteArrayOf(if (on) 0x01 else 0x00))
+
+    /**
+     * The raw R10/R11 stream, matching OpenStrap `cmdSendR10R11`. Gen 4 only. Off is the real
+     * off switch on Gen 4, and the strap keeps either state across reconnects.
+     */
+    fun toggleRawStream(seq: Int, on: Boolean): ByteArray =
+        command(seq, SEND_R10_R11_REALTIME, byteArrayOf(if (on) 0x01 else 0x00))
+
+    /** The IMU data stream, matching OpenStrap `cmdToggleImu` for Gen 4: a bare on/off byte. */
+    fun toggleImuStream(seq: Int, on: Boolean): ByteArray =
+        command(seq, TOGGLE_IMU_STREAM, byteArrayOf(if (on) 0x01 else 0x00))
 
     /**
      * Standard heart-rate profile (0x180D) on or off.

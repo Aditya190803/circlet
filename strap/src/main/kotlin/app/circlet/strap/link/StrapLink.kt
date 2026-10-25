@@ -39,6 +39,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
+/** The raw R10 stream carries 100 accelerometer samples per one-second record. */
+private const val MOTION_SAMPLE_RATE_HZ = 100
 private const val SYNC_START_IDLE_TIMEOUT_MS = 20_000L
 private const val SYNC_PROGRESS_IDLE_TIMEOUT_MS = 60_000L
 
@@ -77,6 +79,8 @@ internal class StrapLink(
     private var foregroundHeart = false
     private var workoutHeart = false
     private var heartOn = false
+    private var foregroundMotion = false
+    private var motionOn = false
     private var samplesPulled = 0L
     private var samplesBuffered = 0L
     private var strapStoredSeconds: Long? = null
@@ -206,6 +210,8 @@ internal class StrapLink(
             foregroundHeart = false
             workoutHeart = false
             heartOn = false
+            motionOn = false
+            foregroundMotion = false
             host.onForgotten()
             publish { StrapState() }
             return Outcome.Ok(Unit)
@@ -242,6 +248,13 @@ internal class StrapLink(
         }
         reconcileHeart()
         if (enabled) requestDrain(DrainTrigger.FOREGROUND)
+        return Outcome.Ok(Unit)
+    }
+
+    override suspend fun setMotionStream(enabled: Boolean): Outcome<Unit> {
+        if (ports.prefs.pairedAddress().isNullOrBlank()) return notPaired()
+        foregroundMotion = enabled
+        reconcileMotion()
         return Outcome.Ok(Unit)
     }
 
@@ -332,6 +345,7 @@ internal class StrapLink(
         livenessJob?.cancel()
         cancelDrainJobs()
         heartOn = false
+        motionOn = false
         samplesBuffered = 0
         if (drain.open) endDrain(SyncOutcome.DISCONNECTED)
         drain.onDisconnect()
@@ -351,6 +365,7 @@ internal class StrapLink(
         diag.log("link disconnected pulled=$samplesPulled buffered=$samplesBuffered")
         invalidateHistory()
         heartOn = false
+        motionOn = false
         samplesBuffered = 0
         cancelDrainJobs()
         if (drain.open) endDrain(SyncOutcome.DISCONNECTED)
@@ -443,6 +458,10 @@ internal class StrapLink(
         // so live heart rate is off unless something in this session asked for it.
         heartOn = !(foregroundHeart || workoutHeart)
         reconcileHeart()
+        // The raw motion stream also survives reconnects, and it costs strap battery: force it
+        // off at every session unless this session wants it.
+        motionOn = !foregroundMotion
+        reconcileMotion()
         onSessionReady()
     }
 
@@ -629,7 +648,10 @@ internal class StrapLink(
                 publish { it.copy(name = inbound.name) }
             }
             is Inbound.Sampled -> onSample(inbound)
-            is Inbound.Heart -> onHeart(inbound.bpm)
+            is Inbound.Heart -> {
+                onHeart(inbound.bpm)
+                inbound.accelG?.let { onMotion(it) }
+            }
             is Inbound.HistoryReply -> {
                 val expected = if (inbound.opcode == 0x16) historySequence else acknowledgementSequence
                 if (historyRequested && drain.open && inbound.sequence == expected) {
@@ -840,6 +862,24 @@ internal class StrapLink(
         val measured = bpm.takeIf { it in 25..230 }
         publish { it.copy(liveHeartRateBpm = measured, onWrist = true) }
         heartListener(measured)
+    }
+
+    private suspend fun onMotion(magnitudes: List<Double>) {
+        if (!motionOn) return
+        emit(StrapEvent.Motion(time.now(), magnitudes, MOTION_SAMPLE_RATE_HZ))
+    }
+
+    /** Raw stream then IMU on; IMU then raw stream off, as OpenStrap orders the Gen 4 live sequence. */
+    private suspend fun reconcileMotion() {
+        if (stateFlow.value.link != LinkState.CONNECTED) return
+        val want = foregroundMotion
+        if (want == motionOn) return
+        val frames = if (want) {
+            listOf(wire.rawStream(seq.live(), true), wire.imuStream(seq.live(), true))
+        } else {
+            listOf(wire.imuStream(seq.live(), false), wire.rawStream(seq.live(), false))
+        }
+        if (frames.all { write(it) is Outcome.Ok }) motionOn = want
     }
 
     private suspend fun reconcileHeart() {

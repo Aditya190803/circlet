@@ -502,6 +502,23 @@ class StrapLinkTest {
     }
 
     @Test
+    fun motionStreamIsForcedOffEachSessionAndFollowsTheSwitch() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        // The strap keeps the raw stream across reconnects, so a new session turns it off.
+        assertEquals(listOf(0x6A to 0x00, 0x3F to 0x00), motionWrites(rig))
+        assertTrue(rig.link.setMotionStream(true) is Outcome.Ok)
+        runCurrent()
+        assertTrue(rig.link.setMotionStream(false) is Outcome.Ok)
+        runCurrent()
+        assertEquals(
+            listOf(0x6A to 0x00, 0x3F to 0x00, 0x3F to 0x01, 0x6A to 0x01, 0x6A to 0x00, 0x3F to 0x00),
+            motionWrites(rig),
+        )
+    }
+
+    @Test
     fun scanPublishesHitsAndRejectsARadioThatIsOff() = runTest {
         val rig = rig()
         runCurrent()
@@ -615,6 +632,10 @@ class StrapLinkTest {
 
     private fun acks(transport: FakeTransport): List<ByteArray> =
         transport.writes.filter { opcodeOf(it) == 0x17 }
+
+    private fun motionWrites(rig: Rig): List<Pair<Int, Int>> =
+        rig.transport.writes.filter { opcodeOf(it) == 0x3F || opcodeOf(it) == 0x6A }
+            .map { opcodeOf(it) to (innerOf(it)[3].toInt() and 0xFF) }
 
     private fun realtimeBodies(rig: Rig): List<Int> =
         rig.transport.writes.filter { opcodeOf(it) == 0x03 }.map { innerOf(it)[3].toInt() and 0xFF }

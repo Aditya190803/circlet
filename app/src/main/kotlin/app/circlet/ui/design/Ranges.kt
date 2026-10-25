@@ -53,7 +53,8 @@ fun rangeAxis(value: Double?, vararg bands: ReferenceRange?): RangeAxis {
     val low = points.reduce(::minOf)
     val high = points.reduce(::maxOf)
     val pad = if (high > low) (high - low) * 0.3 else 1.0
-    return RangeAxis(low - pad, high + pad)
+    // A metric that is never negative keeps its bar from showing a stretch below zero.
+    return RangeAxis(if (low >= 0) maxOf(0.0, low - pad) else low - pad, high + pad)
 }
 
 /**

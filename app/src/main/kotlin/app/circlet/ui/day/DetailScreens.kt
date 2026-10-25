@@ -1,5 +1,9 @@
 package app.circlet.ui.day
 
+import app.circlet.core.BandSteps
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import app.circlet.ui.design.Tag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -151,6 +155,31 @@ private fun RangeItem(name: String, ref: MetricReference?, value: Double?, unit:
     }
     RangeBlock(ref, value, format)
     Spacer(Modifier.height(12.dp))
+}
+
+/**
+ * The experimental band step count for the day beside the phone's, while the user has band
+ * steps on or the day already holds a band count.
+ */
+@Composable
+private fun BandStepsCard(band: BandSteps, state: DayUiState, day: DaySummary) {
+    val on by band.enabled.collectAsState()
+    val days by band.days.collectAsState()
+    val counted = days[state.date]
+    if (!on && counted == null) return
+    Card("BAND STEPS", trailing = { Tag("EXPERIMENTAL", Palette.Warn) }) {
+        StatRow(
+            "COUNTED BY THE BAND", counted?.steps?.grouped(),
+            note = if (counted == null) "Open Circlet with the band connected to count" else "During ${hoursMinutes(counted.streamedSeconds / 60)} of live streaming",
+        )
+        Divider()
+        StatRow("COUNTED BY THE PHONE", day.steps.count.value?.grouped(), absent = day.steps.count.absentReason)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "The band counts only while Circlet is open and connected, so it covers part of the day. It is not yet validated; compare it with the phone on a walk.",
+            style = body(12.sp, Palette.Faint),
+        )
+    }
 }
 
 /** One card of bars for the last seven days, under the screen's "Weekly Trends" heading. */
@@ -524,6 +553,7 @@ fun StrainScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onOpenActivity: (String) -> Unit = {},
+    bandSteps: BandSteps? = null,
 ) {
     DetailFrame("STRAIN", state, onBack, onRetry, "DAY STRAIN") { day ->
         val format = LocalTimeFormat.current
@@ -578,6 +608,7 @@ fun StrainScreen(
             )
             BaselineLegend(state.earlier.size, state.isToday)
         }
+        bandSteps?.let { BandStepsCard(it, state, day) }
         Card(if (state.isToday) "TODAY'S TARGET" else "TARGET", trailing = { InfoButton("Strain target", "Day strain runs from 0 to 21 and climbs as your heart works harder. The optimal range comes from that morning's recovery: the better recovered you are, the harder the day it suggests.") }) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(strain?.decimal(), "DAY STRAIN", absent = day.strain.score.absentReason, modifier = Modifier.weight(1f))

@@ -55,6 +55,7 @@ object RealBackend {
 
     @Volatile
     private var stepRecorder: PhoneStepRecorder? = null
+    private var bandSteps: BandStepRecorder? = null
 
     private val workers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -123,6 +124,7 @@ object RealBackend {
             strap = StrapModule.open(context, opened.ports, SystemTimeSource)
             data = opened
             recordPhoneSteps(context, opened)
+            bandSteps = BandStepRecorder(context, strap!!.strap, { ZoneId.systemDefault() }, workers)
             RouteRecorder.locationService = { ctx, wanted -> StrapService.setLocationWanted(ctx, wanted) }
         }
     }
@@ -170,6 +172,7 @@ object RealBackend {
             onboarding = data.onboarding,
             zoneDefaults = ZoneDefaults { profile, on, resting -> defaultZoneBounds(profile, on, resting) },
             diagnostics = strap.diagnostics,
+            bandSteps = bandSteps,
         )
     }
 }

@@ -274,8 +274,16 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
     LaunchedEffect(day) { day.messages.collect(messenger::show) }
     val inApp = entry != null && entry?.destination?.route != Routes.ONBOARDING
     LifecycleStartEffect(inApp) {
-        if (inApp) day.setLive(true)
-        onStopOrDispose { if (inApp) day.setLive(false) }
+        if (inApp) {
+            day.setLive(true)
+            container.bandSteps?.setForeground(true)
+        }
+        onStopOrDispose {
+            if (inApp) {
+                day.setLive(false)
+                container.bandSteps?.setForeground(false)
+            }
+        }
     }
     LaunchedEffect(messenger.shown) {
         if (messenger.text != null) {
@@ -354,6 +362,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             onBack = { nav.popBackStack() },
                             onRetry = day::retry,
                             onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
+                            bandSteps = container.bandSteps,
                         )
                     }
                     composable(Tab.MORE.route) {

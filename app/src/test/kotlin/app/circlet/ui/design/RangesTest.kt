@@ -46,6 +46,12 @@ class RangesTest {
     }
 
     @Test
+    fun rangeAxisNeverPadsANonNegativeMetricBelowZero() {
+        val axis = rangeAxis(8.0, ReferenceRange(0.0, 5.0), ReferenceRange(7.7, 11.0))
+        assertEquals(0.0, axis.low, 1e-9)
+    }
+
+    @Test
     fun rangeScorePeaksInTheMiddleOfTheGoodBand() {
         val good = ReferenceRange(40.0, 60.0)
         assertEquals(1f, rangeScore(50.0, good, 30.0), 1e-6f)

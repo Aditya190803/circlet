@@ -73,6 +73,12 @@ sealed interface StrapEvent {
 
     /** The strap asked the phone to drain history soon. */
     data class HighFrequencySyncPrompt(override val at: Instant) : StrapEvent
+
+    /**
+     * One second of the live motion stream: accelerometer magnitude in g, gravity included,
+     * at [sampleRateHz] in time order. Only arrives while the motion stream is on.
+     */
+    data class Motion(override val at: Instant, val magnitudesG: List<Double>, val sampleRateHz: Int) : StrapEvent
 }
 
 // Ported from OpenStrap protocol/lib/src/records.dart: kMinRrMs, kMaxRrMs,

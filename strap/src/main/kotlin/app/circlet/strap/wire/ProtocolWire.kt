@@ -63,7 +63,8 @@ internal sealed interface Inbound {
     data class Battery(val percent: Double) : Inbound
     data class Name(val name: String) : Inbound
     data class Sampled(val sample: Sample?, val raw: RawRecord) : Inbound
-    data class Heart(val bpm: Int) : Inbound
+    /** [accelG] is a second of 100 Hz acceleration magnitude, present on the raw motion stream only. */
+    data class Heart(val bpm: Int, val accelG: List<Double>? = null) : Inbound
     data class HistoryReply(val opcode: Int, val sequence: Int, val result: Int) : Inbound
     data class Meta(val kind: MetaKind, val token: ByteArray?) : Inbound
     data class Signal(val signal: StrapSignal, val epochSecond: Long, val battery: Double?, val charging: Boolean?) : Inbound
@@ -147,6 +148,10 @@ internal class ProtocolWire {
 
     fun realtime(seq: Int, on: Boolean): ByteArray = vetted(Commands.toggleRealtimeHr(seq, on))
 
+    fun rawStream(seq: Int, on: Boolean): ByteArray = vetted(Commands.toggleRawStream(seq, on))
+
+    fun imuStream(seq: Int, on: Boolean): ByteArray = vetted(Commands.toggleImuStream(seq, on))
+
     fun broadcast(seq: Int, on: Boolean): ByteArray = vetted(Commands.toggleGenericHrProfile(seq, on))
 
     fun haptics(seq: Int, pattern: Int): ByteArray = vetted(Commands.runHaptics(seq, pattern))
@@ -177,7 +182,7 @@ internal class ProtocolWire {
         null -> Inbound.Ignore
         is Packet.Response -> response(packet)
         is Packet.Historical -> sampled(packet)
-        is Packet.Realtime -> Inbound.Heart(packet.heartRate)
+        is Packet.Realtime -> Inbound.Heart(packet.heartRate, packet.accelG)
         is Packet.Event -> signal(packet)
         is Packet.Metadata -> Inbound.Meta(
             when (packet.kind) {

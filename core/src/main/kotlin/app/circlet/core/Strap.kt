@@ -113,6 +113,13 @@ interface StrapController {
 
     suspend fun setLiveHeartRate(enabled: Boolean): Outcome<Unit>
 
+    /**
+     * The band's raw motion stream, delivered as [StrapEvent.Motion]. It costs strap battery,
+     * so callers turn it on only while it is needed. The link turns it off on every new
+     * session unless it is wanted, because the strap keeps it running across reconnects.
+     */
+    suspend fun setMotionStream(enabled: Boolean): Outcome<Unit>
+
     suspend fun buzz(haptic: Haptic): Outcome<Unit>
 
     suspend fun setBroadcast(enabled: Boolean): Outcome<Unit>
