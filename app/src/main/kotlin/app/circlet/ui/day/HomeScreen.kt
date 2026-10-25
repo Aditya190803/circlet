@@ -251,7 +251,7 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
                 shown != null -> Text(shown.toString(), style = number(40.sp))
                 else -> AbsentDash(Modifier.padding(vertical = 22.dp).size(width = 34.dp, height = 4.dp))
             }
-            Text(if (state.isToday) "  BPM" else "  AVG BPM", style = label(12.sp), modifier = Modifier.padding(top = 10.dp))
+            if (!state.isToday) Text("  AVG", style = label(12.sp), modifier = Modifier.padding(top = 10.dp))
             Spacer(Modifier.weight(1f))
             if (state.isToday) {
                 LiveDot(if (connected) Palette.Teal else Palette.Faint, connected && live != null)
@@ -424,7 +424,6 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(live.heartRateBpm?.toString() ?: "–", style = number(26.sp, Palette.White))
-                Text("BPM", style = label(10.sp, Palette.Faint))
             }
             Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 8.dp))
         }
@@ -452,13 +451,13 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
     val resting = summary.heart.resting.bpm.value?.toDouble()
     val restingUsual = usual { it.heart.resting.bpm.value?.toDouble() }
     BaselineTile(
-        Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0), unit = "BPM",
+        Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0),
     ) { onOpenMetric(MetricKind.RESTING_HEART_RATE) }
 
     val breaths = summary.heart.respiratoryRate.breathsPerMinute.value
     val breathsUsual = usual { it.heart.respiratoryRate.breathsPerMinute.value }
     BaselineTile(
-        Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1), unit = "RPM",
+        Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1),
     ) { onOpenMetric(MetricKind.RESPIRATORY_RATE) }
 
     // Skin temperature is already a deviation from the user's own nights, so its baseline is zero.
@@ -474,7 +473,7 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
             deviation != null -> "0.0"
             else -> null
         },
-        change(deviation, 0.0, null, 0.1), unit = "SD",
+        change(deviation, 0.0, null, 0.1),
     ) { onOpenMetric(MetricKind.SKIN_TEMPERATURE) }
 
     val asleep = summary.sleep.value?.timeAsleep?.toMinutes()?.toDouble()
@@ -488,7 +487,7 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
     val caloriesUsual = usual { it.calories.value?.toDouble() }
     BaselineTile(
         Glyph.Flame, "CALORIES", summary.calories.value?.grouped(), caloriesUsual?.toInt()?.grouped(),
-        change(calories, caloriesUsual, null, 1.0), unit = "KCAL",
+        change(calories, caloriesUsual, null, 1.0),
     ) { onOpenMetric(MetricKind.CALORIES) }
 
     val steps = summary.steps.count.value?.toDouble()
