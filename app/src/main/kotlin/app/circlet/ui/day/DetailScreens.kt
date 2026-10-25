@@ -29,6 +29,9 @@ import app.circlet.core.SkinTempFlag
 import app.circlet.core.SkinTemperature
 import app.circlet.core.SleepSession
 import app.circlet.ui.design.AbsentDash
+import app.circlet.ui.design.InfoButton
+import app.circlet.ui.design.SleepWindow
+import app.circlet.ui.design.SleepWindows
 import app.circlet.ui.design.BaselineLegend
 import app.circlet.ui.design.BaselineRow
 import app.circlet.ui.design.SectionTitle
@@ -130,6 +133,10 @@ private fun RangeBlock(ref: MetricReference?, value: Double?, format: (Double) -
     RangeLegend(ref.personal, ref.personalDays, ref.ideal, format)
 }
 
+/** A bar-chart ceiling a little above the week's highest value, so the tallest bar keeps room for its label. */
+private fun DayUiState.weekTop(pick: (DaySummary) -> Double?): Float =
+    ((week.mapNotNull(pick).maxOrNull() ?: 1.0) * 1.15).toFloat().coerceAtLeast(1f)
+
 /** The mean of [pick] over the days before the one shown, or null with fewer than two. */
 private fun DayUiState.usual(pick: (DaySummary) -> Double?): Double? = average(earlier.mapNotNull(pick))
 
@@ -146,7 +153,7 @@ private fun RangeItem(name: String, ref: MetricReference?, value: Double?, unit:
     Spacer(Modifier.height(12.dp))
 }
 
-/** "Weekly Trends" and one card of bars for the last seven days. */
+/** One card of bars for the last seven days, under the screen's "Weekly Trends" heading. */
 @Composable
 private fun WeeklyTrend(
     title: String,
@@ -156,7 +163,6 @@ private fun WeeklyTrend(
     pick: (DaySummary) -> Float?,
     caption: (DaySummary) -> String?,
 ) {
-    SectionTitle("Weekly Trends")
     Card(title) {
         val week = state.week
         WeekBars(week.map(pick), week.dayLabels(), max, week.map(color), week.map { caption(it) ?: "" })
@@ -196,14 +202,14 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             NightContributors(state, day, sleep)
             NightCard(sleep)
         } else {
-            Card("SLEEP STAGES") {
+            Card("SLEEP STAGES", trailing = { InfoButton("Sleep stages", "Your night split into awake, light, deep (slow-wave) and REM sleep. Circlet estimates the stage every 30 seconds from your heart rate, its beat-to-beat variability and your movement. Hold and drag the chart to read any moment. Percentages are shares of your time in bed.") }) {
                 EmptyState(Glyph.Moon, "NO SLEEP RECORDED", "Stages draw here after a night with the strap on, or add the night yourself.")
                 Spacer(Modifier.height(Space.sm))
                 SecondaryButton("ADD SLEEP", glyph = Glyph.Plus) { editor.editing = true }
                 RestoreSleepButton(state.date)
             }
         }
-        Card("HOURS VS. NEEDED") {
+        Card("HOURS VS. NEEDED", trailing = { InfoButton("Hours vs. needed", "How long you slept against what you needed. Your need starts from a baseline for adults, rises after harder days and when you carry sleep debt, and becomes your own as nights build up. The bar places the night against your usual range and the ideal range.") }) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(
                     sleep?.timeAsleep?.hoursMinutes(), "ASLEEP",
@@ -227,7 +233,7 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             }
         }
         if (sleep != null) {
-            Card("SLEEP STATISTICS") {
+            Card("SLEEP STATISTICS", trailing = { InfoButton("Sleep statistics", "Time in bed is the whole sleep window. Fell asleep in is how long it took to drop off once the window began. Wake events count the times you woke during the night.") }) {
                 Row(Modifier.fillMaxWidth()) {
                     StatCell("TIME IN BED", sleep.timeInBed.hoursMinutes(), modifier = Modifier.weight(1f))
                     StatCell("FELL ASLEEP IN", sleep.latency.toMinutes().toString(), "MIN", modifier = Modifier.weight(1f))
@@ -236,10 +242,22 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             }
         }
         NapsCard(day, state.date)
+        SectionTitle("Weekly Trends")
         WeeklyTrend(
             "HOURS OF SLEEP", state, 600f, { Palette.Sleep },
             { it.sleep.value?.timeAsleep?.toMinutes()?.toFloat() }, { it.sleep.value?.timeAsleep?.hoursMinutes() },
         )
+        WeeklyTrend(
+            "SLEEP PERFORMANCE", state, 100f, { Palette.Sleep },
+            { it.sleepPerformance.percent.value?.toFloat() }, { it.sleepPerformance.percent.value?.let { v -> "$v%" } },
+        )
+        Card("SLEEP CONSISTENCY", trailing = { InfoButton("Sleep consistency", "When you went to bed and woke up on each night of the week. The dashed lines mark your average bedtime and wake time; keeping close to them makes sleep more consistent.") }) {
+            val week = state.week
+            SleepWindows(
+                week.map { d -> d.sleep.value?.let { SleepWindow(d.date, it.start, it.end) } },
+                week.dayLabels(),
+            )
+        }
         SleepEditSheets(editor, day, state.date)
     }
 }
@@ -282,7 +300,7 @@ private fun NightContributors(state: DayUiState, day: DaySummary, sleep: SleepSe
 /** The night itself: the scrubbable hypnogram over how its time split across the stages. */
 @Composable
 private fun NightCard(sleep: SleepSession) {
-    Card("SLEEP STAGES") {
+    Card("SLEEP STAGES", trailing = { InfoButton("Sleep stages", "Your night split into awake, light, deep (slow-wave) and REM sleep. Circlet estimates the stage every 30 seconds from your heart rate, its beat-to-beat variability and your movement. Hold and drag the chart to read any moment. Percentages are shares of your time in bed.") }) {
         Hypnogram(sleep)
         Spacer(Modifier.height(18.dp))
         StageBreakdown(sleep)
@@ -349,7 +367,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
         DriversCard(recovery.drivers)
         val refs = day.references
         if (listOf(MetricKind.HRV, MetricKind.RESTING_HEART_RATE, MetricKind.RESPIRATORY_RATE).any { refs.forKind(it) != null }) {
-            Card("YOUR NORMAL RANGE") {
+            Card("YOUR NORMAL RANGE", trailing = { InfoButton("Your normal range", "The grey bracket is your usual range over recent nights. Teal segments mark the healthy range for adults like you, and orange segments sit further from it. The marker is this day's value.") }) {
                 RangeItem("HRV", refs.forKind(MetricKind.HRV), day.heart.hrv.rmssdMs.value, "") { it.decimal(0) }
                 RangeItem(
                     "RESTING HEART RATE", refs.forKind(MetricKind.RESTING_HEART_RATE), day.heart.resting.bpm.value?.toDouble(), "BPM",
@@ -360,7 +378,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 ) { it.decimal() }
             }
         }
-        Card("HRV IN DETAIL") {
+        Card("HRV IN DETAIL", trailing = { InfoButton("HRV in detail", "SDNN is the overall spread of the gaps between heartbeats overnight. LF / HF compares slower and faster rhythms in that variability, a rough read of how stress and rest systems are balanced.") }) {
             MetricRow("SDNN", day.heart.hrv.sdnnMs, "MS") { it.decimal(0) }
             Divider()
             StatRow(
@@ -369,9 +387,18 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             )
         }
         SkinTemperatureCard(day.skinTemperature, state.history.takeLast(14).map { it.skinTemperature?.settledMeanCounts?.toFloat() })
+        SectionTitle("Weekly Trends")
         WeeklyTrend(
             "RECOVERY", state, 100f, { Palette.recovery(it.recovery.score.value) },
             { it.recovery.score.value?.toFloat() }, { it.recovery.score.value?.let { v -> "$v%" } },
+        )
+        WeeklyTrend(
+            "HEART RATE VARIABILITY", state, state.weekTop { it.heart.hrv.rmssdMs.value }, { Palette.Strain },
+            { it.heart.hrv.rmssdMs.value?.toFloat() }, { it.heart.hrv.rmssdMs.value?.decimal(0) },
+        )
+        WeeklyTrend(
+            "RESTING HEART RATE", state, state.weekTop { it.heart.resting.bpm.value?.toDouble() }, { Palette.Strain },
+            { it.heart.resting.bpm.value?.toFloat() }, { it.heart.resting.bpm.value?.toString() },
         )
     }
 }
@@ -388,7 +415,7 @@ private const val SKIN_BASELINE_NIGHTS = 7
  */
 @Composable
 private fun SkinTemperatureCard(skin: SkinTemperature?, nightly: List<Float?>) {
-    Card("SKIN TEMPERATURE") {
+    Card("SKIN TEMPERATURE", trailing = { InfoButton("Skin temperature", "WHOOP 4.0 sends skin temperature as a raw sensor value, not degrees. Circlet compares each night with your own nights and shows how far it moved in standard deviations. An early estimate appears from the third night, and the full reading after seven.") }) {
         when {
             skin == null -> Text(
                 "Current body temperature is unavailable: WHOOP 4.0 does not provide a verified reading in °C or °F through this connection. " +
@@ -460,7 +487,7 @@ private fun RecoveryDriverKind.label() = when (this) {
 /** The inputs behind the score, largest effect first, each as points added or taken. */
 @Composable
 fun DriversCard(drivers: List<RecoveryDriver>) {
-    Card("WHAT MOVED YOUR RECOVERY") {
+    Card("WHAT MOVED YOUR RECOVERY", trailing = { InfoButton("What moved your recovery", "The points each input added to or took from your recovery score, compared with your own baseline. Inputs further from your normal move the score more.") }) {
         val scale = drivers.mapNotNull { it.contribution }.maxOfOrNull { abs(it) }?.coerceAtLeast(5.0) ?: 5.0
         drivers.sortedByDescending { abs(it.contribution ?: -1.0) }.forEachIndexed { i, driver ->
             if (i > 0) Divider()
@@ -551,7 +578,7 @@ fun StrainScreen(
             )
             BaselineLegend(state.earlier.size, state.isToday)
         }
-        Card(if (state.isToday) "TODAY'S TARGET" else "TARGET") {
+        Card(if (state.isToday) "TODAY'S TARGET" else "TARGET", trailing = { InfoButton("Strain target", "Day strain runs from 0 to 21 and climbs as your heart works harder. The optimal range comes from that morning's recovery: the better recovered you are, the harder the day it suggests.") }) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(strain?.decimal(), "DAY STRAIN", absent = day.strain.score.absentReason, modifier = Modifier.weight(1f))
                 val optimal = day.targetStrain.range
@@ -587,10 +614,10 @@ fun StrainScreen(
                 )
             }
         }
-        Card("HEART RATE ZONES") {
+        Card("HEART RATE ZONES", trailing = { InfoButton("Heart rate zones", "Time spent in each heart rate zone. Zones come from your heart rate reserve, the span between your resting and maximum heart rate, or from your own zones if you set them in your profile.") }) {
             ZoneBars(day.strain.zoneMinutes.takeIf { strain != null })
         }
-        Card("FITNESS") {
+        Card("FITNESS", trailing = { InfoButton("Fitness", "VO2 max is an estimate of aerobic fitness worked out on your phone from your maximum and resting heart rate, not a lab test. Max heart rate is the highest reading of the day.") }) {
             val vo2 = day.references.forKind(MetricKind.VO2_MAX)
             if (vo2 != null) {
                 RangeItem("VO2 MAX", vo2, day.vo2Max.mlPerKgMin.value, "ML/KG/MIN") { it.decimal() }
@@ -617,9 +644,18 @@ fun StrainScreen(
                 )
             }
         }
+        SectionTitle("Weekly Trends")
         WeeklyTrend(
             "STRAIN", state, 21f, { Palette.Strain },
             { it.strain.score.value?.toFloat() }, { it.strain.score.value?.decimal() },
+        )
+        WeeklyTrend(
+            "CALORIES", state, state.weekTop { it.calories.value?.toDouble() }, { Palette.Strain },
+            { it.calories.value?.toFloat() }, { it.calories.value?.grouped() },
+        )
+        WeeklyTrend(
+            "STEPS", state, state.weekTop { it.steps.count.value?.toDouble() }, { Palette.Strain },
+            { it.steps.count.value?.toFloat() }, { it.steps.count.value?.let { v -> if (v >= 10_000) "${v / 1000}K" else v.grouped() } },
         )
     }
 

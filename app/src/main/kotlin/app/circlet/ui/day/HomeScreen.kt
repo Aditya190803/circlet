@@ -41,6 +41,12 @@ import app.circlet.core.SkinTempFlag
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
+import app.circlet.ui.design.InfoButton
+import app.circlet.ui.design.Shapes
+import app.circlet.ui.design.StressTimeline
+import app.circlet.core.STRESS_HIGH_CUTOFF
+import app.circlet.core.STRESS_LOW_CUTOFF
+import androidx.compose.ui.draw.clip
 import app.circlet.ui.design.BaselineLegend
 import app.circlet.ui.design.BaselineTile
 import app.circlet.ui.design.SectionTitle
@@ -99,6 +105,7 @@ fun HomeScreen(
     onOpenActivity: (String) -> Unit = {},
     onOpenAllActivities: () -> Unit = {},
     onOpenMetric: (MetricKind) -> Unit = {},
+    onOpenStress: () -> Unit = {},
     live: LiveWorkout? = null,
     onStartWorkout: () -> Unit = {},
     onOpenLive: () -> Unit = {},
@@ -126,6 +133,7 @@ fun HomeScreen(
                 if (live != null) LiveWorkoutCard(live, onOpenLive)
                 Dials(summary, loading, onOpen)
                 HeartCard(state, summary, loading)
+                StressCard(state, summary, loading, onOpenStress)
                 when (val day = state.day) {
                     is Loadable.Failed -> ErrorState(day.message, onRetry)
                     else -> state.notice?.let { DayNotice(it) { onNotice(it) } }
@@ -231,7 +239,7 @@ private fun StrapState.status(): String = when {
 
 @Composable
 private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
-    Card("HEART RATE") {
+    Card("HEART RATE", trailing = { InfoButton("Heart rate", "Today shows the live reading from your strap; earlier days show the day's average. Hold and drag the chart to read any minute.") }) {
         val strap = state.strap
         val connected = strap.link == LinkState.CONNECTED
         // Today shows the live reading; an earlier day shows that day's average instead.
@@ -260,9 +268,54 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
     }
 }
 
+/** The day's stress score and its timeline. Tapping the card opens the full stress day. */
+@Composable
+private fun StressCard(state: DayUiState, summary: DaySummary?, loading: Boolean, onOpen: () -> Unit) {
+    val stress = summary?.stress
+    val score = stress?.score?.value
+    Card(
+        "STRESS MONITOR",
+        modifier = Modifier
+            .clip(Shapes.card)
+            .clickable(role = Role.Button, onClickLabel = "Open stress", onClick = onOpen),
+        trailing = { InfoButton("Stress monitor", "Stress runs from 0 to 100 and is read through the day from the rhythm of your heartbeats, using Baevsky's stress index. Higher means your body is under more load. Hold and drag the chart to read any hour, or tap the card for the full day.") },
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            when {
+                loading -> Skeleton(Modifier.padding(vertical = 12.dp).size(width = 56.dp, height = 16.dp))
+                score == null -> AbsentDash(Modifier.padding(vertical = 18.dp).size(width = 34.dp, height = 4.dp))
+                else -> {
+                    Text(score.toInt().toString(), style = number(40.sp, Palette.stress(score)))
+                    Text(" / 100", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(bottom = 8.dp))
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (score != null) {
+                Text(
+                    when {
+                        score >= STRESS_HIGH_CUTOFF -> "HIGH"
+                        score >= STRESS_LOW_CUTOFF -> "MEDIUM"
+                        else -> "LOW"
+                    },
+                    style = label(12.sp, Palette.stress(score)),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+        }
+        if (!loading) {
+            Spacer(Modifier.height(8.dp))
+            StressTimeline(
+                stress?.timeline.orEmpty(),
+                state.date.atStartOfDay(LocalTimeFormat.current.zone).toInstant(),
+                if (state.isToday) "Stress draws here through the day as the strap syncs" else stress?.score?.absentReason?.words() ?: "No stress recorded this day",
+            )
+        }
+    }
+}
+
 @Composable
 private fun PlanCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
-    Card(if (state.isToday) "TODAY'S PLAN" else "PLAN FOR THE DAY") {
+    Card(if (state.isToday) "TODAY'S PLAN" else "PLAN FOR THE DAY", trailing = { InfoButton("Plan", "The optimal strain comes from that morning's recovery. Sleep need starts from your baseline need and rises with the day's strain and any sleep debt you carry.") }) {
         val target = summary?.targetStrain?.score
         val optimal = summary?.targetStrain?.range
         val need = summary?.sleepNeed

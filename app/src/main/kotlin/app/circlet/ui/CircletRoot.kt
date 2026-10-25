@@ -343,6 +343,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                             onStartWorkout = { nav.navigate(Routes.START_WORKOUT) },
                             onOpenLive = { nav.navigate(Routes.LIVE_WORKOUT) },
                             onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
+                            onOpenStress = { nav.navigate(Routes.stress(state.date)) },
                         )
                     }
                     composable(Tab.SLEEP.route) { SleepScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
