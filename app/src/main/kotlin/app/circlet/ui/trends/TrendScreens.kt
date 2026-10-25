@@ -36,6 +36,7 @@ import app.circlet.ui.LocalMessenger
 import app.circlet.ui.design.RangeBar
 import app.circlet.ui.design.RangeLegend
 import app.circlet.ui.design.forKind
+import app.circlet.ui.design.toward
 import app.circlet.ui.state.today
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -177,7 +178,7 @@ private fun YourRangeCard(kind: MetricKind, day: DaySummary?) {
     val ref = day?.references?.forKind(kind) ?: return
     val value = day.metricValue(kind).value
     Card(title = "YOUR RANGE") {
-        RangeBar(value, ref.personal, ref.ideal)
+        RangeBar(value, ref.personal, ref.ideal, valueText = value?.let { kind.format(it) }, toward = kind.toward())
         RangeLegend(
             personal = ref.personal,
             personalDays = ref.personalDays,

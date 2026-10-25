@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import app.circlet.ui.design.body
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Text
@@ -498,7 +501,7 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = if (tab != null) 68.dp else 0.dp),
+                    .padding(bottom = if (tab != null) 84.dp else 0.dp),
             )
         }
     }
@@ -520,7 +523,11 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
         Modifier
             .fillMaxWidth()
             .background(Palette.BgBottom)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(32.dp))
+            .background(Palette.CardFill)
+            .padding(horizontal = 4.dp),
     ) {
         for (tab in Tab.entries) {
             val on = tab == current
@@ -535,10 +542,14 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
                     }
                     .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
-                Icon(tab.glyph, tint, 22.dp)
-                Text(tab.title, style = label(10.sp, tint), maxLines = 1)
+                Icon(tab.glyph, tint, 24.dp)
+                Text(
+                    tab.title.lowercase().replaceFirstChar { it.uppercase() },
+                    style = body(12.sp, tint).copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium),
+                    maxLines = 1,
+                )
             }
         }
     }

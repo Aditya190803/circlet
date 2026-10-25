@@ -35,7 +35,6 @@ import app.circlet.ui.design.Palette
 import app.circlet.ui.design.Space
 import app.circlet.ui.design.dateTitle
 import app.circlet.ui.design.label
-import app.circlet.ui.design.narrowDay
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -137,4 +136,7 @@ fun TopBar(
 /** A mean worth showing: two or more real values. */
 fun average(values: List<Double>): Double? = if (values.size >= 2) values.average() else null
 
-fun List<DaySummary>.dayLabels(): List<String> = map { it.date.narrowDay() }
+/** "Sun" over "20", the way a week of bars is labelled. */
+fun List<DaySummary>.dayLabels(): List<String> = map {
+    it.date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault()) + "\n" + it.date.dayOfMonth
+}

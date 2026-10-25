@@ -41,6 +41,9 @@ import app.circlet.core.SkinTempFlag
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
+import app.circlet.ui.design.BaselineTile
+import app.circlet.ui.design.SectionTitle
+import app.circlet.ui.design.change
 import app.circlet.ui.design.Card
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.ErrorState
@@ -125,13 +128,14 @@ fun HomeScreen(
                     is Loadable.Failed -> ErrorState(day.message, onRetry)
                     else -> state.notice?.let { DayNotice(it) { onNotice(it) } }
                 }
-                HeartCard(state, summary, loading)
-                PlanCard(state, summary, loading)
+                SectionTitle("My Day")
                 MyDayCard(
                     summary, loading, onOpen, onOpenActivity, onOpenAllActivities,
-                    onStartWorkout = onStartWorkout.takeIf { state.isToday && live == null },
+                    onStartWorkout = onStartWorkout.takeIf { state.isToday && live == null }, today = state.isToday,
                 )
-                KeyStatistics(state, summary, loading, onOpenMetric)
+                PlanCard(state, summary, loading)
+                HeartCard(state, summary, loading)
+                Dashboard(state, summary, onOpenMetric)
             }
         }
     }
@@ -288,9 +292,10 @@ private fun MyDayCard(
     onOpenActivity: (String) -> Unit,
     onOpenAllActivities: () -> Unit,
     onStartWorkout: (() -> Unit)?,
+    today: Boolean,
 ) {
     val format = LocalTimeFormat.current
-    Card("MY DAY") {
+    Card(if (today) "TODAY'S ACTIVITIES" else "ACTIVITIES") {
         if (loading) {
             repeat(2) {
                 if (it > 0) Divider()
@@ -371,57 +376,69 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Boolean, onOpenMetric: (MetricKind) -> Unit) {
-    Card("KEY STATISTICS") {
-        if (summary == null) {
-            for ((i, name) in listOf("HRV", "RESTING HEART RATE", "RESPIRATORY RATE", "HOURS OF SLEEP", "CALORIES", "STEPS").withIndex()) {
-                if (i > 0) Divider()
-                StatRow(name, null, loading = loading)
-            }
-            return@Card
-        }
-        val week = state.week
-        val hrv = average(week.mapNotNull { it.heart.hrv.rmssdMs.value })
-        val resting = average(week.mapNotNull { it.heart.resting.bpm.value?.toDouble() })
-        val breaths = average(week.mapNotNull { it.heart.respiratoryRate.breathsPerMinute.value })
-        val asleep = average(week.mapNotNull { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() })
-        val refs = summary.references
-        MetricRow(
-            "HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" },
-            tag = positionTag(summary.heart.hrv.rmssdMs.value, refs.forKind(MetricKind.HRV)?.personal),
-            onClick = { onOpenMetric(MetricKind.HRV) },
-        ) { it.decimal(0) }
-        Divider()
-        MetricRow(
-            "RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" },
-            tag = positionTag(summary.heart.resting.bpm.value?.toDouble(), refs.forKind(MetricKind.RESTING_HEART_RATE)?.personal),
-            onClick = { onOpenMetric(MetricKind.RESTING_HEART_RATE) },
-        ) { it.toString() }
-        Divider()
-        MetricRow(
-            "RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" },
-            tag = positionTag(summary.heart.respiratoryRate.breathsPerMinute.value?.toDouble(), refs.forKind(MetricKind.RESPIRATORY_RATE)?.personal),
-            onClick = { onOpenMetric(MetricKind.RESPIRATORY_RATE) },
-        ) { it.decimal() }
-        Divider()
-        val skin = summary.skinTemperature
-        val scored = skin != null && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
-        val deviation = if (scored) skin?.deviation?.value else null
-        StatRow(
-            "SKIN TEMPERATURE", deviation?.signedDeviation(), "SD",
-            note = when {
-                skin == null -> "Current temperature unavailable from this strap"
-                !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
-                else -> "Deviation from your own nights"
-            },
-            absent = if (scored && deviation == null) skin?.deviation?.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
-            onClick = { onOpenMetric(MetricKind.SKIN_TEMPERATURE) },
-        )
-        Divider()
-        MetricRow("HOURS OF SLEEP", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }, onClick = { onOpenMetric(MetricKind.SLEEP_DURATION) }) { it.timeAsleep.hoursMinutes() }
-        Divider()
-        MetricRow("CALORIES", summary.calories, "KCAL", onClick = { onOpenMetric(MetricKind.CALORIES) }) { it.grouped() }
-        Divider()
-        MetricRow("STEPS", summary.steps.count, onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
+private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (MetricKind) -> Unit) {
+    SectionTitle("My Dashboard")
+    if (summary == null) {
+        for ((glyph, name) in listOf(
+            Glyph.Pulse to "HEART RATE VARIABILITY", Glyph.Heart to "RESTING HEART RATE", Glyph.Breathing to "RESPIRATORY RATE",
+            Glyph.Moon to "HOURS OF SLEEP", Glyph.Flame to "CALORIES", Glyph.Steps to "STEPS",
+        )) BaselineTile(glyph, name, null, null, null)
+        return
     }
+    fun usual(pick: (DaySummary) -> Double?) = average(state.earlier.mapNotNull(pick))
+
+    val hrv = summary.heart.hrv.rmssdMs.value
+    val hrvUsual = usual { it.heart.hrv.rmssdMs.value }
+    BaselineTile(
+        Glyph.Pulse, "HEART RATE VARIABILITY", hrv?.decimal(0), hrvUsual?.decimal(0), change(hrv, hrvUsual, true, 1.0),
+    ) { onOpenMetric(MetricKind.HRV) }
+
+    val resting = summary.heart.resting.bpm.value?.toDouble()
+    val restingUsual = usual { it.heart.resting.bpm.value?.toDouble() }
+    BaselineTile(
+        Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0),
+    ) { onOpenMetric(MetricKind.RESTING_HEART_RATE) }
+
+    val breaths = summary.heart.respiratoryRate.breathsPerMinute.value
+    val breathsUsual = usual { it.heart.respiratoryRate.breathsPerMinute.value }
+    BaselineTile(
+        Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1),
+    ) { onOpenMetric(MetricKind.RESPIRATORY_RATE) }
+
+    // Skin temperature is already a deviation from the user's own nights, so its baseline is zero.
+    // While that baseline builds, the deviation is an early estimate and the tile says so.
+    val skin = summary.skinTemperature
+    val deviation = skin?.deviation?.value
+    val building = skin?.flag == SkinTempFlag.NOT_ENOUGH_BASELINE
+    BaselineTile(
+        Glyph.Target, "SKIN TEMPERATURE", deviation?.signedDeviation(),
+        when {
+            building && deviation != null -> "ESTIMATE"
+            building -> "${skin?.baselineNights?.coerceAtMost(7)} OF 7 NIGHTS"
+            deviation != null -> "0.0 SD"
+            else -> null
+        },
+        change(deviation, 0.0, null, 0.1),
+    ) { onOpenMetric(MetricKind.SKIN_TEMPERATURE) }
+
+    val asleep = summary.sleep.value?.timeAsleep?.toMinutes()?.toDouble()
+    val asleepUsual = usual { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() }
+    BaselineTile(
+        Glyph.Moon, "HOURS OF SLEEP", asleep?.let { hoursMinutes(it.toInt()) }, asleepUsual?.let { hoursMinutes(it.toInt()) },
+        change(asleep, asleepUsual, true, 1.0),
+    ) { onOpenMetric(MetricKind.SLEEP_DURATION) }
+
+    val calories = summary.calories.value?.toDouble()
+    val caloriesUsual = usual { it.calories.value?.toDouble() }
+    BaselineTile(
+        Glyph.Flame, "CALORIES", summary.calories.value?.grouped(), caloriesUsual?.toInt()?.grouped(),
+        change(calories, caloriesUsual, null, 1.0),
+    ) { onOpenMetric(MetricKind.CALORIES) }
+
+    val steps = summary.steps.count.value?.toDouble()
+    val stepsUsual = usual { it.steps.count.value?.toDouble() }
+    BaselineTile(
+        Glyph.Steps, "STEPS", summary.steps.count.value?.grouped(), stepsUsual?.toInt()?.grouped(),
+        change(steps, stepsUsual, true, 1.0),
+    ) { onOpenMetric(MetricKind.STEPS) }
 }

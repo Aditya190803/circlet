@@ -5,6 +5,7 @@ import app.circlet.core.MetricReference
 import app.circlet.core.ReferenceRange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RangesTest {
@@ -16,17 +17,17 @@ class RangesTest {
     }
 
     @Test
-    fun rangeAxisPadsTenPercentOfSpan() {
+    fun rangeAxisPadsThreeTenthsOfSpan() {
         val axis = rangeAxis(50.0, ReferenceRange(40.0, 60.0))
-        assertEquals(38.0, axis.low, 1e-9)
-        assertEquals(62.0, axis.high, 1e-9)
+        assertEquals(34.0, axis.low, 1e-9)
+        assertEquals(66.0, axis.high, 1e-9)
     }
 
     @Test
     fun rangeAxisIncludesValueOutsideBands() {
         val axis = rangeAxis(100.0, ReferenceRange(40.0, 60.0), null)
-        assertEquals(34.0, axis.low, 1e-9)
-        assertEquals(106.0, axis.high, 1e-9)
+        assertEquals(22.0, axis.low, 1e-9)
+        assertEquals(118.0, axis.high, 1e-9)
     }
 
     @Test
@@ -42,6 +43,45 @@ class RangesTest {
         assertEquals(0f, axis.fraction(-5.0), 1e-6f)
         assertEquals(0.5f, axis.fraction(5.0), 1e-6f)
         assertEquals(1f, axis.fraction(50.0), 1e-6f)
+    }
+
+    @Test
+    fun rangeScorePeaksInTheMiddleOfTheGoodBand() {
+        val good = ReferenceRange(40.0, 60.0)
+        assertEquals(1f, rangeScore(50.0, good, 30.0), 1e-6f)
+        assertEquals(0.5f, rangeScore(40.0, good, 30.0), 1e-6f)
+        assertEquals(0.5f, rangeScore(60.0, good, 30.0), 1e-6f)
+    }
+
+    @Test
+    fun rangeScoreFallsBelowHalfOutsideAndBottomsOutAThirdOfTheSpanAway() {
+        val good = ReferenceRange(40.0, 60.0)
+        assertTrue(rangeScore(39.9, good, 30.0) < 0.5f)
+        assertEquals(0.25f, rangeScore(65.0, good, 30.0), 1e-6f)
+        assertEquals(0f, rangeScore(30.0, good, 30.0), 1e-6f)
+        assertEquals(0f, rangeScore(0.0, good, 30.0), 1e-6f)
+    }
+
+    @Test
+    fun rangeScoreTowardHighRewardsTheTopOfTheBandAndBeyond() {
+        val good = ReferenceRange(40.0, 60.0)
+        assertEquals(0.5f, rangeScore(40.0, good, 30.0, Toward.HIGH), 1e-6f)
+        assertEquals(1f, rangeScore(60.0, good, 30.0, Toward.HIGH), 1e-6f)
+        assertEquals(1f, rangeScore(90.0, good, 30.0, Toward.HIGH), 1e-6f)
+        assertTrue(rangeScore(35.0, good, 30.0, Toward.HIGH) < 0.5f)
+    }
+
+    @Test
+    fun rangeScoreTowardLowRewardsTheBottomOfTheBandAndBelow() {
+        val good = ReferenceRange(40.0, 60.0)
+        assertEquals(1f, rangeScore(30.0, good, 30.0, Toward.LOW), 1e-6f)
+        assertEquals(0.5f, rangeScore(60.0, good, 30.0, Toward.LOW), 1e-6f)
+        assertTrue(rangeScore(65.0, good, 30.0, Toward.LOW) < 0.5f)
+    }
+
+    @Test
+    fun rangeScoreIsNeutralWithoutABand() {
+        assertEquals(0.5f, rangeScore(10.0, null, 30.0), 1e-6f)
     }
 
     @Test

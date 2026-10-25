@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -306,10 +307,7 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * How the time in bed split across the stages: one stacked bar in the hypnogram's colours,
- * then each stage's time and its share of the time in bed.
- */
+/** How the time in bed split across the stages: each stage's time and its share, in the hypnogram's colours. */
 @Composable
 fun StageBreakdown(session: SleepSession, modifier: Modifier = Modifier) {
     val minutes = StageLanes.associateWith { stage ->
@@ -318,31 +316,46 @@ fun StageBreakdown(session: SleepSession, modifier: Modifier = Modifier) {
     val staged = minutes.values.sum().coerceAtLeast(1)
     val inBed = session.timeInBed.toMinutes().coerceAtLeast(1)
     Column(modifier) {
-        Canvas(Modifier.fillMaxWidth().height(8.dp)) {
-            val shown = StageLanes.filter { minutes.getValue(it) > 0 }
-            val gap = 3.dp.toPx()
-            val usable = size.width - gap * (shown.size - 1).coerceAtLeast(0)
-            var left = 0f
-            for (stage in shown) {
-                val width = usable * minutes.getValue(stage) / staged
-                drawRoundRect(Palette.stage(stage), Offset(left, 0f), Size(width, size.height), CornerRadius(size.height / 2))
-                left += width + gap
-            }
+        listOf(SleepStage.AWAKE, SleepStage.LIGHT, SleepStage.DEEP, SleepStage.REM).forEachIndexed { i, stage ->
+            val spent = minutes.getValue(stage)
+            if (i > 0) Spacer(Modifier.height(16.dp))
+            ShareBar(stageWords(stage), spent.toFloat() / inBed, Palette.stage(stage), hoursMinutes(spent.toInt()))
         }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth()) {
-            for (stage in StageLanes) {
-                val spent = minutes.getValue(stage)
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(6.dp).clip(Shapes.pill).background(Palette.stage(stage)))
-                        Spacer(Modifier.width(5.dp))
-                        Text(stageShort(stage), style = label(10.sp, Palette.Faint))
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(hoursMinutes(spent.toInt()), style = number(18.sp))
-                    Text("${spent * 100 / inBed}%", style = label(10.sp, Palette.Faint))
+    }
+}
+
+/**
+ * One part of a whole: its name and share, the time it took, and a bar of that share over a
+ * hatched track. A null [fraction] draws the bare track and the dash.
+ */
+@Composable
+fun ShareBar(name: String, fraction: Float?, color: Color, value: String?) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(name, style = label(13.sp, Palette.White))
+            if (fraction != null) {
+                Spacer(Modifier.width(10.dp))
+                Text("${(fraction * 100).roundToInt()}%", style = number(15.sp, color))
+            }
+            Spacer(Modifier.weight(1f))
+            if (value == null) AbsentDash(Modifier.padding(bottom = 8.dp)) else Text(value, style = number(20.sp))
+        }
+        Spacer(Modifier.height(8.dp))
+        Canvas(Modifier.fillMaxWidth().height(12.dp)) {
+            val radius = CornerRadius(size.height / 2)
+            val track = Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, size.width, size.height, radius)) }
+            clipPath(track) {
+                drawRect(Palette.White.copy(alpha = 0.04f))
+                val gap = 6.dp.toPx()
+                var x = -size.height
+                while (x < size.width) {
+                    drawLine(Palette.Track, Offset(x, size.height), Offset(x + size.height, 0f), strokeWidth = 1.5.dp.toPx())
+                    x += gap
                 }
+            }
+            val share = (fraction ?: 0f).coerceIn(0f, 1f)
+            if (share > 0f) {
+                drawRoundRect(color, Offset.Zero, Size(maxOf(size.height, size.width * share), size.height), radius)
             }
         }
     }
@@ -379,42 +392,69 @@ fun WeekBars(
     val flat = loading || values.all { it == null }
     var touch by remember(values.size) { mutableStateOf<Float?>(null) }
     val held = touch?.let { (it * values.size).toInt().coerceIn(0, values.lastIndex) }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(if (flat) 44.dp else 150.dp)
-            .scrub(values.size) { touch = it },
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        values.forEachIndexed { i, v ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(38.dp)) {
-                Text(
-                    if (loading) "" else captions[i],
-                    style = label(10.sp, if (held != null && held != i) Palette.Ghost else Palette.White),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                )
-                Spacer(Modifier.height(4.dp))
-                Box(
-                    Modifier
-                        .width(14.dp)
-                        .height(if (v == null || loading) 3.dp else (100 * (v / max).coerceIn(0.03f, 1f)).dp)
-                        .clip(Shapes.bar)
-                        .background(
-                            when {
-                                v == null || loading -> Palette.Ghost
-                                held != null && held != i -> colors[i].copy(alpha = 0.3f)
-                                else -> colors[i]
-                            },
-                        ),
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(labels[i], style = label(10.sp, if (i == (held ?: selected)) Palette.White else Palette.Faint))
+    val plot = if (flat) 24.dp else 120.dp
+    Box(Modifier.fillMaxWidth()) {
+        Canvas(Modifier.fillMaxWidth().padding(top = 22.dp).height(plot)) {
+            for (i in 0..3) {
+                val y = size.height * i / 3
+                drawLine(Palette.Track, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .scrub(values.size) { touch = it },
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            values.forEachIndexed { i, v ->
+                val focused = i == (held ?: selected)
+                val dimmed = held != null && held != i
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 3.dp)
+                        .clip(Shapes.control)
+                        .background(if (focused) Palette.White.copy(alpha = 0.07f) else Color.Transparent),
+                ) {
+                    Box(Modifier.height(plot + 22.dp), contentAlignment = Alignment.BottomCenter) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                if (loading) "" else captions[i],
+                                style = number(12.sp, if (dimmed) Palette.Ghost else colors[i]),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Box(
+                                Modifier
+                                    .width(16.dp)
+                                    .height(if (v == null || loading) 3.dp else plot * (v / max).coerceIn(0.03f, 1f))
+                                    .clip(BarTop)
+                                    .background(
+                                        when {
+                                            v == null || loading -> Palette.Ghost
+                                            dimmed -> colors[i].copy(alpha = 0.3f)
+                                            else -> colors[i]
+                                        },
+                                    ),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        labels[i],
+                        style = body(12.sp, if (focused) Palette.White else Palette.Faint).copy(lineHeight = 15.sp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
             }
         }
     }
 }
+
+private val BarTop = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
 
 /** Minutes in each heart-rate zone, top zone first. Null draws empty tracks. */
 @Composable
@@ -422,31 +462,8 @@ fun ZoneBars(zones: ZoneMinutes?) {
     val total = (zones?.total ?: 0).coerceAtLeast(1)
     for (zone in ZoneMinutes.ZONE_COUNT - 1 downTo 0) {
         val minutes = zones?.minutes?.get(zone)
-        Row(Modifier.padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("ZONE $zone", style = label(11.sp), modifier = Modifier.width(60.dp))
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(10.dp)
-                    .clip(RoundBar)
-                    .background(Palette.Track),
-            ) {
-                if (minutes != null && minutes > 0) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(minutes.toFloat() / total)
-                            .height(10.dp)
-                            .clip(RoundBar)
-                            .background(Palette.Zones[zone]),
-                    )
-                }
-            }
-            if (minutes == null) {
-                Box(Modifier.width(52.dp), contentAlignment = Alignment.CenterEnd) { AbsentDash() }
-            } else {
-                Text(hoursMinutes(minutes), style = number(13.sp), textAlign = TextAlign.End, modifier = Modifier.width(52.dp))
-            }
-        }
+        if (zone < ZoneMinutes.ZONE_COUNT - 1) Spacer(Modifier.height(16.dp))
+        ShareBar("ZONE $zone", minutes?.let { it.toFloat() / total }, Palette.Zones[zone], minutes?.let(::hoursMinutes))
     }
 }
 

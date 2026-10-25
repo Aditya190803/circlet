@@ -40,15 +40,15 @@ fun Card(
         modifier
             .fillMaxWidth()
             .clip(Shapes.card)
-            .background(Palette.Card)
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .background(Palette.CardFill)
+            .padding(horizontal = 20.dp, vertical = 20.dp),
     ) {
         if (title != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = label(13.sp, Palette.White), modifier = Modifier.weight(1f))
+                Text(title, style = label(14.sp, Palette.White), modifier = Modifier.weight(1f))
                 trailing?.invoke()
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
         }
         content()
     }

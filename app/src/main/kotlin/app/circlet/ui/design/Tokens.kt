@@ -23,11 +23,11 @@ import app.circlet.core.SleepStage
  * [Faint]; [Ghost] and [Track] are for outlines and tracks only because they fail text contrast.
  */
 object Palette {
-    val BgTop = Color(0xFF283339)
-    val BgBottom = Color(0xFF101518)
-    val Card = Color(0xFF1A2227)
-    val CardRaised = Color(0xFF222C32)
-    val CardLine = Color(0xFF27333A)
+    val BgTop = Color(0xFF20282E)
+    val BgBottom = Color(0xFF0E1215)
+    val Card = Color(0xFF22292F)
+    val CardRaised = Color(0xFF2B3339)
+    val CardLine = Color(0xFF323B42)
     val Track = Color(0x1FFFFFFF)
     val Scrim = Color(0xB3080B0D)
     val White = Color.White
@@ -58,6 +58,13 @@ object Palette {
     val StressHigh = Color(0xFFFF6422)
 
     val Background = Brush.verticalGradient(listOf(BgTop, BgBottom))
+
+    /** Cards catch a little light along their top edge. */
+    val CardFill = Brush.verticalGradient(listOf(CardRaised, Card))
+
+    /** A change for the better, and one for the worse, beside a value and its baseline. */
+    val Better = Teal
+    val Worse = Color(0xFFFCA82B)
 
     fun recovery(value: Int?) = when {
         value == null -> RecoveryNone
@@ -100,7 +107,7 @@ object Space {
 }
 
 object Shapes {
-    val card = RoundedCornerShape(14.dp)
+    val card = RoundedCornerShape(20.dp)
     val control = RoundedCornerShape(10.dp)
     val chip = RoundedCornerShape(8.dp)
     val tile = RoundedCornerShape(6.dp)
@@ -126,7 +133,7 @@ val Barlow = FontFamily(
 
 /** Bold, wide-tracked, written in capitals by the caller. Row names, captions, buttons. */
 fun label(size: TextUnit = 12.sp, color: Color = Palette.Dim) =
-    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Bold, fontSize = size, letterSpacing = 1.4.sp, color = color)
+    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Bold, fontSize = size, letterSpacing = 1.8.sp, color = color)
 
 /** Tabular numerals so values do not shift as they change. */
 fun number(size: TextUnit, color: Color = Palette.White) =
