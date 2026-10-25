@@ -2,6 +2,7 @@ package app.circlet.ui.design
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +24,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
@@ -70,7 +73,14 @@ fun positionTag(value: Double?, band: ReferenceRange?): String? {
 fun List<MetricReference>.forKind(kind: MetricKind): MetricReference? = firstOrNull { it.kind == kind }
 
 /** A skin temperature deviation as a signed number with no unit. The caller adds "SD". */
-fun Double.signedDeviation(digits: Int = 1): String = (if (this < 0) "−" else "+") + abs(this).decimal(digits)
+fun Double.signedDeviation(digits: Int = 1): String {
+    val size = abs(this).decimal(digits)
+    return when {
+        size.none { it in '1'..'9' } -> size
+        this < 0 -> "−$size"
+        else -> "+$size"
+    }
+}
 
 /** Which way along a range bar is better: towards the middle of the good band, or past one end of it. */
 enum class Toward { MIDDLE, HIGH, LOW }
@@ -113,7 +123,7 @@ fun rangeColor(score: Float): Color = when {
 private val RangeFar = Color(0xFFFCA82B)
 private val RangeNear = Color(0xFF7A5C34)
 private val RangeEdge = Color(0xFF1C7A66)
-private val Usual = Color(0x99FFFFFF)
+private val Usual = Palette.Dim
 private const val SEGMENTS = 10
 
 /**
@@ -131,21 +141,16 @@ fun RangeBar(
     modifier: Modifier = Modifier,
     valueText: String? = null,
     toward: Toward = Toward.MIDDLE,
+    usualText: String? = null,
 ) {
     val axis = rangeAxis(value, personal, ideal)
     val at = value?.let(axis::fraction)
     Column(modifier.fillMaxWidth()) {
         if (at != null && valueText != null) {
-            Layout({ Text(valueText, style = number(18.sp)) }) { measurables, constraints ->
-                val text = measurables.single().measure(constraints.copy(minWidth = 0))
-                layout(constraints.maxWidth, text.height) {
-                    val x = (at * constraints.maxWidth - text.width / 2f).roundToInt()
-                    text.place(x.coerceIn(0, (constraints.maxWidth - text.width).coerceAtLeast(0)), 0)
-                }
-            }
+            Pinned(at) { Text(valueText, style = number(18.sp)) }
             Spacer(Modifier.height(2.dp))
         }
-        Canvas(Modifier.fillMaxWidth().height(26.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(if (personal != null) 32.dp else 20.dp)) {
             val width = size.width
             val marker = 9.dp.toPx()
             val track = 6.dp.toPx()
@@ -161,10 +166,19 @@ fun RangeBar(
                 drawRoundRect(color, Offset(left, top), Size(segment, track), CornerRadius(track / 2))
             }
             personal?.let {
-                val left = axis.fraction(it.low) * width
-                val right = (axis.fraction(it.high) * width).coerceAtLeast(left + 4.dp.toPx())
-                val y = top + track + 4.dp.toPx()
-                drawLine(Usual, Offset(left, y), Offset(right, y), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+                // A bracket under the track, open towards it, so the usual stretch reads as a span.
+                val least = 12.dp.toPx()
+                val middle = (axis.fraction(it.low) + axis.fraction(it.high)) / 2 * width
+                val half = maxOf(least, (axis.fraction(it.high) - axis.fraction(it.low)) * width) / 2
+                val left = (middle - half).coerceIn(1.dp.toPx(), width - least)
+                val right = (middle + half).coerceIn(left + least, width - 1.dp.toPx())
+                val tick = top + track + 4.dp.toPx()
+                val y = tick + 6.dp.toPx()
+                val stroke = 1.5.dp.toPx()
+                val bracket = Path().apply {
+                    moveTo(left, tick); lineTo(left, y); lineTo(right, y); lineTo(right, tick)
+                }
+                drawPath(bracket, Usual, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
             if (at != null) {
                 val x = (at * width).coerceIn(marker * 0.6f, width - marker * 0.6f)
@@ -178,12 +192,34 @@ fun RangeBar(
                 drawLine(Palette.White, Offset(x, marker - 1f), Offset(x, top + track), strokeWidth = 2.dp.toPx())
             }
         }
+        if (personal != null && usualText != null) {
+            Spacer(Modifier.height(3.dp))
+            Pinned((axis.fraction(personal.low) + axis.fraction(personal.high)) / 2) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("USUAL ", style = label(10.sp, Palette.Faint), maxLines = 1, softWrap = false)
+                    Text(usualText, style = number(13.sp, Palette.Dim), maxLines = 1, softWrap = false)
+                }
+            }
+        }
+    }
+}
+
+/** One line of [content] centred on [at], a fraction of the width, and kept inside the bar's edges. */
+@Composable
+private fun Pinned(at: Float, content: @Composable () -> Unit) {
+    Layout(content) { measurables, constraints ->
+        val placed = measurables.single().measure(constraints.copy(minWidth = 0))
+        layout(constraints.maxWidth, placed.height) {
+            val x = (at * constraints.maxWidth - placed.width / 2f).roundToInt()
+            placed.place(x.coerceIn(0, (constraints.maxWidth - placed.width).coerceAtLeast(0)), 0)
+        }
     }
 }
 
 /**
- * The key under a [RangeBar], drawn with the same marks as the bar: the grey stretch for the
- * user's own band, a teal segment for the ideal band. [format] turns a band edge into the metric's unit.
+ * The key under a [RangeBar] for what the bar does not label itself: the ideal band, named
+ * [idealName], and the usual band while it is still building. Draws nothing when neither applies.
+ * [format] turns a band edge into the metric's unit.
  */
 @Composable
 fun RangeLegend(
@@ -192,21 +228,24 @@ fun RangeLegend(
     ideal: ReferenceRange?,
     format: (Double) -> String,
     modifier: Modifier = Modifier,
+    idealName: String = "IDEAL",
 ) {
-    Row(modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(width = 14.dp, height = 3.dp).clip(CircleShape).background(Usual))
-        Spacer(Modifier.width(6.dp))
-        Text("USUAL ", style = label(10.sp, Palette.Faint))
-        Text(
-            if (personal != null) "${format(personal.low)}–${format(personal.high)}" else "BUILDING · $personalDays DAYS",
-            style = if (personal != null) number(13.sp, Palette.Dim) else label(10.sp, Palette.Faint),
-        )
+    if (personal != null && ideal == null) {
+        Spacer(modifier.height(10.dp))
+        return
+    }
+    // Each part keeps its interval on one line; the two parts stack rather than squeeze.
+    Column(modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (ideal != null) {
-            Spacer(Modifier.weight(1f))
-            Box(Modifier.size(width = 14.dp, height = 6.dp).clip(CircleShape).background(Palette.Teal))
-            Spacer(Modifier.width(6.dp))
-            Text("IDEAL ", style = label(10.sp, Palette.Faint))
-            Text("${format(ideal.low)}–${format(ideal.high)}", style = number(13.sp, Palette.Teal))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(width = 14.dp, height = 6.dp).clip(CircleShape).background(Palette.Teal))
+                Spacer(Modifier.width(6.dp))
+                Text("$idealName ", style = label(10.sp, Palette.Faint), maxLines = 1, softWrap = false)
+                Text("${format(ideal.low)}–${format(ideal.high)}", style = number(13.sp, Palette.Teal), maxLines = 1, softWrap = false)
+            }
+        }
+        if (personal == null) {
+            Text("USUAL · BUILDING · $personalDays DAYS", style = label(10.sp, Palette.Faint), maxLines = 1, softWrap = false)
         }
     }
 }

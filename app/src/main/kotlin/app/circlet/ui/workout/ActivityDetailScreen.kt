@@ -89,9 +89,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit) {
     val context = LocalContext.current
-    val vm = containerViewModel { container, _ -> ActivityDetailViewModel(container.metrics, container.workouts, RouteStore(context)) }
+    val vm = containerViewModel { container, _ -> ActivityDetailViewModel(container.metrics, container.workouts, RouteStore(context), container.profile, container.zoneDefaults) }
     val state by vm.state.collectAsStateWithLifecycle()
     val dayHeartRate by vm.dayHeartRate.collectAsStateWithLifecycle()
+    val zoneBounds by vm.zoneBounds.collectAsStateWithLifecycle()
     val messenger = LocalMessenger.current
     val format = LocalTimeFormat.current
     val today = LocalDate.now(format.zone)
@@ -133,6 +134,7 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
                     activity = current.value,
                     heartRate = workoutMinutes(dayHeartRate, current.value, date, format),
                     format = format,
+                    bounds = zoneBounds,
                 )
             }
             val track = route
@@ -237,7 +239,7 @@ private fun RouteCard(activity: Activity, points: List<RoutePoint>, onExport: ()
 }
 
 @Composable
-private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: TimeFormat) {
+private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: TimeFormat, bounds: List<Int>?) {
     HeroDial(
         caption = "${activity.sport.label().uppercase()} STRAIN",
         glyph = activity.sport.glyph(),
@@ -282,7 +284,11 @@ private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: Time
         }
     }
     Card("TIME IN ZONES") {
-        ZoneBars(activity.zoneMinutes)
+        ZoneBars(activity.zoneMinutes, bounds)
+        if (bounds != null) {
+            Spacer(Modifier.height(12.dp))
+            Text("Zones as they stood on the day of this activity.", style = body(12.sp, Palette.Faint))
+        }
     }
 }
 

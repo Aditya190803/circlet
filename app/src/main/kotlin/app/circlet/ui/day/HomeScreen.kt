@@ -41,6 +41,7 @@ import app.circlet.core.SkinTempFlag
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
+import app.circlet.ui.design.BaselineLegend
 import app.circlet.ui.design.BaselineTile
 import app.circlet.ui.design.SectionTitle
 import app.circlet.ui.design.change
@@ -124,6 +125,7 @@ fun HomeScreen(
                 val loading = state.day is Loadable.Loading
                 if (live != null) LiveWorkoutCard(live, onOpenLive)
                 Dials(summary, loading, onOpen)
+                HeartCard(state, summary, loading)
                 when (val day = state.day) {
                     is Loadable.Failed -> ErrorState(day.message, onRetry)
                     else -> state.notice?.let { DayNotice(it) { onNotice(it) } }
@@ -134,7 +136,6 @@ fun HomeScreen(
                     onStartWorkout = onStartWorkout.takeIf { state.isToday && live == null }, today = state.isToday,
                 )
                 PlanCard(state, summary, loading)
-                HeartCard(state, summary, loading)
                 Dashboard(state, summary, onOpenMetric)
             }
         }
@@ -263,10 +264,12 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
 private fun PlanCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
     Card(if (state.isToday) "TODAY'S PLAN" else "PLAN FOR THE DAY") {
         val target = summary?.targetStrain?.score
+        val optimal = summary?.targetStrain?.range
         val need = summary?.sleepNeed
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Figure(
-                target?.value?.decimal(), "STRAIN TARGET", Palette.Strain,
+                optimal?.let { "${it.low.decimal()}–${it.high.decimal()}" } ?: target?.value?.decimal(),
+                if (optimal != null) "OPTIMAL STRAIN" else "STRAIN TARGET", Palette.Strain,
                 absent = target?.absentReason, loading = loading,
                 modifier = Modifier.weight(1f),
             )
@@ -308,7 +311,7 @@ private fun MyDayCard(
             TileRow(sleep.timeAsleep.hoursMinutes(), Palette.Sleep, "SLEEP", format.range(sleep.start, sleep.end)) { onOpen(DayScreen.SLEEP) }
         } else {
             val reason = summary?.sleep?.absentReason?.takeIf { summary.hasData }
-            GhostRow(Glyph.Moon, "SLEEP", reason?.words() ?: "Picked up on its own overnight")
+            GhostRow(Glyph.Moon, "NO SLEEP YET", reason?.words() ?: "Sleep appears here after a night with the strap on")
         }
         summary?.naps?.forEach { nap ->
             Divider()
@@ -316,7 +319,7 @@ private fun MyDayCard(
         }
         Divider()
         val activities = summary?.activities.orEmpty()
-        if (activities.isEmpty()) GhostRow(Glyph.Bolt, "ACTIVITY", "Logged after ten minutes of raised heart rate")
+        if (activities.isEmpty()) GhostRow(Glyph.Bolt, "NO ACTIVITIES YET", "Activities appear here after ten minutes of raised heart rate")
         activities.forEachIndexed { i, activity ->
             if (i > 0) Divider()
             TileRow(
@@ -396,13 +399,13 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
     val resting = summary.heart.resting.bpm.value?.toDouble()
     val restingUsual = usual { it.heart.resting.bpm.value?.toDouble() }
     BaselineTile(
-        Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0),
+        Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0), unit = "BPM",
     ) { onOpenMetric(MetricKind.RESTING_HEART_RATE) }
 
     val breaths = summary.heart.respiratoryRate.breathsPerMinute.value
     val breathsUsual = usual { it.heart.respiratoryRate.breathsPerMinute.value }
     BaselineTile(
-        Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1),
+        Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1), unit = "RPM",
     ) { onOpenMetric(MetricKind.RESPIRATORY_RATE) }
 
     // Skin temperature is already a deviation from the user's own nights, so its baseline is zero.
@@ -415,10 +418,10 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
         when {
             building && deviation != null -> "ESTIMATE"
             building -> "${skin?.baselineNights?.coerceAtMost(7)} OF 7 NIGHTS"
-            deviation != null -> "0.0 SD"
+            deviation != null -> "0.0"
             else -> null
         },
-        change(deviation, 0.0, null, 0.1),
+        change(deviation, 0.0, null, 0.1), unit = "SD",
     ) { onOpenMetric(MetricKind.SKIN_TEMPERATURE) }
 
     val asleep = summary.sleep.value?.timeAsleep?.toMinutes()?.toDouble()
@@ -432,7 +435,7 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
     val caloriesUsual = usual { it.calories.value?.toDouble() }
     BaselineTile(
         Glyph.Flame, "CALORIES", summary.calories.value?.grouped(), caloriesUsual?.toInt()?.grouped(),
-        change(calories, caloriesUsual, null, 1.0),
+        change(calories, caloriesUsual, null, 1.0), unit = "KCAL",
     ) { onOpenMetric(MetricKind.CALORIES) }
 
     val steps = summary.steps.count.value?.toDouble()
@@ -441,4 +444,5 @@ private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (Me
         Glyph.Steps, "STEPS", summary.steps.count.value?.grouped(), stepsUsual?.toInt()?.grouped(),
         change(steps, stepsUsual, true, 1.0),
     ) { onOpenMetric(MetricKind.STEPS) }
+    BaselineLegend(state.earlier.size, state.isToday)
 }

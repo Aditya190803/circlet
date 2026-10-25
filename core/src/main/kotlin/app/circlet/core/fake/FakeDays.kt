@@ -264,7 +264,8 @@ private fun assemble(
         targetStrain = if (recoveryScore == null) {
             TargetStrain(Metric.absent(recovery.score.absentReason ?: AbsentReason.CALIBRATING))
         } else {
-            TargetStrain(Metric.of((8.0 + recoveryScore / 100.0 * 10.0).coerceIn(0.0, 21.0), Confidence.MEDIUM))
+            val target = (8.0 + recoveryScore / 100.0 * 10.0).coerceIn(0.0, 21.0)
+            TargetStrain(Metric.of(target, Confidence.MEDIUM), ReferenceRange(target - 2.5, target + 2.5))
         },
         vo2Max = Vo2Max(Metric.of(41.0 + (index % 5) * 0.4, Confidence.LOW)),
         wellness = flags,

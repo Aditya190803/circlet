@@ -123,7 +123,10 @@ private fun DetailFrame(
 private fun RangeBlock(ref: MetricReference?, value: Double?, format: (Double) -> String) {
     if (ref == null) return
     Spacer(Modifier.height(10.dp))
-    RangeBar(value, ref.personal, ref.ideal, valueText = value?.let(format), toward = ref.kind.toward())
+    RangeBar(
+        value, ref.personal, ref.ideal, valueText = value?.let(format), toward = ref.kind.toward(),
+        usualText = ref.personal?.let { "${format(it.low)}–${format(it.high)}" },
+    )
     RangeLegend(ref.personal, ref.personalDays, ref.ideal, format)
 }
 
@@ -173,6 +176,8 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
         val sleep = day.sleep.value
         val performance = day.sleepPerformance.percent
         val percent = performance.value
+        // Whether the need was met is read from the hours themselves, never from a percentage cut-off.
+        val short = sleep?.timeAsleep?.let { asleep -> day.sleepNeed.duration.value?.minus(asleep) }
         HeroDial(
             "SLEEP PERFORMANCE", Glyph.Moon, Palette.Sleep, percent?.toString(), "%", percent?.div(100f),
             when {
@@ -180,9 +185,11 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                     "No sleep found for this day. Wear the strap overnight and it shows here after the morning sync."
                 percent == null ->
                     "${(performance.absentReason ?: AbsentReason.NOT_ENOUGH_DATA).words()}. Sleep shows here after the morning sync."
-                percent >= 85 -> "You met your sleep need."
+                short != null && (short.isNegative || short.isZero) -> "You met your sleep need."
+                short != null && percent >= 70 -> "You got most of the sleep you needed, ${short.hoursMinutes()} short."
+                short != null -> "You fell short of your sleep need by ${short.hoursMinutes()}."
                 percent >= 70 -> "You got most of the sleep you needed."
-                else -> "You fell well short of your sleep need."
+                else -> "You fell short of your sleep need."
             },
         )
         if (sleep != null) {
@@ -266,7 +273,7 @@ private fun NightContributors(state: DayUiState, day: DaySummary, sleep: SleepSe
         val breathsUsual = state.usual { it.heart.respiratoryRate.breathsPerMinute.value }
         BaselineRow(
             Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(),
-            change(breaths, breathsUsual, null, 0.1),
+            change(breaths, breathsUsual, null, 0.1), unit = "RPM",
         )
         BaselineLegend(state.earlier.size, state.isToday)
     }
@@ -295,10 +302,14 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                     "Circlet is still learning your baseline. Recovery is scored from your heart rate variability, resting heart rate and sleep once it has a few nights to compare against."
                 score == null ->
                     "${(recovery.score.absentReason ?: AbsentReason.NOT_ENOUGH_DATA).words()}. Recovery is scored each morning from your heart rate variability, resting heart rate and sleep."
-                score >= 67 -> "You are well recovered. Your body is ready to take on strain today."
-                score >= 34 -> "You are adequately recovered and can handle a moderate amount of strain."
-                else -> "Your body is run down. Prioritise rest and keep strain light today."
+                score >= 67 && state.isToday -> "You are well recovered. Your body is ready to take on strain today."
+                score >= 67 -> "You were well recovered, ready to take on strain that day."
+                score >= 34 && state.isToday -> "You are adequately recovered and can handle a moderate amount of strain."
+                score >= 34 -> "You were adequately recovered, able to handle a moderate amount of strain that day."
+                state.isToday -> "Your body is run down. Prioritise rest and keep strain light today."
+                else -> "Your body was run down that day, best suited to rest and light strain."
             },
+            tag = if (score != null && calibrating) "EARLY ESTIMATE · ${state.baselineNights} OF $BASELINE_NIGHTS NIGHTS" else null,
         )
         Card {
             val hrv = day.heart.hrv.rmssdMs.value
@@ -307,11 +318,11 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             Divider()
             val resting = day.heart.resting.bpm.value?.toDouble()
             val restingUsual = state.usual { it.heart.resting.bpm.value?.toDouble() }
-            BaselineRow(Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0))
+            BaselineRow(Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0), unit = "BPM")
             Divider()
             val breaths = day.heart.respiratoryRate.breathsPerMinute.value
             val breathsUsual = state.usual { it.heart.respiratoryRate.breathsPerMinute.value }
-            BaselineRow(Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1))
+            BaselineRow(Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1), unit = "RPM")
             Divider()
             val performance = day.sleepPerformance.percent.value?.toDouble()
             val performanceUsual = state.usual { it.sleepPerformance.percent.value?.toDouble() }
@@ -339,7 +350,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
         val refs = day.references
         if (listOf(MetricKind.HRV, MetricKind.RESTING_HEART_RATE, MetricKind.RESPIRATORY_RATE).any { refs.forKind(it) != null }) {
             Card("YOUR NORMAL RANGE") {
-                RangeItem("HRV", refs.forKind(MetricKind.HRV), day.heart.hrv.rmssdMs.value, "MS") { it.decimal(0) }
+                RangeItem("HRV", refs.forKind(MetricKind.HRV), day.heart.hrv.rmssdMs.value, "") { it.decimal(0) }
                 RangeItem(
                     "RESTING HEART RATE", refs.forKind(MetricKind.RESTING_HEART_RATE), day.heart.resting.bpm.value?.toDouble(), "BPM",
                 ) { it.decimal(0) }
@@ -523,13 +534,13 @@ fun StrainScreen(
             Divider()
             val average = day.heart.averageBpm.value?.toDouble()
             val averageUsual = state.usual { it.heart.averageBpm.value?.toDouble() }
-            BaselineRow(Glyph.Heart, "AVERAGE HEART RATE", average?.decimal(0), averageUsual?.decimal(0), change(average, averageUsual, null, 1.0))
+            BaselineRow(Glyph.Heart, "AVERAGE HEART RATE", average?.decimal(0), averageUsual?.decimal(0), change(average, averageUsual, null, 1.0), unit = "BPM")
             Divider()
             val calories = day.calories.value?.toDouble()
             val caloriesUsual = state.usual { it.calories.value?.toDouble() }
             BaselineRow(
                 Glyph.Flame, "CALORIES", day.calories.value?.grouped(), caloriesUsual?.toInt()?.grouped(),
-                change(calories, caloriesUsual, null, 1.0),
+                change(calories, caloriesUsual, null, 1.0), unit = "KCAL",
             )
             Divider()
             val steps = day.steps.count.value?.toDouble()
@@ -543,18 +554,35 @@ fun StrainScreen(
         Card(if (state.isToday) "TODAY'S TARGET" else "TARGET") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(strain?.decimal(), "DAY STRAIN", absent = day.strain.score.absentReason, modifier = Modifier.weight(1f))
+                val optimal = day.targetStrain.range
                 Figure(
-                    target.value?.decimal(), "TARGET", Palette.Strain,
+                    optimal?.let { "${it.low.decimal()}–${it.high.decimal()}" } ?: target.value?.decimal(),
+                    if (optimal != null) "OPTIMAL" else "TARGET", Palette.Strain,
                     absent = target.absentReason, alignEnd = true, modifier = Modifier.weight(1f),
                 )
             }
-            RangeBlock(day.references.forKind(MetricKind.STRAIN), strain) { it.decimal() }
+            val ref = day.references.forKind(MetricKind.STRAIN)
+            val optimal = day.targetStrain.range
+            if (ref != null || optimal != null) {
+                Spacer(Modifier.height(10.dp))
+                RangeBar(
+                    strain, ref?.personal, optimal, valueText = strain?.decimal(),
+                    usualText = ref?.personal?.let { "${it.low.decimal()}–${it.high.decimal()}" },
+                )
+                RangeLegend(ref?.personal, ref?.personalDays ?: 0, optimal, { it.decimal() }, idealName = "OPTIMAL")
+            }
             val goal = target.value
             if (strain != null && goal != null) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    if (strain >= goal) "Target reached. The notch on the dial marks it."
-                    else "${(goal - strain).decimal()} to go. The notch on the dial marks the target your recovery suggests.",
+                    when {
+                        optimal == null && strain >= goal -> "Target reached. The notch on the dial marks it."
+                        optimal == null -> "${(goal - strain).decimal()} to go. The notch on the dial marks the target your recovery suggests."
+                        strain < optimal.low ->
+                            "${(optimal.low - strain).decimal()} to reach the optimal range your recovery suggests. The notch on the dial marks its middle."
+                        strain <= optimal.high -> if (state.isToday) "Inside your optimal range for today." else "Inside the optimal range for that day."
+                        else -> if (state.isToday) "Past your optimal range for today." else "Past the optimal range for that day."
+                    },
                     style = body(13.sp, Palette.Faint),
                 )
             }
@@ -573,7 +601,7 @@ fun StrainScreen(
             MetricRow("MAX HEART RATE", day.heart.maxBpm, "BPM") { it.toString() }
         }
         Card("ACTIVITIES") {
-            if (day.activities.isEmpty()) GhostRow(Glyph.Bolt, "ACTIVITY", "Logged after ten minutes of raised heart rate")
+            if (day.activities.isEmpty()) GhostRow(Glyph.Bolt, "NO ACTIVITIES YET", "Activities appear here after ten minutes of raised heart rate")
             day.activities.forEachIndexed { i, activity ->
                 if (i > 0) Divider()
                 val heart = listOfNotNull(

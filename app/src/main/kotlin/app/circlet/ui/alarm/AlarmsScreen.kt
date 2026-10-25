@@ -1,6 +1,12 @@
 package app.circlet.ui.alarm
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.draw.clip
+import app.circlet.ui.design.Shapes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,7 +34,6 @@ import app.circlet.ui.LocalMessenger
 import app.circlet.ui.day.DetailHeader
 import app.circlet.ui.day.ScreenColumn
 import app.circlet.ui.design.Card
-import app.circlet.ui.design.Chip
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.EmptyState
 import app.circlet.ui.design.Field
@@ -244,13 +249,26 @@ private fun AlarmEditor(
     }
 
     Text("REPEAT", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(horizontal = 4.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+    // Seven equal cells, so the whole week always fits one row at any font size.
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         WEEK_ORDER.forEach { day ->
-            Chip(
-                text = shortDay(day),
-                selected = day in days,
-                onClick = { days = if (day in days) days - day else days + day },
-            )
+            val on = day in days
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = Space.touch)
+                    .clip(Shapes.control)
+                    .then(if (on) Modifier.background(Palette.White) else Modifier.border(1.dp, Palette.Ghost, Shapes.control))
+                    .toggleable(value = on, role = Role.Checkbox) { days = if (on) days - day else days + day },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    shortDay(day),
+                    style = label(11.sp, if (on) Palette.BgBottom else Palette.Dim).copy(letterSpacing = 0.4.sp),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
         }
     }
     Text(

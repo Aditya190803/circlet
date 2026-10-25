@@ -39,6 +39,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.SleepEpoch
@@ -94,7 +97,7 @@ private fun ScrubReadout(value: String?, detail: String?, idle: String?) {
             Text(value, style = number(14.sp, Palette.White))
             if (detail != null) Text("  $detail", style = label(11.sp, Palette.Dim))
         } else if (idle != null) {
-            Text(idle, style = label(10.sp, Palette.Ghost))
+            Text(idle, style = label(10.sp, Palette.Faint), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -140,7 +143,7 @@ fun HeartRateChart(
     val bucket = touch?.let { scrubBucket(minutes, it) }
     Column(modifier) {
         // The readout keeps its line whether or not a point is held, so the chart does not jump.
-        Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             if (bucket != null) {
                 val readings = bucket.mapNotNull { minutes[it] }
                 Text("${readings.average().roundToInt()} BPM", style = number(14.sp, Palette.White))
@@ -149,11 +152,16 @@ fun HeartRateChart(
                     style = label(11.sp, Palette.Dim),
                 )
                 Spacer(Modifier.weight(1f))
-                Text("RANGE ${readings.min()}–${readings.max()}", style = label(10.sp, Palette.Faint))
+                Text("RANGE ${readings.min()}–${readings.max()}", style = label(10.sp, Palette.Faint), maxLines = 1, softWrap = false)
             } else if (valid.isNotEmpty() && !loading) {
-                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Ghost))
-                Spacer(Modifier.weight(1f))
-                Text("DAY RANGE ${valid.min()}–${valid.max()}", style = label(10.sp, Palette.Faint))
+                Text(
+                    "HOLD AND DRAG",
+                    style = label(10.sp, Palette.Faint),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text("DAY RANGE ${valid.min()}–${valid.max()}", style = label(10.sp, Palette.Dim), maxLines = 1, softWrap = false)
             }
         }
         Box(contentAlignment = Alignment.Center) {
@@ -251,7 +259,7 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
                 Spacer(Modifier.weight(1f))
                 Text(minutesWords(Duration.between(held.start, held.end).toMinutes()), style = label(10.sp, Palette.Faint))
             } else {
-                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Ghost))
+                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Faint), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -310,10 +318,7 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
 /** How the time in bed split across the stages: each stage's time and its share, in the hypnogram's colours. */
 @Composable
 fun StageBreakdown(session: SleepSession, modifier: Modifier = Modifier) {
-    val minutes = StageLanes.associateWith { stage ->
-        session.epochs.filter { it.stage == stage }.sumOf { it.duration.toMinutes() }
-    }
-    val staged = minutes.values.sum().coerceAtLeast(1)
+    val minutes = stageMinutes(session.epochs)
     val inBed = session.timeInBed.toMinutes().coerceAtLeast(1)
     Column(modifier) {
         listOf(SleepStage.AWAKE, SleepStage.LIGHT, SleepStage.DEEP, SleepStage.REM).forEachIndexed { i, stage ->
@@ -329,10 +334,14 @@ fun StageBreakdown(session: SleepSession, modifier: Modifier = Modifier) {
  * hatched track. A null [fraction] draws the bare track and the dash.
  */
 @Composable
-fun ShareBar(name: String, fraction: Float?, color: Color, value: String?) {
+fun ShareBar(name: String, fraction: Float?, color: Color, value: String?, detail: String? = null) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(name, style = label(13.sp, Palette.White))
+            Text(name, style = label(13.sp, Palette.White), maxLines = 1, softWrap = false)
+            if (detail != null) {
+                Spacer(Modifier.width(8.dp))
+                Text(detail, style = number(13.sp, Palette.Faint), maxLines = 1, softWrap = false)
+            }
             if (fraction != null) {
                 Spacer(Modifier.width(10.dp))
                 Text("${(fraction * 100).roundToInt()}%", style = number(15.sp, color))
@@ -359,6 +368,19 @@ fun ShareBar(name: String, fraction: Float?, color: Color, value: String?) {
             }
         }
     }
+}
+
+/**
+ * Whole minutes per stage that add up to the whole minutes of all the epochs. Epochs are summed
+ * in seconds first, since flooring each short epoch on its own loses minutes; leftover minutes go
+ * to the stages with the largest remainders.
+ */
+internal fun stageMinutes(epochs: List<SleepEpoch>): Map<SleepStage, Int> {
+    val seconds = StageLanes.map { stage -> epochs.filter { it.stage == stage }.sumOf { it.duration.seconds } }
+    val floors = seconds.map { (it / 60).toInt() }
+    val left = (seconds.sum() / 60).toInt() - floors.sum()
+    val extra = seconds.indices.sortedByDescending { seconds[it] % 60 }.take(left).toSet()
+    return StageLanes.indices.associate { i -> StageLanes[i] to floors[i] + if (i in extra) 1 else 0 }
 }
 
 private fun stageWords(stage: SleepStage): String = when (stage) {
@@ -393,6 +415,7 @@ fun WeekBars(
     var touch by remember(values.size) { mutableStateOf<Float?>(null) }
     val held = touch?.let { (it * values.size).toInt().coerceIn(0, values.lastIndex) }
     val plot = if (flat) 24.dp else 120.dp
+    val dense = values.size > 10
     Box(Modifier.fillMaxWidth()) {
         Canvas(Modifier.fillMaxWidth().padding(top = 22.dp).height(plot)) {
             for (i in 0..3) {
@@ -413,7 +436,7 @@ fun WeekBars(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 3.dp)
+                        .padding(horizontal = if (dense) 0.dp else 3.dp)
                         .clip(Shapes.control)
                         .background(if (focused) Palette.White.copy(alpha = 0.07f) else Color.Transparent),
                 ) {
@@ -424,11 +447,13 @@ fun WeekBars(
                                 style = number(12.sp, if (dimmed) Palette.Ghost else colors[i]),
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.wrapContentWidth(unbounded = true),
                             )
                             Spacer(Modifier.height(4.dp))
                             Box(
                                 Modifier
-                                    .width(16.dp)
+                                    .then(if (dense) Modifier.fillMaxWidth(0.6f) else Modifier.width(16.dp))
                                     .height(if (v == null || loading) 3.dp else plot * (v / max).coerceIn(0.03f, 1f))
                                     .clip(BarTop)
                                     .background(
@@ -446,7 +471,8 @@ fun WeekBars(
                         labels[i],
                         style = body(12.sp, if (focused) Palette.White else Palette.Faint).copy(lineHeight = 15.sp),
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 8.dp),
+                        softWrap = false,
+                        modifier = Modifier.padding(bottom = 8.dp).wrapContentWidth(unbounded = true),
                     )
                 }
             }
@@ -456,14 +482,65 @@ fun WeekBars(
 
 private val BarTop = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
 
-/** Minutes in each heart-rate zone, top zone first. Null draws empty tracks. */
+/**
+ * One bar per day for a value centred on zero, such as a deviation: bars rise above the zero
+ * line for positive values and hang below it for negative ones, scaled to the largest size.
+ * A null value draws only the zero line for its day.
+ */
 @Composable
-fun ZoneBars(zones: ZoneMinutes?) {
+fun SignedBars(values: List<Float?>, labels: List<String>, captions: List<String>, color: Color) {
+    val scale = values.filterNotNull().maxOfOrNull { kotlin.math.abs(it) }?.takeIf { it > 0f } ?: 1f
+    val dense = values.size > 10
+    Column(Modifier.fillMaxWidth()) {
+        if (captions.any { it.isNotEmpty() }) {
+            Row(Modifier.fillMaxWidth()) {
+                captions.forEach { caption ->
+                    Text(
+                        caption, style = number(11.sp, color), textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
+                        modifier = Modifier.weight(1f).wrapContentWidth(unbounded = true),
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        Canvas(Modifier.fillMaxWidth().height(130.dp)) {
+            val middle = size.height / 2
+            val slot = size.width / values.size
+            val bar = if (dense) slot * 0.6f else minOf(16.dp.toPx(), slot * 0.5f)
+            drawLine(Palette.Dim, Offset(0f, middle), Offset(size.width, middle), strokeWidth = 1.dp.toPx())
+            values.forEachIndexed { i, v ->
+                if (v == null || v == 0f) return@forEachIndexed
+                val length = maxOf(2.dp.toPx(), (middle - 4.dp.toPx()) * kotlin.math.abs(v) / scale)
+                val top = if (v > 0) middle - length else middle
+                drawRoundRect(color, Offset(slot * i + (slot - bar) / 2, top), Size(bar, length), CornerRadius(3.dp.toPx()))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth()) {
+            labels.forEach { day ->
+                Text(
+                    day, style = body(12.sp, Palette.Faint), textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
+                    modifier = Modifier.weight(1f).wrapContentWidth(unbounded = true),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Minutes in each heart-rate zone, top zone first. Null draws empty tracks. [bounds] are the zone
+ * lower bounds with the top of zone 5 last; when given, each zone shows the beats it covered.
+ */
+@Composable
+fun ZoneBars(zones: ZoneMinutes?, bounds: List<Int>? = null) {
     val total = (zones?.total ?: 0).coerceAtLeast(1)
     for (zone in ZoneMinutes.ZONE_COUNT - 1 downTo 0) {
         val minutes = zones?.minutes?.get(zone)
         if (zone < ZoneMinutes.ZONE_COUNT - 1) Spacer(Modifier.height(16.dp))
-        ShareBar("ZONE $zone", minutes?.let { it.toFloat() / total }, Palette.Zones[zone], minutes?.let(::hoursMinutes))
+        val beats = bounds?.takeIf { it.size == ZoneMinutes.ZONE_COUNT }?.let {
+            if (zone == 0) "UNDER ${it[0]}" else "${it[zone - 1]}–${it[zone]}"
+        }
+        ShareBar("ZONE $zone", minutes?.let { it.toFloat() / total }, Palette.Zones[zone], minutes?.let(::hoursMinutes), beats)
     }
 }
 
@@ -623,7 +700,7 @@ fun DivergingBar(fraction: Float?, positive: Color, negative: Color, modifier: M
 
 /** The strap's battery. A null [percent] draws the empty outline. */
 @Composable
-fun BatteryGlyph(percent: Int?, color: Color) {
+fun BatteryGlyph(percent: Int?, color: Color, charging: Boolean = false) {
     Canvas(Modifier.size(width = 26.dp, height = 12.dp)) {
         val body = Size(size.width - 3.dp.toPx(), size.height)
         drawRoundRect(color, size = body, cornerRadius = CornerRadius(3.dp.toPx()), style = Stroke(1.5.dp.toPx()))
@@ -641,6 +718,22 @@ fun BatteryGlyph(percent: Int?, color: Color) {
                 Size((body.width - pad * 2) * percent.coerceIn(4, 100) / 100f, body.height - pad * 2),
                 CornerRadius(1.dp.toPx()),
             )
+        }
+        if (charging) {
+            // A bolt across the body, cut out of whatever fill sits behind it so it reads at any charge.
+            val w = body.width
+            val h = body.height
+            val bolt = Path().apply {
+                moveTo(w * 0.56f, h * -0.12f)
+                lineTo(w * 0.30f, h * 0.58f)
+                lineTo(w * 0.48f, h * 0.58f)
+                lineTo(w * 0.42f, h * 1.12f)
+                lineTo(w * 0.70f, h * 0.40f)
+                lineTo(w * 0.52f, h * 0.40f)
+                close()
+            }
+            drawPath(bolt, Palette.BgTop, style = Stroke(2.5.dp.toPx(), join = StrokeJoin.Round))
+            drawPath(bolt, Palette.White)
         }
     }
 }

@@ -61,6 +61,18 @@ class HypnogramTest {
     }
 
     @Test
+    fun stageMinutesAddUpWhenEpochsAreShorterThanAMinute() {
+        val epochs = (0 until 90).map { i ->
+            SleepEpoch(night.plusSeconds(i * 30L), if (i % 3 == 0) SleepStage.DEEP else SleepStage.LIGHT, Duration.ofSeconds(30))
+        }
+        val minutes = stageMinutes(epochs)
+        assertEquals(45, minutes.values.sum())
+        assertEquals(30, minutes[SleepStage.LIGHT])
+        assertEquals(15, minutes[SleepStage.DEEP])
+        assertEquals(0, minutes[SleepStage.REM])
+    }
+
+    @Test
     fun aNightWithNoEpochsReadsNothing() {
         assertNull(runAt(emptyList(), at(0)))
     }

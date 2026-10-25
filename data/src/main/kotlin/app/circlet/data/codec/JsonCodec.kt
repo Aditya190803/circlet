@@ -77,6 +77,7 @@ internal object DayCodec {
         put("sleepPerformance", metricJson(day.sleepPerformance.percent) { put("value", it) })
         put("sleepConsistency", metricJson(day.sleepConsistency.index) { put("value", it) })
         put("targetStrain", metricJson(day.targetStrain.score) { put("value", it) })
+        day.targetStrain.range?.let { put("targetStrainRange", JSONObject().put("low", it.low).put("high", it.high)) }
         put("vo2Max", metricJson(day.vo2Max.mlPerKgMin) { put("value", it) })
         put("wellness", JSONArray().apply { day.wellness.forEach { put(wellnessJson(it)) } })
         day.skinTemperature?.let { put("skinTemperature", skinTempJson(it)) }
@@ -113,7 +114,10 @@ internal object DayCodec {
             sleepDebt = SleepDebt(json.readMetric("sleepDebt") { Duration.ofMillis(getLong("value")) }),
             sleepPerformance = SleepPerformance(json.readMetric("sleepPerformance") { getInt("value") }),
             sleepConsistency = SleepConsistency(json.readMetric("sleepConsistency") { getDouble("value") }),
-            targetStrain = TargetStrain(json.readMetric("targetStrain") { getDouble("value") }),
+            targetStrain = TargetStrain(
+                json.readMetric("targetStrain") { getDouble("value") },
+                json.optJSONObject("targetStrainRange")?.let { ReferenceRange(it.getDouble("low"), it.getDouble("high")) },
+            ),
             vo2Max = Vo2Max(json.readMetric("vo2Max") { getDouble("value") }),
             wellness = json.getJSONArray("wellness").objects().map { wellness(it) },
             skinTemperature = if (json.has("skinTemperature") && !json.isNull("skinTemperature")) {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -163,6 +164,7 @@ fun HeroDial(
     message: String,
     loading: Boolean = false,
     marker: Float? = null,
+    tag: String? = null,
 ) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(8.dp))
@@ -177,7 +179,7 @@ fun HeroDial(
                     else -> RingValue(value, unit, 84.sp)
                 }
                 if (!loading) {
-                    Text(caption, style = label(14.sp, Palette.White), textAlign = TextAlign.Center, modifier = Modifier.width(150.dp))
+                    Text(caption, style = label(14.sp, Palette.White), textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 200.dp))
                 }
             }
         }
@@ -187,6 +189,10 @@ fun HeroDial(
             Spacer(Modifier.height(8.dp))
             Skeleton(Modifier.size(width = 180.dp, height = 14.dp))
         } else {
+            if (tag != null) {
+                Tag(tag, Palette.Warn)
+                Spacer(Modifier.height(10.dp))
+            }
             Text(message, style = body(14.sp, Palette.Dim), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
         }
         Spacer(Modifier.height(8.dp))

@@ -115,7 +115,9 @@ class RangesTest {
     fun signedDeviationUsesSignAndNoUnit() {
         assertEquals("+1.2", 1.23.signedDeviation())
         assertEquals("−0.5", (-0.5).signedDeviation())
-        assertEquals("+0", 0.0.signedDeviation(0))
+        assertEquals("0", 0.0.signedDeviation(0))
+        assertEquals("0.0", (-0.04).signedDeviation())
+        assertEquals("0.0", (-0.04).decimal())
     }
 
     private fun reference(kind: MetricKind) = MetricReference(

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.circlet.core.AbsentReason
 import app.circlet.core.DaySummary
 import app.circlet.core.MetricKind
 import app.circlet.core.MetricsRepository
@@ -60,7 +61,10 @@ import app.circlet.ui.design.Skeleton
 import app.circlet.ui.design.Space
 import app.circlet.ui.design.Sparkline
 import app.circlet.ui.design.StatRow
+import app.circlet.ui.design.Divider
+import app.circlet.ui.design.SignedBars
 import app.circlet.ui.design.WeekBars
+import app.circlet.ui.design.signedDeviation
 import app.circlet.ui.design.body
 import app.circlet.ui.design.decimal
 import app.circlet.ui.design.dateTitle
@@ -178,7 +182,10 @@ private fun YourRangeCard(kind: MetricKind, day: DaySummary?) {
     val ref = day?.references?.forKind(kind) ?: return
     val value = day.metricValue(kind).value
     Card(title = "YOUR RANGE") {
-        RangeBar(value, ref.personal, ref.ideal, valueText = value?.let { kind.format(it) }, toward = kind.toward())
+        RangeBar(
+            value, ref.personal, ref.ideal, valueText = value?.let { kind.format(it) }, toward = kind.toward(),
+            usualText = ref.personal?.let { "${kind.format(it.low)}–${kind.format(it.high)}" },
+        )
         RangeLegend(
             personal = ref.personal,
             personalDays = ref.personalDays,
@@ -363,6 +370,15 @@ private fun TrendBody(kind: MetricKind, trend: MetricTrend) {
     val values = trend.points.map { it.value?.toFloat() }
     val isWeek = trend.range == TrendRange.WEEK
     Card(title = windowLabel(trend.window)) {
+        if (kind == MetricKind.SKIN_TEMPERATURE) {
+            SignedBars(
+                values = values,
+                labels = if (isWeek) dates.map { it.narrowDay() } else dates.mapIndexed { i, d -> if (i % 5 == 0) d.dayOfMonth.toString() else "" },
+                captions = if (isWeek) trend.points.map { p -> p.value?.signedDeviation() ?: "" } else values.map { "" },
+                color = Palette.Teal,
+            )
+            return@Card
+        }
         WeekBars(
             values = values,
             labels = if (isWeek) {
@@ -426,7 +442,8 @@ private fun ChangeLine(kind: MetricKind, trend: MetricTrend) {
         )
         return
     }
-    val percent = change.percent
+    // A deviation already centred on zero has no meaningful relative change; say how far it moved.
+    val percent = change.percent.takeIf { kind != MetricKind.SKIN_TEMPERATURE }
     val text = if (percent != null) {
         "${signed(percent)}% against the previous $span"
     } else {
@@ -474,10 +491,13 @@ private fun RecapBody(recap: WeeklyRecap) {
             unit = "ms",
             absent = recap.averageHrvMs.absentReason,
         )
+        // Each day's debt is already a rolling figure, so the week reads as their mean, as the
+        // Sleep debt trend does, never their sum.
+        val debt = recap.days.mapNotNull { it.sleepDebt.shortfall.value?.toMinutes()?.toDouble() }.averageOrNull()
         StatRow(
             name = "Sleep debt",
-            value = recap.sleepDebt.value?.hoursMinutes(),
-            absent = recap.sleepDebt.absentReason,
+            value = debt?.let { hoursMinutes(it.roundToInt()) },
+            absent = if (debt == null) recap.sleepDebt.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
         )
     }
     Card(title = "DAYS") {
@@ -499,12 +519,26 @@ private fun RecapBody(recap: WeeklyRecap) {
 
 @Composable
 private fun RecordCard(group: RecordGroup) {
+    // The record itself leads: the best value large, any runners-up smaller, the date secondary.
     Card(title = group.kind.label().uppercase()) {
-        group.records.forEach { record ->
-            ListRow(
-                title = group.kind.withUnit(record.value),
-                subtitle = record.date.shortDate(),
-            )
+        group.records.forEachIndexed { i, record ->
+            if (i > 0) Divider()
+            val kind = group.kind
+            val unit = kind.unit()
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = if (i == 0) 4.dp else 10.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(
+                    kind.format(record.value) + if (unit == "%") "%" else "",
+                    style = number(if (i == 0) 36.sp else 22.sp),
+                )
+                if (unit.isNotEmpty() && unit != "%" && !kind.isDuration()) {
+                    Text(" $unit", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(bottom = if (i == 0) 7.dp else 4.dp))
+                }
+                Spacer(Modifier.weight(1f))
+                Text(record.date.shortDate(), style = label(11.sp, Palette.Dim), modifier = Modifier.padding(bottom = if (i == 0) 7.dp else 4.dp))
+            }
         }
     }
 }
@@ -520,7 +554,7 @@ private fun MetricKind.withUnit(value: Double): String = joinUnit(format(value),
 
 private fun RecordKind.withUnit(value: Double): String = joinUnit(format(value), unit(), isDuration())
 
-private fun signed(value: Double): String = (if (value > 0) "+" else "") + value.decimal(1)
+private fun signed(value: Double): String = value.decimal(1).let { if (value > 0 && it.any { c -> c in '1'..'9' }) "+$it" else it }
 
 private fun monthTitle(month: YearMonth): String =
     month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())).uppercase()

@@ -3,6 +3,7 @@ package app.circlet.ui.day
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -18,10 +19,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,13 +50,28 @@ import app.circlet.ui.design.label
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
+/**
+ * Counts taps on the bottom bar. A screen that sees the count move since it last looked
+ * scrolls back to its top, so a tap on any tab lands at the top of that tab.
+ */
+val LocalTabTaps = staticCompositionLocalOf<StateFlow<Int>> { MutableStateFlow(0) }
+
 /** The scrolling body every tab and pushed screen shares: one column of cards. */
 @Composable
 fun ScreenColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val scroll = rememberScrollState()
+    val taps by LocalTabTaps.current.collectAsState()
+    var seen by rememberSaveable { mutableIntStateOf(taps) }
+    LaunchedEffect(taps) {
+        if (taps != seen) {
+            seen = taps
+            scroll.animateScrollTo(0)
+        }
+    }
     Column(
         modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(horizontal = Space.screen),
         verticalArrangement = Arrangement.spacedBy(Space.cardGap),
     ) {
@@ -75,7 +102,8 @@ fun DetailHeader(
             Text(title, style = label(15.sp, Palette.White))
             if (subtitle != null) Text(subtitle, style = label(11.sp, Palette.Faint))
         }
-        if (action != null) action() else Spacer(Modifier.width(Space.touch))
+        // The slot keeps its width even when the action draws nothing, so the title stays centred.
+        Box(Modifier.size(Space.touch), contentAlignment = Alignment.Center) { action?.invoke() }
     }
 }
 
@@ -110,8 +138,10 @@ fun TopBar(
         Spacer(Modifier.weight(1f))
         val connected = strap.link == LinkState.CONNECTED
         val percent = strap.batteryPercent?.roundToInt()
+        val charging = connected && strap.charging == true
         val tint = when {
             !connected -> Palette.Faint
+            charging -> Palette.Teal
             (percent ?: 100) < 20 -> Palette.Danger
             else -> Palette.White
         }
@@ -119,11 +149,18 @@ fun TopBar(
             Modifier
                 .size(Space.touch)
                 .clip(RoundedCornerShape(12.dp))
-                .clickable(role = Role.Button, onClickLabel = "Strap status", onClick = onStrap),
+                .clickable(role = Role.Button, onClickLabel = "Strap status", onClick = onStrap)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = when {
+                        !connected -> "Strap offline"
+                        charging -> "Strap charging" + (percent?.let { ", $it percent" } ?: "")
+                        else -> percent?.let { "Strap battery $it percent" } ?: "Strap connected"
+                    }
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            BatteryGlyph(if (connected) percent else null, tint)
+            BatteryGlyph(if (connected) percent else null, tint, charging)
             Text(
                 if (connected) percent?.let { "$it%" } ?: "" else "OFF",
                 style = label(10.sp, tint),

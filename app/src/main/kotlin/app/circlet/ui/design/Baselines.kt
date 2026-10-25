@@ -82,6 +82,7 @@ fun BaselineRow(
     value: String?,
     baseline: String?,
     change: Change?,
+    unit: String = "",
     onClick: (() -> Unit)? = null,
 ) {
     Row(
@@ -100,7 +101,12 @@ fun BaselineRow(
             if (value == null) {
                 AbsentDash(Modifier.padding(vertical = 12.dp))
             } else {
-                Text(value, style = number(26.sp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(value, style = number(26.sp))
+                    if (unit.isNotEmpty()) {
+                        Text(" $unit", style = label(10.sp, Palette.Faint), modifier = Modifier.padding(bottom = 5.dp))
+                    }
+                }
             }
             if (baseline != null) Text(baseline, style = number(14.sp, Palette.Faint))
         }
@@ -117,6 +123,7 @@ fun BaselineTile(
     value: String?,
     baseline: String?,
     change: Change?,
+    unit: String = "",
     onClick: (() -> Unit)? = null,
 ) {
     Box(
@@ -125,7 +132,7 @@ fun BaselineTile(
             .clip(Shapes.card)
             .background(Palette.CardFill)
             .padding(horizontal = 20.dp),
-    ) { BaselineRow(glyph, name, value, baseline, change, onClick) }
+    ) { BaselineRow(glyph, name, value, baseline, change, unit, onClick) }
 }
 
 /** The footnote under a card of [BaselineRow]s naming what the small numbers are. */
