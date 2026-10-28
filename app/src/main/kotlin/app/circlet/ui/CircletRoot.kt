@@ -186,6 +186,20 @@ val LocalMessenger = staticCompositionLocalOf { Messenger() }
 @Composable
 fun CircletRoot() {
     val context = LocalContext.current
+    val cloud = remember { app.circlet.AppBootstrap.cloud(context) }
+    val cloudState by cloud.state.collectAsStateWithLifecycle()
+    // Offered once at start; the app works without it, and More › Data can connect later.
+    val prompts = remember { context.getSharedPreferences("circlet_ui", android.content.Context.MODE_PRIVATE) }
+    var cloudPromptDismissed by remember { mutableStateOf(prompts.getBoolean("cloud_prompt_dismissed", false)) }
+    if (cloudState.supported && !cloudState.signedIn && !cloudPromptDismissed) {
+        CircletTheme(TimeFormat(ZoneId.systemDefault(), DateFormat.is24HourFormat(context))) {
+            app.circlet.ui.portability.CloudSetupScreen(cloud) {
+                prompts.edit().putBoolean("cloud_prompt_dismissed", true).apply()
+                cloudPromptDismissed = true
+            }
+        }
+        return
+    }
     var attempt by remember { mutableIntStateOf(0) }
     var opened by remember { mutableStateOf<Result<AppContainer>?>(null) }
     LaunchedEffect(attempt) {
@@ -204,8 +218,8 @@ fun CircletRoot() {
     if (container == null) {
         CircletTheme(TimeFormat(ZoneId.systemDefault(), DateFormat.is24HourFormat(context))) {
             Box(Modifier.fillMaxSize().background(Palette.Background).padding(24.dp), contentAlignment = Alignment.Center) {
-                if (opened == null) Text("Opening your data…", color = Palette.Dim)
-                else app.circlet.ui.design.ErrorState("Your local data could not be opened. Restart Circlet and try again. Your saved data has not been replaced.") { attempt++ }
+                if (opened == null) Text("Loading your cloud history…", color = Palette.Dim)
+                else app.circlet.ui.design.ErrorState("Your data could not be opened. Check your cloud connection and try again. Unsent changes have not been cleared.") { attempt++ }
             }
         }
         return

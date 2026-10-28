@@ -6,11 +6,9 @@
 // threshold is ours on an uncalibrated relative channel; Smarr reports +0.63 C
 // against a per-subject baseline and supplies no z threshold.
 //
-// Circlet is WHOOP 4.0 only, so the source's per-family dispatch is fixed to
-// the gen4 calibration measured on real nights: a sample is settled while it
-// sits no more than 40 counts below the night's own median (one-sided so a
-// fever passes through), the settled fraction floor is 0.80, and the sample
-// floor is 60. Counts are never degrees and never cross device families.
+// Gen 4 uses the measured 40-count settling band. OpenStrap has no measured
+// Gen 5 settling band, so its centi-degree channel abstains from nightly metrics.
+// Counts and centi-degrees never share a baseline.
 
 package app.circlet.analytics.temperature
 
@@ -22,6 +20,8 @@ import app.circlet.core.Confidence
 import app.circlet.core.Metric
 import app.circlet.core.SkinTempFlag
 import app.circlet.core.SkinTemperature
+import app.circlet.core.StrapGeneration
+import app.circlet.core.SkinTemperatureUnit
 import java.time.LocalDate
 
 /** A sample is settled while it sits no more than this far below the night median, in counts. */
@@ -67,7 +67,10 @@ fun nightlySkinTemp(
     minSamples: Int = SKIN_TEMP_MIN_SAMPLES,
     minSettledFraction: Double = SKIN_TEMP_MIN_SETTLED_FRACTION,
     settleBandLow: Double = SKIN_TEMP_SETTLE_BAND_COUNTS,
+    generation: StrapGeneration = StrapGeneration.GEN4,
 ): Metric<SettledSkinTemp> {
+    // OpenStrap has no measured Gen 5 settling band; Gen 4 counts cannot calibrate centi-°C.
+    if (generation != StrapGeneration.GEN4) return Metric.absent(AbsentReason.CALIBRATING)
     val valid = ArrayList<Double>(counts.size)
     for (count in counts) {
         if (count != null && count > 0) valid += count.toDouble()
@@ -91,6 +94,7 @@ fun nightlySkinTemp(
 data class NightlyTemp(
     val date: LocalDate,
     val meanCounts: Double?,
+    val unit: SkinTemperatureUnit = SkinTemperatureUnit.ADC_COUNTS,
 )
 
 enum class TempElevation {
@@ -138,7 +142,7 @@ fun tempIllnessFlag(
         val window = ArrayList<Double>()
         for (j in i - 1 downTo 0) {
             if (days[i] - days[j] > baselineDays) break
-            nights[j].meanCounts?.let { window += it }
+            if (nights[j].unit == nights[i].unit) nights[j].meanCounts?.let { window += it }
         }
         if (tonight == null || window.size < minBaseline) {
             out += TempIllnessNight(nights[i].date, TempElevation.NORMAL, null, Confidence.LOW)
@@ -151,7 +155,7 @@ fun tempIllnessFlag(
             elevatedRun = 0
             continue
         }
-        if (days[i] - lastScoredDay > 1) elevatedRun = 0
+        if (days[i] - lastScoredDay > 1 || (i > 0 && nights[i].unit != nights[i - 1].unit)) elevatedRun = 0
         lastScoredDay = days[i]
         val elevated = z >= zThresh
         if (elevated) elevatedRun++ else elevatedRun = 0
@@ -196,7 +200,7 @@ fun scoreSkinTemp(
     var baselineNights = 0
     for (i in nights.size - 2 downTo 0) {
         if (targetDay - nights[i].date.toEpochDay() > baselineDays) break
-        if (nights[i].meanCounts != null) baselineNights++
+        if (nights[i].unit == target.unit && nights[i].meanCounts != null) baselineNights++
     }
     val tonight = tempIllnessFlag(nights, baselineDays, zThresh, persistDays, minBaseline, luteal).last()
     val deviation = tonight.z?.let { Metric.of(it, tonight.confidence) }
@@ -215,5 +219,5 @@ fun scoreSkinTemp(
         tonight.elevation == TempElevation.ELEVATED -> SkinTempFlag.ELEVATED
         else -> SkinTempFlag.NORMAL
     }
-    return SkinTemperature(deviation = honest, baselineNights = baselineNights, flag = flag)
+    return SkinTemperature(deviation = honest, baselineNights = baselineNights, flag = flag, unit = target.unit)
 }

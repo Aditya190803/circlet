@@ -49,6 +49,9 @@ sealed interface StrapError {
     data object BondFailed : StrapError
     data object LinkLost : StrapError
     data object TimedOut : StrapError
+
+    /** A WHOOP 5.0 / MG that its WHOOP account has locked. Circlet cannot unlock it and stops reconnecting. */
+    data object AccountLocked : StrapError
     data class Rejected(val detail: String) : StrapError
 }
 
@@ -71,6 +74,7 @@ data class StrapState(
     val sync: SyncProgress = SyncProgress(samplesPulled = 0, draining = false),
     val lastSync: Instant? = null,
     val error: StrapError? = null,
+    val generation: StrapGeneration? = null,
 )
 
 /**
@@ -81,6 +85,7 @@ data class FoundStrap(
     val address: String,
     val name: String,
     val rssiDbm: Int,
+    val generation: StrapGeneration? = null,
 )
 
 /** Which haptic pattern [StrapController.buzz] should run. */

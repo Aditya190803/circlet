@@ -21,7 +21,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 /** Health Connect, export, backup and restore. Results and problems go out through [messages]. */
-class DataViewModel(private val data: DataPortability, private val settings: SettingsRepository) : ViewModel() {
+class DataViewModel(private val data: DataPortability, private val settings: SettingsRepository,
+    val cloud: app.circlet.core.CloudSyncController = app.circlet.core.NoCloudSync) : ViewModel() {
     val countPhoneSteps: Flow<Boolean> = settings.settings.map { it.countPhoneSteps }.distinctUntilChanged()
     val healthConnect: StateFlow<HealthConnectStatus> = data.healthConnect
     val backup: StateFlow<BackupSettings> = data.backup

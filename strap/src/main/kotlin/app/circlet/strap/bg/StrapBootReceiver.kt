@@ -12,7 +12,11 @@ class StrapBootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             QUICKBOOT,
-            -> if (PairedFlag.isPaired(context)) StrapService.start(context)
+            -> if (PairedFlag.isPaired(context)) {
+                StrapWatchdog.schedule(context)
+                PairedFlag.address(context)?.let { StrapCompanion.observeIfAssociated(context, it) }
+                StrapService.start(context, reconnect = true)
+            }
         }
     }
 

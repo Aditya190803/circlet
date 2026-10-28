@@ -31,13 +31,17 @@ data class SampleEntity(
     val infrared: Int?,
     val ambient: Int?,
     val skinTempCount: Int? = null,
+    @ColumnInfo(defaultValue = "'GEN4'") val generation: String = "GEN4",
+    val skinTemperatureCentiC: Int? = null,
+    val bandState: Int? = null,
 )
 
 /** Untouched historical record body, keyed by the same epoch second as [SampleEntity]. */
-@Entity(tableName = "raw_records")
+@Entity(tableName = "raw_records", indices = [Index("epochSecond")])
 data class RawRecordEntity(
-    @PrimaryKey val epochSecond: Long,
+    val epochSecond: Long,
     val bytes: ByteArray,
+    @PrimaryKey val archiveKey: String = epochSecond.toString(),
 )
 
 @Entity(tableName = "strap_events", indices = [Index("atMillis")])

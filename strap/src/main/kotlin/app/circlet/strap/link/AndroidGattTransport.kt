@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import app.circlet.core.StrapGeneration
 import app.circlet.core.FoundStrap
 import app.circlet.strap.diag.SyncRecorder
 import app.circlet.strap.wire.StrapUuids
@@ -61,6 +62,11 @@ internal class AndroidGattTransport(
     override val notifications: Flow<GattNotice> = notices.receiveAsFlow()
 
     private var gatt: BluetoothGatt? = null
+    @Volatile
+    override var strapGeneration = StrapGeneration.GEN4
+        private set
+    private val profile get() = StrapUuids.profile(strapGeneration)
+
     @Volatile
     override var connectionGeneration: Long = 0
         private set
@@ -128,8 +134,9 @@ internal class AndroidGattTransport(
             val address = device.address ?: return
             val advertised = result.scanRecord?.deviceName?.takeIf { it.isNotBlank() }
                 ?: device.name?.takeIf { it.isNotBlank() }
-                ?: "WHOOP 4.0"
-            hits.tryEmit(FoundStrap(address, advertised, result.rssi))
+                ?: "WHOOP"
+            val generation = result.scanRecord?.serviceUuids?.firstNotNullOfOrNull { StrapUuids.generation(it.uuid) }
+            hits.tryEmit(FoundStrap(address, advertised, result.rssi, generation))
         }
     }
 
@@ -161,9 +168,9 @@ internal class AndroidGattTransport(
     override suspend fun startScan() {
         val scanner = adapter()?.bluetoothLeScanner ?: error("Bluetooth is off")
         withContext(Dispatchers.Main.immediate) {
-            val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(StrapUuids.SERVICE)).build()
+            val filters = StrapUuids.SERVICES.map { ScanFilter.Builder().setServiceUuid(ParcelUuid(it)).build() }
             val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-            scanner.startScan(listOf(filter), settings, scanCallback)
+            scanner.startScan(filters, settings, scanCallback)
         }
     }
 
@@ -243,9 +250,10 @@ internal class AndroidGattTransport(
     override suspend fun discover(): Boolean {
         val status = awaitStatus(GattOperation.DISCOVER) { gatt?.discoverServices() == true }
         if (status != BluetoothGatt.GATT_SUCCESS) return false
-        val service = gatt?.getService(StrapUuids.SERVICE) ?: return false
+        val service = StrapUuids.SERVICES.firstNotNullOfOrNull { gatt?.getService(it) } ?: return false
+        strapGeneration = StrapUuids.generation(service.uuid) ?: return false
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-        return listOf(StrapUuids.CMD_TO, StrapUuids.CMD_FROM, StrapUuids.EVENTS, StrapUuids.DATA)
+        return listOf(profile.commandTo, profile.commandFrom, profile.events, profile.data)
             .all { service.getCharacteristic(it) != null }
     }
 
@@ -258,9 +266,26 @@ internal class AndroidGattTransport(
     }
 
     override suspend fun write(frame: ByteArray) {
-        val characteristic = characteristic(StrapUuids.CMD_TO) ?: error("missing command characteristic")
+        val characteristic = characteristic(profile.commandTo) ?: error("missing command characteristic")
         val status = writeCharacteristic(characteristic, frame)
         if (status != BluetoothGatt.GATT_SUCCESS) error("write $status")
+    }
+
+    // The strap or the phone can renegotiate a slower interval after connect, so this is asked again per drain.
+    override suspend fun boostLink() {
+        withContext(Dispatchers.Main.immediate) {
+            val current = gatt ?: return@withContext
+            try {
+                current.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                current.setPreferredPhy(
+                    BluetoothDevice.PHY_LE_2M_MASK,
+                    BluetoothDevice.PHY_LE_2M_MASK,
+                    BluetoothDevice.PHY_OPTION_NO_PREFERRED,
+                )
+            } catch (failed: SecurityException) {
+                diag.swallowed("transport", failed)
+            }
+        }
     }
 
     override fun bonded(address: String): Boolean {
@@ -431,20 +456,20 @@ internal class AndroidGattTransport(
     }
 
     private fun roleOf(uuid: UUID): NotifyRole? = when (uuid) {
-        StrapUuids.CMD_FROM -> NotifyRole.COMMANDS
-        StrapUuids.EVENTS -> NotifyRole.EVENTS
-        StrapUuids.DATA -> NotifyRole.DATA
+        profile.commandFrom -> NotifyRole.COMMANDS
+        profile.events -> NotifyRole.EVENTS
+        profile.data -> NotifyRole.DATA
         else -> null
     }
 
     private fun uuid(role: NotifyRole): UUID = when (role) {
-        NotifyRole.COMMANDS -> StrapUuids.CMD_FROM
-        NotifyRole.EVENTS -> StrapUuids.EVENTS
-        NotifyRole.DATA -> StrapUuids.DATA
+        NotifyRole.COMMANDS -> profile.commandFrom
+        NotifyRole.EVENTS -> profile.events
+        NotifyRole.DATA -> profile.data
     }
 
     private fun characteristic(uuid: UUID): BluetoothGattCharacteristic? =
-        gatt?.getService(StrapUuids.SERVICE)?.getCharacteristic(uuid)
+        gatt?.getService(profile.service)?.getCharacteristic(uuid)
 
     private fun adapter() = context.getSystemService(BluetoothManager::class.java)?.adapter
 

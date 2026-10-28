@@ -17,6 +17,7 @@ import app.circlet.core.Confidence
 import app.circlet.core.HeartRateRecovery
 import app.circlet.core.Metric
 import app.circlet.core.Profile
+import app.circlet.core.measurementBpm
 import app.circlet.core.Sample
 import app.circlet.core.SignalBounds
 import app.circlet.core.Sport
@@ -150,7 +151,7 @@ fun heartRateRecovery(
     val endIndex = window.indexOfLast { it.epochSecond <= endSec }
     if (endIndex < 0) return null
     val scored = hrRecovery(
-        hrTailBpm = window.map { it.heartRateBpm ?: 0 },
+        hrTailBpm = window.map { it.measurementBpm() ?: 0 },
         endIndex = endIndex,
         tsSec = window.map { it.epochSecond.toInt() },
     )
@@ -307,7 +308,7 @@ private fun motionOf(samples: List<Sample>, nowSec: Long, range: LongRange): Lis
 }
 
 private fun Sample.measured(): Int? {
-    val bpm = heartRateBpm ?: return null
+    val bpm = measurementBpm() ?: return null
     if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) return null
     return bpm
 }

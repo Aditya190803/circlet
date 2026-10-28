@@ -10,9 +10,7 @@ import android.companion.CompanionDeviceService
 import android.content.Context
 import android.content.IntentSender
 import android.os.Build
-import android.os.ParcelUuid
 import android.util.Log
-import app.circlet.strap.wire.StrapUuids
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicReference
 
@@ -28,6 +26,7 @@ object StrapCompanion {
     /** The activity that can show the system association dialog. Cleared in [detach]. */
     fun attach(activity: Activity) {
         activityRef.set(WeakReference(activity))
+        PairedFlag.address(activity)?.let { associateIfAttached(activity, it) }
     }
 
     fun detach(activity: Activity) {
@@ -108,7 +107,6 @@ object StrapCompanion {
         pendingMac.set(address)
         val filter = ScanFilter.Builder()
             .setDeviceAddress(address)
-            .setServiceUuid(ParcelUuid(StrapUuids.SERVICE))
             .build()
         val device = BluetoothLeDeviceFilter.Builder().setScanFilter(filter).build()
         val association = AssociationRequest.Builder()
@@ -160,10 +158,16 @@ object StrapCompanion {
 class StrapPresenceService : CompanionDeviceService() {
     @Deprecated("Deprecated in API 33")
     override fun onDeviceAppeared(address: String) {
-        if (Build.VERSION.SDK_INT < 33) StrapService.start(this)
+        if (Build.VERSION.SDK_INT < 33) wake(address)
     }
 
     override fun onDeviceAppeared(associationInfo: AssociationInfo) {
-        StrapService.start(this)
+        associationInfo.deviceMacAddress?.toString()?.let(::wake)
+    }
+
+    private fun wake(address: String) {
+        if (PairedFlag.address(this)?.equals(address, ignoreCase = true) == true) {
+            StrapService.start(this, reconnect = true)
+        }
     }
 }

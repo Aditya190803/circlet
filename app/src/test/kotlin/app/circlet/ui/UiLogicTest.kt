@@ -8,6 +8,9 @@ import app.circlet.core.MassUnit
 import app.circlet.core.Metric
 import app.circlet.core.Recovery
 import app.circlet.core.Sex
+import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
+import app.circlet.core.SkinTemperatureUnit
 import app.circlet.core.StrapError
 import app.circlet.core.StrapState
 import app.circlet.core.Strain
@@ -20,6 +23,7 @@ import app.circlet.core.fake.FakeScenario
 import app.circlet.ui.design.words
 import app.circlet.ui.design.stalled
 import app.circlet.ui.design.syncProgressLabel
+import app.circlet.ui.design.unscored
 import app.circlet.ui.more.ProfileDraft
 import app.circlet.ui.more.parseNotice
 import app.circlet.ui.state.DayUiState
@@ -55,6 +59,8 @@ class UiLogicTest {
         assertEquals(Notice.Unpaired, ready(FakeScenario.UNPAIRED).notice)
         assertEquals(Notice.Searching, paired.copy(strap = paired.strap.copy(link = LinkState.RECONNECTING)).notice)
         assertEquals(Notice.NeedsPermission, paired.copy(strap = paired.strap.copy(error = StrapError.PermissionMissing)).notice)
+        val locked = paired.strap.copy(link = LinkState.DISCONNECTED, error = StrapError.AccountLocked)
+        assertEquals(Notice.StrapTrouble(StrapError.AccountLocked), paired.copy(strap = locked).notice)
         assertEquals(Notice.CatchingUp(90), paired.copy(strap = paired.strap.copy(sync = SyncProgress(5_400, draining = true))).notice)
     }
 
@@ -130,5 +136,14 @@ class UiLogicTest {
         assertEquals(40, changed?.ageYears)
         assertEquals(63.96, changed?.weightKg ?: 0.0, 0.01)
         assertNull(ProfileDraft("40", "168", "64", "90", Sex.FEMALE).toProfile(base, MassUnit.KILOGRAM, today))
+    }
+
+    @Test
+    fun aWhoop5NightIsNotScoredRatherThanStuckBuildingABaseline() {
+        val absent = Metric.absent<Double>(AbsentReason.CALIBRATING)
+        val gen5 = SkinTemperature(absent, 0, SkinTempFlag.NOT_ENOUGH_BASELINE, unit = SkinTemperatureUnit.CENTI_CELSIUS)
+        assertTrue(gen5.unscored)
+        assertTrue(!gen5.copy(importedCelsius = 33.1).unscored)
+        assertTrue(!gen5.copy(unit = SkinTemperatureUnit.ADC_COUNTS).unscored)
     }
 }

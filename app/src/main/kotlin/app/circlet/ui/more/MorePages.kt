@@ -65,7 +65,7 @@ fun ProfileScreen(
                 ProfileFields(draft, unit, showMaxHeartRate = true) { saved = false }
             }
             Text(
-                "These set your heart rate zones, calories and strain. They are stored on this phone only.",
+                "These set your heart rate zones, calories and strain. They stay on this phone and, if you connect Firebase, are backed up to your account.",
                 style = body(13.sp, Palette.Faint),
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
@@ -170,7 +170,7 @@ fun AboutScreen(version: String, notice: String?, noticeMissing: Boolean, onBack
                 StatRow("VERSION", version)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "A local companion for the WHOOP 4.0 strap. It is not made by, or affiliated with, WHOOP.",
+                    "A local companion for WHOOP 4.0 and WHOOP 5.0 / MG straps. It is not made by, or affiliated with, WHOOP.",
                     style = body(14.sp),
                 )
             }
@@ -184,7 +184,7 @@ fun AboutScreen(version: String, notice: String?, noticeMissing: Boolean, onBack
             }
             Card("PRIVACY") {
                 Text(
-                    "Circlet has no internet permission. Nothing leaves this phone unless you export it yourself.",
+                    "Your history is stored on this phone. If you connect your personal Firebase account, Circlet backs it up there over HTTPS, and your database rules restrict access to your signed-in account. Nothing else leaves the phone.",
                     style = body(14.sp),
                 )
             }

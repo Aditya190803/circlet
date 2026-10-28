@@ -108,6 +108,7 @@ internal fun segmentDay(
         habitualMidsleepSec = habitualMidsleepSecFromHistory(blocks, tzOffsetResolver = offsets),
         tzOffsetResolver = offsets,
         vanHeesMask = mask,
+        bandSleepState = series.bandState.takeIf { states -> states.any { it in 0..3 } },
         forcedWindow = edit?.window?.let { (start, end) ->
             ForcedWindow(start.epochSecond.toInt(), end.epochSecond.toInt())
         },

@@ -2,6 +2,7 @@ package app.circlet.data.codec
 
 import app.circlet.core.GravityVector
 import app.circlet.core.OpticalChannels
+import app.circlet.core.StrapGeneration
 import app.circlet.core.Sample
 import app.circlet.data.db.SampleEntity
 import java.nio.ByteBuffer
@@ -54,6 +55,9 @@ internal fun Sample.toEntity(): SampleEntity {
         infrared = channels?.infrared,
         ambient = channels?.ambient,
         skinTempCount = skinTempCount,
+        generation = generation.name,
+        skinTemperatureCentiC = skinTemperatureCentiC,
+        bandState = bandState,
     )
 }
 
@@ -72,5 +76,8 @@ internal fun SampleEntity.toSample(): Sample {
         optical = channels,
         rawRecord = null,
         skinTempCount = skinTempCount,
+        generation = StrapGeneration.valueOf(generation),
+        skinTemperatureCentiC = skinTemperatureCentiC,
+        bandState = bandState,
     )
 }

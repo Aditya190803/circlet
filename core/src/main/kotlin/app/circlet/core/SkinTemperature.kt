@@ -19,6 +19,7 @@ data class SkinTemperature(
     val flag: SkinTempFlag,
     val settledMeanCounts: Double? = null,
     val importedCelsius: Double? = null,
+    val unit: SkinTemperatureUnit = SkinTemperatureUnit.ADC_COUNTS,
 )
 
 /** Whether a night's relative skin temperature is ordinary, high, or not yet comparable. */

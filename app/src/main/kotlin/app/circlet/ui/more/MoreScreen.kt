@@ -127,7 +127,7 @@ fun MoreScreen(
                 Divider()
                 ListRow("Breathe", Glyph.Breathing, "Paced breathing with your heart rate", onClick = actions.breathe)
                 Divider()
-                ListRow("Export and backup", Glyph.Export, "Health Connect, export files, backup and restore", onClick = actions.data)
+                ListRow("Cloud and data", Glyph.Export, "Firebase sync, Health Connect, export and restore", onClick = actions.data)
                 Divider()
                 ListRow("Import WHOOP history", Glyph.Import, "Bring in your earlier days and baseline", onClick = actions.importHistory)
                 Divider()
@@ -167,6 +167,10 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
             onClick = if (idle) ({ renaming = true }) else null,
         )
         Divider()
+        strap.generation?.let {
+            StatRow("MODEL", it.model)
+            Divider()
+        }
         StatRow("BATTERY", strap.batteryPercent?.roundToInt()?.toString(), if (strap.charging == true) "% · CHARGING" else "%")
         Divider()
         StatRow("LAST SYNC", strap.lastSync?.let { agoWords(it, Instant.now()) } ?: "NOT YET")
@@ -226,7 +230,7 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
     if (forgetting) {
         Sheet("Forget ${strap.name ?: "this strap"}?", onDismiss = { forgetting = false }) {
             Text(
-                "Circlet stops connecting to it and you will need to pair again. Everything already synced stays on this phone.",
+                "Circlet stops connecting to it and you will need to pair again. Uploaded history remains in your personal Firebase account.",
                 style = body(14.sp),
             )
             Spacer(Modifier.height(16.dp))

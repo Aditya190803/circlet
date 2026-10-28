@@ -21,9 +21,9 @@ internal fun readPhoneSteps(dir: File, date: LocalDate): List<StepReading> {
 
 private fun readDay(dir: File, date: LocalDate): List<StepReading> {
     val file = File(dir, StepCsv.fileName(date))
-    if (!file.isFile) return emptyList()
     return try {
-        file.useLines { StepCsv.parse(it) }
+        val bytes = app.circlet.core.RecordingFiles.read(file) ?: return emptyList()
+        StepCsv.parse(String(bytes, Charsets.UTF_8).lineSequence())
     } catch (error: java.io.IOException) {
         emptyList()
     }

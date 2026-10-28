@@ -41,6 +41,7 @@ sealed interface ConnectionEvent {
  * Tests use a fake, so the session and the queue never touch Android Bluetooth.
  */
 interface GattTransport {
+    val strapGeneration: app.circlet.core.StrapGeneration get() = app.circlet.core.StrapGeneration.GEN4
     val connectionGeneration: Long get() = 0
     val notifications: Flow<GattNotice>
     val connections: Flow<ConnectionEvent>
@@ -62,13 +63,16 @@ interface GattTransport {
 
     suspend fun requestMtu(mtu: Int)
 
-    /** True when the Gen 4 service and its four characteristics are present. */
+    /** True when a supported service and its four characteristics are present. Pins [strapGeneration]. */
     suspend fun discover(): Boolean
 
     suspend fun subscribe(role: NotifyRole)
 
     /** Write with response. Completes when the stack acknowledges the write. */
     suspend fun write(frame: ByteArray)
+
+    /** Asks for the fastest link the radio allows before a history drain. A radio may ignore it. */
+    suspend fun boostLink() = Unit
 
     fun bonded(address: String): Boolean
 

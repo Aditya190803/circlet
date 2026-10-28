@@ -37,6 +37,7 @@ import app.circlet.core.UserSettings
 import app.circlet.core.WeeklyRecap
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.emptyDay
+import app.circlet.data.codec.toSample
 import app.circlet.data.codec.DayCodec
 import app.circlet.data.db.CircletMigrations
 import app.circlet.data.db.Keys
@@ -72,6 +73,76 @@ class StoreTest {
     private val zone = ZoneId.of("UTC")
     private val time = app.circlet.core.ManualTimeSource(Instant.parse("2026-06-15T12:00:00Z"), zone)
     private val context: Context get() = ApplicationProvider.getApplicationContext()
+
+    @Test(timeout = 60_000)
+    fun gen5SamplesAndPacketKindsRoundTripWithoutMixingTemperatureUnits() = runBlocking {
+        val opened = open()
+        try {
+            val epoch = time.now().epochSecond
+            val row = sample(epoch, 70, listOf(800)).copy(
+                generation = app.circlet.core.StrapGeneration.GEN5,
+                skinTemperatureCentiC = 3057,
+                bandState = 2,
+            )
+            val raws = listOf(18, 26).map { version ->
+                RawRecord(epoch, byteArrayOf(0x2F, version.toByte(), 0, 1, 0, 0, 0), app.circlet.core.StrapGeneration.GEN5)
+            }
+            opened.data.ports.samples.commit(listOf(row), raws)
+            val stored = opened.data.database.samples().range(epoch, epoch).single()
+            val decoded = stored.toSample()
+            assertEquals(row.copy(rawRecord = null), decoded)
+            assertNull(stored.skinTempCount)
+            opened.data.database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM raw_records WHERE epochSecond = $epoch").use {
+                assertTrue(it.moveToFirst())
+                assertEquals(2, it.getInt(0))
+            }
+        } finally { opened.close() }
+    }
+
+    @Test(timeout = 60_000)
+    fun pairedGenerationSurvivesReopeningAndCanBeCleared() = runBlocking {
+        val filename = "gen5-pairing-${System.nanoTime()}.db"
+        val first = open(fileName = filename)
+        first.data.ports.prefs.setPairedAddress("AA:BB:CC:DD:EE:01")
+        first.data.ports.prefs.setPairedGeneration(app.circlet.core.StrapGeneration.GEN5)
+        first.close()
+        val second = open(fileName = filename)
+        try {
+            assertEquals(app.circlet.core.StrapGeneration.GEN5, second.data.ports.prefs.pairedGeneration())
+            second.data.ports.prefs.setPairedGeneration(null)
+            assertNull(second.data.ports.prefs.pairedGeneration())
+        } finally { second.close() }
+    }
+
+    @Test(timeout = 60_000)
+    fun migrationThreeToFourKeepsLegacyCountsAndRawBytes() {
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context).name(null)
+            .callback(object : SupportSQLiteOpenHelper.Callback(3) {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    db.execSQL("CREATE TABLE samples (epochSecond INTEGER PRIMARY KEY NOT NULL, skinTempCount INTEGER)")
+                    db.execSQL("CREATE TABLE raw_records (epochSecond INTEGER PRIMARY KEY NOT NULL, bytes BLOB NOT NULL)")
+                }
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            }).build()
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        try {
+            val db = helper.writableDatabase
+            db.execSQL("INSERT INTO samples VALUES (1000, 935)")
+            db.execSQL("INSERT INTO raw_records VALUES (1000, X'2F18')")
+            CircletMigrations.MIGRATION_3_4.migrate(db)
+            db.query("SELECT skinTempCount, generation, skinTemperatureCentiC, bandState FROM samples").use {
+                assertTrue(it.moveToFirst())
+                assertEquals(935, it.getInt(0))
+                assertEquals("GEN4", it.getString(1))
+                assertTrue(it.isNull(2)); assertTrue(it.isNull(3))
+            }
+            db.query("SELECT archiveKey, bytes FROM raw_records").use {
+                assertTrue(it.moveToFirst())
+                assertEquals("1000", it.getString(0))
+                assertTrue(byteArrayOf(0x2F, 0x18).contentEquals(it.getBlob(1)))
+            }
+        } finally { helper.close() }
+    }
 
     @Test(timeout = 60_000)
     fun rangeReadUsesThePrimaryKey() {
@@ -205,6 +276,24 @@ class StoreTest {
             assertEquals(listOf(first, second), opened.engine.calls.toList())
             Thread.sleep(400)
             assertEquals(2, opened.engine.calls.size)
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 30_000)
+    fun aDrainKeepsRecomputeWaitingUntilSampleCommitsGoQuiet() = runBlocking {
+        val opened = open(debounceMs = 50, startPipeline = true, sampleQuietMs = 1_200)
+        try {
+            val day = LocalDate.of(2026, 6, 10)
+            repeat(4) {
+                opened.data.ports.samples.commit(listOf(noon(day)), emptyList())
+                Thread.sleep(400)
+            }
+            assertTrue(opened.engine.calls.isEmpty())
+            val deadline = System.nanoTime() + 8_000_000_000L
+            while (opened.engine.calls.isEmpty() && System.nanoTime() < deadline) Thread.sleep(40)
+            assertEquals(listOf(day), opened.engine.calls.toList())
         } finally {
             opened.close()
         }
@@ -564,6 +653,7 @@ class StoreTest {
         startPipeline: Boolean = false,
         fileName: String? = null,
         healthExportClient: app.circlet.data.health.HealthRecordClient? = null,
+        sampleQuietMs: Long = debounceMs,
     ): Opened {
         val engine = FakeDayEngine()
         val database = if (fileName == null) openMemoryDatabase(context) else openNamedDatabase(context, fileName)
@@ -578,6 +668,7 @@ class StoreTest {
             debounceMs = debounceMs,
             startPipeline = startPipeline,
             healthExportClient = healthExportClient,
+            sampleQuietMs = sampleQuietMs,
         )
         data.awaitReady()
         return Opened(data, engine)

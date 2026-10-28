@@ -98,13 +98,29 @@ private fun ScrubReadout(value: String?, detail: String?, idle: String?) {
     }
 }
 
-/** The five-minute bucket a touch at [fraction] of the chart width falls in, or null with no reading there. */
+/**
+ * The five-minute bucket a touch at [fraction] of the chart width reads. Over a stretch with no
+ * reading, such as past the last synced minute, it holds the nearest bucket that has one.
+ * Null only when the day has no reading at all.
+ */
 internal fun scrubBucket(minutes: List<Int?>, fraction: Float): IntRange? {
     if (minutes.isEmpty()) return null
-    val minute = (fraction.coerceIn(0f, 1f) * (minutes.size - 1)).toInt()
-    val start = minute - minute % 5
-    val range = start until minOf(start + 5, minutes.size)
-    return if (range.any { minutes[it] != null }) range else null
+    val touched = (fraction.coerceIn(0f, 1f) * (minutes.size - 1)).toInt() / 5
+    val buckets = (minutes.size + 4) / 5
+    fun bucket(index: Int) = index * 5 until minOf(index * 5 + 5, minutes.size)
+    fun read(index: Int) = index in 0 until buckets && bucket(index).any { minutes[it] != null }
+    for (offset in 0 until buckets) {
+        if (read(touched - offset)) return bucket(touched - offset)
+        if (read(touched + offset)) return bucket(touched + offset)
+    }
+    return null
+}
+
+/** The hour a touch at [fraction] of a day reads, held on the nearest hour in [filled] when it has none. */
+internal fun scrubHour(filled: Set<Int>, fraction: Float): Int? {
+    if (filled.isEmpty()) return null
+    val touched = (fraction.coerceIn(0f, 1f) * 24).toInt().coerceIn(0, 23)
+    return filled.minWith(compareBy({ kotlin.math.abs(it - touched) }, { it }))
 }
 
 /** Minute of the day as a clock time. */
@@ -460,7 +476,12 @@ private val RoundBar = androidx.compose.foundation.shape.RoundedCornerShape(5.dp
 fun StressTimeline(points: List<StressPoint>, dayStart: Instant, emptyText: String, modifier: Modifier = Modifier) {
     val twentyFourHour = LocalTimeFormat.current.twentyFourHour
     var touch by remember(dayStart) { mutableStateOf<Float?>(null) }
-    val hour = touch?.let { (it * 24).toInt().coerceIn(0, 23) }
+    val filled = remember(points, dayStart) {
+        points.mapNotNull { point ->
+            Duration.between(dayStart, point.at).seconds.takeIf { it in 0 until 24 * 3600L }?.let { (it / 3600).toInt() }
+        }.toSet()
+    }
+    val hour = touch?.let { scrubHour(filled, it) }
     val inHour = hour?.let { h ->
         points.filter { Duration.between(dayStart, it.at).seconds in h * 3600L until (h + 1) * 3600L }
     }.orEmpty()

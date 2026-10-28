@@ -5,6 +5,7 @@ import app.circlet.analytics.support.reasonFor
 import app.circlet.core.AbsentReason
 import app.circlet.core.Metric
 import app.circlet.core.Profile
+import app.circlet.core.measurementBpm
 import app.circlet.core.Sample
 import app.circlet.core.Sex
 import app.circlet.core.SignalBounds
@@ -169,7 +170,7 @@ fun zoneMinutes(
     for (sample in samples) {
         val epoch = sample.epochSecond
         if (epoch > nowSec || epoch !in range) continue
-        val bpm = sample.heartRateBpm ?: continue
+        val bpm = sample.measurementBpm() ?: continue
         if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) continue
         points.add(HrPoint(epoch * 1000.0, bpm.toDouble()))
     }
@@ -281,7 +282,7 @@ internal fun perMinuteBpm(samples: List<Sample>, zone: ZoneId, date: LocalDate):
     for (sample in samples) {
         val local = Instant.ofEpochSecond(sample.epochSecond).atZone(zone)
         if (local.toLocalDate() != date) continue
-        val bpm = sample.heartRateBpm ?: continue
+        val bpm = sample.measurementBpm() ?: continue
         if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) continue
         val minute = local.hour * 60 + local.minute
         sums[minute] += bpm

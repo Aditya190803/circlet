@@ -21,7 +21,7 @@ enum class ReconnectAction {
 
 object ReconnectPolicy {
     val LIVENESS: Duration = Duration.ofSeconds(120)
-    val STALE_ATTEMPT: Duration = Duration.ofMinutes(25)
+    val STALE_ATTEMPT: Duration = Duration.ofSeconds(90)
 
     fun decide(
         paired: Boolean,

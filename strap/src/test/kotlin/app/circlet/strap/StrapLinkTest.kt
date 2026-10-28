@@ -13,6 +13,7 @@ import app.circlet.strap.diag.SyncRecorder
 import app.circlet.strap.link.GattOperationQueue
 import app.circlet.strap.link.NotifyRole
 import app.circlet.strap.link.StrapLink
+import app.circlet.strap.sync.HISTORY_FLUSH_EVERY
 import app.circlet.strap.support.FakeHost
 import app.circlet.strap.support.FakeTransport
 import app.circlet.strap.support.MemoryPrefs
@@ -41,6 +42,74 @@ class StrapLinkTest {
     private val token = byteArrayOf(9, 8, 7, 6, 5, 4, 3, 2)
 
     @Test
+    fun aSystemWakeRecoversPendingAutoConnectWithoutOpeningTheApp() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.autoConnectGate = CompletableDeferred()
+        rig.transport.down()
+        runCurrent()
+        rig.link.resumeBackground()
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(listOf(false, true, false), rig.transport.connects)
+        assertEquals(LinkState.CONNECTED, rig.link.state.value.link)
+    }
+
+    @Test
+    fun aStalledPassiveConnectionFallsBackToDirectWithoutAnyWake() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.autoConnectGate = CompletableDeferred()
+        rig.transport.down()
+        runCurrent()
+        advanceTimeBy(95_000)
+        runCurrent()
+        assertEquals(listOf(false, true, false), rig.transport.connects)
+        assertEquals(LinkState.CONNECTED, rig.link.state.value.link)
+    }
+
+    @Test
+    fun aSystemWakeDoesNotDuplicateAnActiveHistoryDrain() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        repeat(3) { rig.link.resumeBackground() }
+        runCurrent()
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertEquals(listOf(false), rig.transport.connects)
+    }
+
+    @Test
+    fun pairingRestoredLaterFromCloudStartsTheLink() = runTest {
+        val rig = rig()
+        rig.link.start()
+        assertEquals(LinkState.UNPAIRED, rig.link.state.value.link)
+        rig.prefs.address = strap.address
+        rig.link.configurationReady()
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(LinkState.CONNECTED, rig.link.state.value.link)
+    }
+
+    @Test
+    fun restoredConfigurationWaitsUntilTheHistoryDrainFinishes() = runTest {
+        val rig = rig()
+        var configurationApplied = 0
+        rig.link.onSessionReady = { configurationApplied++ }
+        rig.link.pair(strap)
+        runCurrent()
+        rig.link.configurationReady()
+        assertEquals(0, configurationApplied)
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
+        assertEquals(1, configurationApplied)
+    }
+
+    @Test
     fun aManualRetryInterruptsBackgroundAutoConnectAndConnectsDirectly() = runTest {
         val rig = rig()
         rig.link.pair(strap)
@@ -66,7 +135,8 @@ class StrapLinkTest {
         runCurrent()
         rig.transport.emit(NotifyRole.DATA, heartFrame())
         runCurrent()
-        advanceTimeBy(63_001)
+        // A batch that goes silent mid-stream is retried after 15 seconds, then the abort settles for 3.
+        advanceTimeBy(18_001)
         runCurrent()
         rig.transport.emit(NotifyRole.DATA, heartFrame())
         rig.transport.emit(NotifyRole.DATA, metaFrame(3))
@@ -80,6 +150,8 @@ class StrapLinkTest {
     fun foregroundSessionsSendLinkValidHeartbeats() = runTest {
         val rig = rig()
         rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
         runCurrent()
         rig.link.setLiveHeartRate(true)
         advanceTimeBy(10_001)
@@ -248,6 +320,24 @@ class StrapLinkTest {
         runCurrent()
         assertEquals(2, rig.transport.writes.count { opcodeOf(it) == 0x16 })
         assertNull(rig.prefs.synced)
+    }
+
+    @Test
+    fun aDeferredHistoryResponseKeepsTheRequestAndAcceptsTheBatch() = runTest {
+        val rig = rig()
+        rig.link.pair(strap)
+        runCurrent()
+        rig.transport.emit(NotifyRole.COMMANDS, Frames.wrap(byteArrayOf(0x24, 0, 0x16, 4, 2)))
+        runCurrent()
+        advanceTimeBy(3_001)
+        runCurrent()
+        assertEquals(0, rig.transport.writes.count { opcodeOf(it) == 0x14 })
+        rig.transport.emit(NotifyRole.DATA, metaFrame(1))
+        rig.transport.emit(NotifyRole.DATA, recordFrame())
+        rig.transport.emit(NotifyRole.DATA, metaFrame(2, token))
+        runCurrent()
+        assertEquals(1, rig.transport.writes.count { opcodeOf(it) == 0x16 })
+        assertEquals(1, acks(rig.transport).size)
     }
 
     @Test
@@ -455,7 +545,7 @@ class StrapLinkTest {
     }
 
     @Test
-    fun samplesCountAsSoonAsAMinuteIsCommitted() = runTest {
+    fun samplesCountAsSoonAsAChunkIsCommitted() = runTest {
         val rig = rig()
         rig.link.pair(strap)
         runCurrent()
@@ -464,9 +554,12 @@ class StrapLinkTest {
         runCurrent()
         assertEquals(1L, rig.link.state.value.sync.samplesBuffered)
         assertEquals(0L, rig.link.state.value.sync.samplesPulled)
-        repeat(59) { rig.transport.emit(NotifyRole.DATA, heartFrame()) }
+        repeat(HISTORY_FLUSH_EVERY - 1) { index ->
+            rig.transport.emit(NotifyRole.DATA, heartFrame())
+            if (index % 50 == 49) runCurrent()
+        }
         runCurrent()
-        assertEquals(60L, rig.link.state.value.sync.samplesPulled)
+        assertEquals(HISTORY_FLUSH_EVERY.toLong(), rig.link.state.value.sync.samplesPulled)
         assertEquals(0L, rig.link.state.value.sync.samplesBuffered)
         assertEquals(true, rig.link.state.value.sync.draining)
     }
@@ -492,7 +585,10 @@ class StrapLinkTest {
         val rig = rig()
         rig.link.pair(strap)
         runCurrent()
-        // A new session forces live heart rate off when nothing has asked for it.
+        // Held while the connect drain streams, then a new session forces live heart rate off.
+        assertEquals(emptyList<Int>(), realtimeBodies(rig))
+        rig.transport.emit(NotifyRole.DATA, metaFrame(3))
+        runCurrent()
         assertEquals(listOf(0x00), realtimeBodies(rig))
         assertTrue(rig.link.setLiveHeartRate(true) is Outcome.Ok)
         runCurrent()

@@ -30,6 +30,7 @@ import app.circlet.core.DayEngine
 import app.circlet.core.DayInput
 import app.circlet.core.DaySummary
 import app.circlet.core.Profile
+import app.circlet.core.measurementBpm
 import app.circlet.core.Sample
 import app.circlet.core.SignalBounds
 import app.circlet.core.InsightEngine
@@ -44,14 +45,9 @@ import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /**
- * First composition of the day packages.
- * Bump this when the maths those packages publish changes what a stored day means.
+ * Bump when stored days need recomputing. Version 9 repairs phone-step timestamp reversals.
  */
-/**
- * Bumped when a stored strap day must be scored again.
- * 8 takes the step count from the phone's step counter and drops the strap-motion estimate.
- */
-const val CIRCLET_ALGORITHM_VERSION: Int = 8
+const val CIRCLET_ALGORITHM_VERSION: Int = 10
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -220,6 +216,17 @@ private fun skinTemperatureOf(
     input: DayInput,
     session: app.circlet.core.SleepSession?,
 ): app.circlet.core.SkinTemperature {
+    val families = input.samples.filter {
+        session != null && it.epochSecond >= session.start.epochSecond && it.epochSecond < session.end.epochSecond
+    }.map { it.generation }.toSet()
+    if (families.any { it != app.circlet.core.StrapGeneration.GEN4 }) {
+        return SkinTemperature(
+            app.circlet.core.Metric.absent(app.circlet.core.AbsentReason.CALIBRATING),
+            0,
+            app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE,
+            unit = app.circlet.core.SkinTemperatureUnit.CENTI_CELSIUS,
+        )
+    }
     val nights = ArrayList<NightlyTemp>(input.priorSkinTemp.size + 1)
     for ((date, mean) in input.priorSkinTemp) {
         if (date < input.date) nights += NightlyTemp(date, mean)
@@ -319,7 +326,7 @@ internal fun heartRateByMinute(
         if (sample.epochSecond > nowSec) continue
         val local = Instant.ofEpochSecond(sample.epochSecond).atZone(zone)
         if (local.toLocalDate() != date) continue
-        val bpm = sample.heartRateBpm ?: continue
+        val bpm = sample.measurementBpm() ?: continue
         if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) continue
         val minute = local.hour * 60 + local.minute
         sums[minute] += bpm

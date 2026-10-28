@@ -54,7 +54,7 @@ import kotlinx.coroutines.withContext
 /** Health Connect, export, backup and restore, with the privacy line that applies to all of them. */
 @Composable
 fun DataScreen(onBack: () -> Unit) {
-    val vm = containerViewModel { container, _ -> DataViewModel(container.portability, container.settings) }
+    val vm = containerViewModel { container, _ -> DataViewModel(container.portability, container.settings, container.cloud) }
     val messenger = LocalMessenger.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -63,6 +63,7 @@ fun DataScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
 
     val health by vm.healthConnect.collectAsState()
+    val cloudState by vm.cloud.state.collectAsState()
     val backup by vm.backup.collectAsState()
     val export by vm.export.collectAsState()
     val exporting by vm.exporting.collectAsState()
@@ -109,6 +110,7 @@ fun DataScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         DetailHeader("DATA", onBack = onBack)
         ScreenColumn {
+            if (cloudState.supported) CloudAccountPanel(vm.cloud)
             Card("STEPS") {
                 Text(
                     "Steps come from this phone's step counter, only while the phone is with you. " +
@@ -218,8 +220,8 @@ fun DataScreen(onBack: () -> Unit) {
                     SecondaryButton("CHOOSE A FILE") { pickRestore.launch(arrayOf("*/*")) }
                 } else {
                     Text(
-                        "Restoring replaces all data on this phone with the data in the file. " +
-                            "Data on this phone that is not in the file will be lost.",
+                        "Restoring replaces your current history with the data in this file. " +
+                            "The replacement will also sync to your Firebase account.",
                         style = body(14.sp, Palette.Dim),
                     )
                     Spacer(Modifier.height(Space.sm))
@@ -234,7 +236,7 @@ fun DataScreen(onBack: () -> Unit) {
 
             Card("PRIVACY") {
                 Text(
-                    "Nothing leaves this phone unless you export it. Circlet has no internet permission.",
+                    "Your history is kept on this phone. When you connect Firebase, a compressed copy is backed up over HTTPS to your personal account. Export files are created only when you ask for them.",
                     style = body(13.sp, Palette.Faint),
                 )
             }

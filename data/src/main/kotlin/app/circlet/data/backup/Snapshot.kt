@@ -186,7 +186,11 @@ internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray, contex
                                 val common = tableColumns(sqlite, "main", table).filter { it in columns }
                                     .joinToString(",") { "\"$it\"" }
                                 check(common.isNotEmpty()) { "Incompatible backup table $table" }
-                                sqlite.execSQL("INSERT INTO $table ($common) SELECT $common FROM incoming.$table")
+                                if (table == "raw_records" && "archiveKey" !in columns) {
+                                    sqlite.execSQL("INSERT INTO raw_records ($common, archiveKey) SELECT $common, CAST(epochSecond AS TEXT) FROM incoming.raw_records")
+                                } else {
+                                    sqlite.execSQL("INSERT INTO $table ($common) SELECT $common FROM incoming.$table")
+                                }
                             }
                         }
                         if (recordings != null) {

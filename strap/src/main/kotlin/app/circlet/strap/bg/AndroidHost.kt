@@ -13,8 +13,7 @@ internal class AndroidHost(
         PairedFlag.set(context, address)
         StrapWatchdog.schedule(context)
         StrapService.start(context)
-        if (askToAssociate) StrapCompanion.associateIfAttached(context, address)
-        else StrapCompanion.observeIfAssociated(context, address)
+        StrapCompanion.associateIfAttached(context, address)
     }
 
     override fun onForgotten() {
