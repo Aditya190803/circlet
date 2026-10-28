@@ -116,16 +116,18 @@ sealed interface Packet {
     class Metadata(
         val kind: MetadataKind,
         val token: ByteArray?,
+        val expectedPacketCount: Long? = null,
     ) : Packet {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is Metadata) return false
-            return kind == other.kind &&
+            return kind == other.kind && expectedPacketCount == other.expectedPacketCount &&
                 ((token == null && other.token == null) ||
                     (token != null && other.token != null && token.contentEquals(other.token)))
         }
 
-        override fun hashCode(): Int = 31 * kind.hashCode() + (token?.contentHashCode() ?: 0)
+        override fun hashCode(): Int = 31 * (31 * kind.hashCode() + (token?.contentHashCode() ?: 0)) +
+            (expectedPacketCount?.hashCode() ?: 0)
     }
 
     data class Other(val type: Int) : Packet
@@ -138,11 +140,11 @@ sealed interface Packet {
  * which length a version byte used.
  */
 object Decoder {
-    fun decode(inner: ByteArray): Packet? {
+    fun decode(inner: ByteArray, profile: BandProfile = BandProfile.Gen4): Packet? {
         if (inner.isEmpty()) return null
         return when (u8(inner, 0)) {
             0x24 -> response(inner)
-            0x2F -> historical(inner)
+            0x2F -> historical(inner, profile)
             0x28 -> realtime(inner)
             0x2B -> rawRealtime(inner)
             0x30 -> event(inner)
@@ -157,9 +159,10 @@ object Decoder {
         return Packet.Response(u8(inner, 2), u8(inner, 3), u8(inner, 4), body)
     }
 
-    private fun historical(inner: ByteArray): Packet {
+    private fun historical(inner: ByteArray, profile: BandProfile): Packet {
         if (inner.size < 2) return Packet.Other(0x2F)
-        return Packet.Historical(u8(inner, 1), decodeR24(inner), inner.copyOf())
+        val record = if (profile == BandProfile.Gen5) decodeGen5Summary(inner)?.record else decodeR24(inner)
+        return Packet.Historical(u8(inner, 1), record, inner.copyOf())
     }
 
     private fun realtime(inner: ByteArray): Packet {
@@ -204,6 +207,7 @@ object Decoder {
         } else {
             null
         }
-        return Packet.Metadata(kind, token)
+        val count = if (kind == MetadataKind.END && inner.size >= 13) u32(inner, 9) else null
+        return Packet.Metadata(kind, token, count)
     }
 }

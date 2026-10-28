@@ -1,4 +1,5 @@
-// Ported from OpenStrap protocol/lib/src/commands.dart — buildCommand and the Gen 4 builders.
+// Ported from OpenStrap protocol/lib/src/commands.dart — buildCommand and command builders;
+// edge/lib/ble/ble_state.dart — AlarmPayloads.setPayloadForBand, gen5MaverickBuzz.
 package app.circlet.protocol
 
 /**
@@ -16,47 +17,59 @@ object Haptics {
  * persistent optical or IMU save, firmware or certificate load, DFU, lock,
  * power-cycle, or reboot.
  */
-object Commands {
-    private const val COMMAND = 0x23
-    private const val GET_HELLO = 0x23
-    private const val GET_BATTERY = 0x1A
-    private const val GET_DATA_RANGE = 0x22
-    private const val SEND_HISTORICAL = 0x16
-    private const val ABORT_HISTORICAL = 0x14
-    private const val HISTORY_RESULT = 0x17
-    private const val SET_CLOCK = 0x0A
-    private const val TOGGLE_REALTIME_HR = 0x03
-    private const val GENERIC_HR_PROFILE = 0x0E
-    private const val RUN_HAPTICS = 0x4F
-    private const val STOP_HAPTICS = 0x7A
-    private const val SET_ALARM = 0x42
-    private const val GET_ALARM = 0x43
-    private const val RUN_ALARM = 0x44
-    private const val DISABLE_ALARM = 0x45
-    private const val GET_ADV_NAME = 0x4C
-    private const val SET_ADV_NAME = 0x4D
+object Commands : BandCommands(BandProfile.Gen4)
+
+open class BandCommands(private val profile: BandProfile) {
+    private val gen5 get() = profile == BandProfile.Gen5
+    private companion object {
+        private const val COMMAND = 0x23
+        private const val GET_HELLO = 0x23
+        private const val GET_BATTERY = 0x1A
+        private const val GET_DATA_RANGE = 0x22
+        private const val SEND_HISTORICAL = 0x16
+        private const val ABORT_HISTORICAL = 0x14
+        private const val HISTORY_RESULT = 0x17
+        private const val SET_CLOCK = 0x0A
+        private const val TOGGLE_REALTIME_HR = 0x03
+        private const val GENERIC_HR_PROFILE = 0x0E
+        private const val RUN_HAPTICS = 0x4F
+        private const val STOP_HAPTICS = 0x7A
+        private const val SET_ALARM = 0x42
+        private const val GET_ALARM = 0x43
+        private const val RUN_ALARM = 0x44
+        private const val DISABLE_ALARM = 0x45
+        private const val GET_ADV_NAME = 0x4C
+        private const val SET_ADV_NAME = 0x4D
+    }
 
     /**
      * Set the strap clock. Body is `[u32 epoch seconds][u32 0]`.
      * The second word is the 1/32768-second fraction; whole seconds send zero.
      */
-    fun setClock(seq: Int, epochSeconds: Long): ByteArray {
+    fun setClock(seq: Int, epochSeconds: Long, subSeconds: Int = 0): ByteArray {
         require(epochSeconds in 0..0xFFFF_FFFFL) { "epochSeconds must fit in a u32" }
+        require(subSeconds in 0..32767) { "subSeconds must be a Q15 fraction" }
         val payload = ByteArray(8)
         putU32(payload, 0, epochSeconds)
+        putU32(payload, 4, subSeconds.toLong())
         return command(seq, SET_CLOCK, payload)
     }
 
-    fun getHello(seq: Int): ByteArray = command(seq, GET_HELLO, byteArrayOf(0x00))
+    fun getHello(seq: Int): ByteArray =
+        command(seq, if (gen5) 0x91 else GET_HELLO, byteArrayOf(if (gen5) 1 else 0))
+
+    fun getClock(seq: Int): ByteArray = command(seq, 0x0B, ByteArray(0))
 
     fun linkValid(seq: Int): ByteArray = command(seq, 0x01, byteArrayOf(0x00))
 
     /** Empty body, matching OpenStrap `cmdGetBattery`. Padding supplies the trailing zero. */
     fun getBattery(seq: Int): ByteArray = command(seq, GET_BATTERY, ByteArray(0))
 
-    fun getDataRange(seq: Int): ByteArray = command(seq, GET_DATA_RANGE, byteArrayOf(0x00))
+    fun getDataRange(seq: Int): ByteArray = command(seq, GET_DATA_RANGE, offloadBody())
 
-    fun sendHistoricalData(seq: Int): ByteArray = command(seq, SEND_HISTORICAL, byteArrayOf(0x00))
+    fun sendHistoricalData(seq: Int): ByteArray = command(seq, SEND_HISTORICAL, offloadBody())
+
+    private fun offloadBody(): ByteArray = if (gen5) ByteArray(0) else byteArrayOf(0)
 
     fun abortHistorical(seq: Int): ByteArray = command(seq, ABORT_HISTORICAL, byteArrayOf(0x00))
 
@@ -71,6 +84,8 @@ object Commands {
         token.copyInto(payload, 1)
         return command(seq, HISTORY_RESULT, payload)
     }
+
+    fun historyFailure(seq: Int): ByteArray = command(seq, HISTORY_RESULT, if (gen5) byteArrayOf(0, 0) else byteArrayOf(0))
 
     fun toggleRealtimeHr(seq: Int, on: Boolean): ByteArray =
         command(seq, TOGGLE_REALTIME_HR, byteArrayOf(if (on) 0x01 else 0x00))
@@ -87,6 +102,7 @@ object Commands {
     /** Play one waveform. Body is `[pattern, 0, 0, 0, 0]`, matching OpenStrap `cmdBuzz`. */
     fun runHaptics(seq: Int, pattern: Int): ByteArray {
         require(pattern in 0..0xFF) { "haptic pattern must fit in a u8" }
+        if (gen5) return command(seq, 0x13, byteArrayOf(1, 47, 152.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 1))
         return command(seq, RUN_HAPTICS, byteArrayOf(pattern.toByte(), 0, 0, 0, 0))
     }
 
@@ -100,19 +116,29 @@ object Commands {
      */
     fun setAlarm(seq: Int, epochSeconds: Long): ByteArray {
         require(epochSeconds in 0..0xFFFF_FFFFL) { "epochSeconds must fit in a u32" }
+        if (gen5) {
+            val payload = ByteArray(21)
+            payload[0] = 4
+            payload[1] = 1
+            putU32(payload, 2, epochSeconds)
+            byteArrayOf(47, 152.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 7, 30).copyInto(payload, 8)
+            return command(seq, SET_ALARM, payload)
+        }
         val payload = ByteArray(9)
         payload[0] = 0x01
         putU32(payload, 1, epochSeconds)
         return command(seq, SET_ALARM, payload)
     }
 
-    fun getAlarm(seq: Int): ByteArray = command(seq, GET_ALARM, byteArrayOf(0x01))
+    fun getAlarm(seq: Int): ByteArray = command(seq, GET_ALARM, if (gen5) byteArrayOf(4, 1) else byteArrayOf(1))
 
-    fun runAlarm(seq: Int): ByteArray = command(seq, RUN_ALARM, byteArrayOf(0x01))
+    fun runAlarm(seq: Int): ByteArray = if (gen5) runHaptics(seq, Haptics.SHORT_PULSE) else command(seq, RUN_ALARM, byteArrayOf(0x01))
 
-    fun disableAlarm(seq: Int): ByteArray = command(seq, DISABLE_ALARM, byteArrayOf(0x01))
+    fun disableAlarm(seq: Int): ByteArray =
+        command(seq, DISABLE_ALARM, if (gen5) byteArrayOf(2, 0xFF.toByte()) else byteArrayOf(1))
 
-    fun getAdvertisingName(seq: Int): ByteArray = command(seq, GET_ADV_NAME, byteArrayOf(0x00))
+    fun getAdvertisingName(seq: Int): ByteArray =
+        command(seq, if (gen5) 0x8D else GET_ADV_NAME, byteArrayOf(if (gen5) 1 else 0))
 
     /**
      * Rename the advertised name. Body is `[0x01][length][ascii][u32 0]`.
@@ -126,7 +152,7 @@ object Commands {
         payload[0] = 0x01
         payload[1] = name.length.toByte()
         for (i in name.indices) payload[2 + i] = name[i].code.toByte()
-        return command(seq, SET_ADV_NAME, payload)
+        return command(seq, if (gen5) 0x8C else SET_ADV_NAME, payload)
     }
 
     /**
@@ -135,6 +161,7 @@ object Commands {
      */
     fun sessionInit(startSeq: Int): List<ByteArray> {
         val base = startSeq and 0xFF
+        if (gen5) return listOf(getDataRange(base), sendHistoricalData((base + 1) and 0xFF))
         return listOf(
             getHello(base),
             getAdvertisingName((base + 1) and 0xFF),
@@ -150,6 +177,6 @@ object Commands {
         inner[1] = (seq and 0xFF).toByte()
         inner[2] = (opcode and 0xFF).toByte()
         payload.copyInto(inner, 3)
-        return Frames.wrap(inner)
+        return Frames.wrap(inner, profile)
     }
 }

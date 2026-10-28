@@ -9,22 +9,18 @@ package app.circlet.protocol
  * reassembly is by length, and a bad header resyncs to the next start byte.
  */
 object Frames {
-    private const val SOF = 0xAA
-
     /** Wrap [inner] in a frame ready to write. The inner is zero-padded to 4 bytes before the CRC. */
-    fun wrap(inner: ByteArray): ByteArray {
+    fun wrap(inner: ByteArray, profile: BandProfile = BandProfile.Gen4): ByteArray {
         val paddedLen = (inner.size + 3) and 3.inv()
         val padded = ByteArray(paddedLen)
         inner.copyInto(padded)
         val declared = paddedLen + 4
-        val out = ByteArray(4 + paddedLen + 4)
-        out[0] = SOF.toByte()
-        out[1] = (declared and 0xFF).toByte()
-        out[2] = ((declared ushr 8) and 0xFF).toByte()
-        out[3] = crc8(declared and 0xFF, (declared ushr 8) and 0xFF).toByte()
-        padded.copyInto(out, 4)
+        require(declared <= 0xFFFF) { "frame length must fit in a u16" }
+        val out = ByteArray(profile.headerLength + declared)
+        profile.header(declared).copyInto(out)
+        padded.copyInto(out, profile.headerLength)
         val sum = crc32(padded)
-        val tail = 4 + paddedLen
+        val tail = profile.headerLength + paddedLen
         out[tail] = sum.toByte()
         out[tail + 1] = (sum ushr 8).toByte()
         out[tail + 2] = (sum ushr 16).toByte()
@@ -41,7 +37,7 @@ object Frames {
  * past the 8-bit header check cannot be trusted to step over.
  * [resyncs] counts headers that were skipped. It is diagnostic only.
  */
-class FrameReassembler {
+class FrameReassembler(private val profile: BandProfile = BandProfile.Gen4) {
     private val buf = ArrayList<Int>(256)
     var resyncs: Int = 0
         private set
@@ -49,29 +45,31 @@ class FrameReassembler {
     fun feed(chunk: ByteArray): List<ByteArray> {
         for (b in chunk) buf.add(b.toInt() and 0xFF)
         val out = ArrayList<ByteArray>()
-        while (buf.size >= 8) {
+        val headerLength = profile.headerLength
+        while (buf.size >= headerLength + 4) {
             if (buf[0] != 0xAA) {
                 if (!resync()) break
                 continue
             }
-            val declared = buf[1] or (buf[2] shl 8)
-            val total = 4 + declared
+            val declared = buf[profile.sizeOffset] or (buf[profile.sizeOffset + 1] shl 8)
+            val total = headerLength + declared
             if (declared < 4 || total > 4096) {
                 if (!resync()) break
                 continue
             }
-            if (buf[3] != crc8(buf[1], buf[2])) {
+            if (!profile.validHeader(ByteArray(headerLength) { buf[it].toByte() })) {
                 if (!resync()) break
                 continue
             }
             if (buf.size < total) break
             val innerLen = declared - 4
             val inner = ByteArray(innerLen)
-            for (i in 0 until innerLen) inner[i] = buf[4 + i].toByte()
-            val stored = (buf[4 + innerLen].toLong() and 0xFF) or
-                ((buf[5 + innerLen].toLong() and 0xFF) shl 8) or
-                ((buf[6 + innerLen].toLong() and 0xFF) shl 16) or
-                ((buf[7 + innerLen].toLong() and 0xFF) shl 24)
+            for (i in 0 until innerLen) inner[i] = buf[headerLength + i].toByte()
+            val tail = headerLength + innerLen
+            val stored = (buf[tail].toLong() and 0xFF) or
+                ((buf[tail + 1].toLong() and 0xFF) shl 8) or
+                ((buf[tail + 2].toLong() and 0xFF) shl 16) or
+                ((buf[tail + 3].toLong() and 0xFF) shl 24)
             if (crc32(inner) != stored) {
                 if (!resync()) break
                 continue
