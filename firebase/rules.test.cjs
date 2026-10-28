@@ -11,6 +11,19 @@ before(async () => {
 });
 after(async () => { await env?.cleanup(); });
 const row = () => ({ deleted: false, data: 'compressed-record', updatedAt: serverTimestamp() });
+const databaseSource = fs.readFileSync('../data/src/main/kotlin/app/circlet/data/db/CircletDatabase.kt', 'utf8');
+const currentSchema = Number(databaseSource.match(/const val VERSION\s*=\s*(\d+)/)[1]);
+
+test('the app schema and the previous published schema can upload atomically', async () => {
+  const db = env.authenticatedContext('schema-check').database();
+  for (const schema of [3, currentSchema]) {
+    await assertSucceeds(update(ref(db, 'users/schema-check'), {
+      'meta/format': 1, 'meta/schema': schema, 'v1/sample_hours/31': row(),
+    }));
+  }
+  await assertFails(set(ref(db, 'users/schema-check/meta/schema'), currentSchema + 1));
+  await assertFails(set(ref(db, 'users/schema-check/meta/schema'), '4'));
+});
 test('an account can atomically upload and read only its own health rows', async () => {
   const db = env.authenticatedContext('alice').database();
   await assertSucceeds(update(ref(db, 'users/alice'), { 'meta/format': 1, 'meta/schema': 3, 'v1/sample_hours/31': row() }));

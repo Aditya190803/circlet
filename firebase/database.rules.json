@@ -8,7 +8,7 @@
         ".write": "auth != null && auth.uid === $uid",
         "meta": {
           "format": { ".validate": "newData.isNumber() && newData.val() === 1" },
-          "schema": { ".validate": "newData.isNumber() && newData.val() === 3" },
+          "schema": { ".validate": "newData.isNumber() && (newData.val() === 3 || newData.val() === 4)" },
           "$other": { ".validate": false }
         },
         "v1": {
