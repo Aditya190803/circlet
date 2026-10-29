@@ -64,6 +64,7 @@ import app.circlet.ui.design.hoursMinutes
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
 import app.circlet.ui.design.signedDeviation
+import app.circlet.ui.design.unscored
 import app.circlet.ui.design.words
 import app.circlet.ui.design.ProgressSteps
 import app.circlet.ui.state.BASELINE_NIGHTS
@@ -321,7 +322,7 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
     Card("SKIN TEMPERATURE") {
         when {
             skin == null -> Text(
-                "Current body temperature is unavailable: WHOOP 4.0 does not provide a verified reading in °C or °F through this connection. " +
+                "Current body temperature is unavailable: the strap does not provide a verified reading in °C or °F through this connection. " +
                     "Nightly relative readings appear here when enough usable history is available.",
                 style = body(13.sp, Palette.Faint),
             )
@@ -330,6 +331,11 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
                 Spacer(Modifier.height(6.dp))
                 Text("As scored by WHOOP, from your imported history.", style = body(12.sp, Palette.Faint))
             }
+            skin.unscored -> Text(
+                "Not scored yet for WHOOP 5.0 / MG. There is no verified way yet to compare this strap's temperature readings night to night, " +
+                    "so Circlet shows nothing rather than a guess.",
+                style = body(13.sp, Palette.Faint),
+            )
             skin.flag == SkinTempFlag.NOT_ENOUGH_BASELINE -> Text(
                 "Building your baseline. ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"} so far, " +
                     "so there is nothing to compare yet. Readings are a deviation from your own nights, not a temperature.",

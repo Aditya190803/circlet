@@ -1,9 +1,18 @@
+// Ported from OpenStrap protocol/lib/src/band.dart, gen5_records.dart and control.dart — profile dispatch, Gen5V18Decoder, Gen5HelloInfo.
 package app.circlet.strap.wire
 
 import app.circlet.core.GravityVector
 import app.circlet.core.OpticalChannels
 import app.circlet.core.RawRecord
 import app.circlet.core.Sample
+import app.circlet.protocol.BandCommands
+import app.circlet.protocol.BandProfile
+import app.circlet.protocol.gen5Hello
+import app.circlet.protocol.decodeGen5Summary
+import app.circlet.protocol.clockEpoch
+import app.circlet.core.StrapGeneration
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import app.circlet.protocol.Commands
 import app.circlet.protocol.Decoder
 import app.circlet.protocol.FirmwareAwareR24Decoder
@@ -27,6 +36,9 @@ internal object Harmful {
         0x19, // FORCE_TRIM
         0x99, // TOGGLE_PERSISTENT_R20
         0x9A, // TOGGLE_PERSISTENT_R21
+        0x78, // SET_FF_VALUE (Gen 5 deep-buffer configuration)
+        0x77, // SET_DEVICE_CONFIG_VALUE
+        0x6B, // ENABLE_OPTICAL_DATA (persistent history on Gen 5)
         0x1D, // REBOOT_STRAP
         0x20, // POWER_CYCLE_STRAP
         0x2D, // ENTER_BLE_DFU
@@ -37,6 +49,7 @@ internal object Harmful {
         0x8E, // START_FIRMWARE_LOAD_NEW
         0x8F, // LOAD_FIRMWARE_DATA_NEW
         0x90, // PROCESS_FIRMWARE_IMAGE_NEW
+        0x9B, 0x9C, 0x9D, 0x9E, 0x9F, // Gen 5 certificate/unlock flow
     )
 
     fun ensure(opcode: Int) {
@@ -59,13 +72,17 @@ internal enum class StrapSignal {
 }
 
 internal sealed interface Inbound {
-    data class HelloInfo(val serial: String?, val firmware: String?, val battery: Double?) : Inbound
+    data class HelloInfo(val serial: String?, val firmware: String?, val battery: Double?, val charging: Boolean? = null, val onWrist: Boolean? = null,
+        val clockMillis: Long? = null, val revision: Int? = null, val identityValid: Boolean = true,
+        val locked: Boolean? = null,
+    ) : Inbound
     data class Battery(val percent: Double) : Inbound
     data class Name(val name: String) : Inbound
     data class Sampled(val sample: Sample?, val raw: RawRecord) : Inbound
     data class Heart(val bpm: Int) : Inbound
     data class HistoryReply(val opcode: Int, val sequence: Int, val result: Int) : Inbound
-    data class Meta(val kind: MetaKind, val token: ByteArray?) : Inbound
+    data class Meta(val kind: MetaKind, val token: ByteArray?, val expectedPacketCount: Long? = null) : Inbound
+    data object Traffic : Inbound
     data class Signal(val signal: StrapSignal, val epochSecond: Long, val battery: Double?, val charging: Boolean?) : Inbound
 
     /** Seconds of history the strap says it is holding. Null when the reply has no clock range. */
@@ -79,6 +96,11 @@ internal sealed interface Inbound {
  */
 /** GATT ids from [Uuids]. The rest of the module does not import `:protocol`. */
 internal object StrapUuids {
+    val SERVICES = BandProfile.entries.map { it.service }
+    fun profile(generation: StrapGeneration) = if (generation == StrapGeneration.GEN5) BandProfile.Gen5 else BandProfile.Gen4
+    fun generation(service: java.util.UUID): StrapGeneration? = BandProfile.fromService(service)?.let {
+        if (it == BandProfile.Gen5) StrapGeneration.GEN5 else StrapGeneration.GEN4
+    }
     val SERVICE = Uuids.SERVICE
     val CMD_TO = Uuids.CMD_TO_STRAP
     val CMD_FROM = Uuids.CMD_FROM_STRAP
@@ -87,18 +109,44 @@ internal object StrapUuids {
     val CCCD = Uuids.CCCD
 }
 
-internal class ProtocolWire {
-    private var commands = FrameReassembler()
-    private var events = FrameReassembler()
-    private var data = FrameReassembler()
+internal data class WireReply(val result: Int, val hello: Inbound.HelloInfo?, val clock: Long?)
+
+internal class ProtocolWire(var generation: StrapGeneration = StrapGeneration.GEN4) {
+    val profile get() = StrapUuids.profile(generation)
+    private val builders get() = BandCommands(profile)
+    private val pending = mutableMapOf<Pair<Int, Int>, CompletableDeferred<WireReply>>()
+
+    suspend fun exchange(frame: ByteArray, write: suspend (ByteArray) -> Boolean): WireReply? {
+        val inner = FrameReassembler(profile).feed(frame).single()
+        val key = (inner[2].toInt() and 255) to (inner[1].toInt() and 255)
+        val reply = CompletableDeferred<WireReply>()
+        check(pending.put(key, reply) == null)
+        try {
+            if (!write(frame)) return null
+            return withTimeoutOrNull(5_000) { reply.await() }
+        } finally {
+            pending.remove(key)
+        }
+    }
+
+    fun cancelPending() {
+        pending.values.forEach { it.complete(WireReply(0, null, null)) }
+        pending.clear()
+    }
+
+    private var commands = FrameReassembler(profile)
+    private var events = FrameReassembler(profile)
+    private var data = FrameReassembler(profile)
 
     /** One decoder per connection. [reset] clears the layout it has learned. */
     private val records = FirmwareAwareR24Decoder()
 
     fun reset() {
-        commands = FrameReassembler()
-        events = FrameReassembler()
-        data = FrameReassembler()
+        cancelPending()
+        dataFailures = 0
+        commands = FrameReassembler(profile)
+        events = FrameReassembler(profile)
+        data = FrameReassembler(profile)
         records.reset()
     }
 
@@ -109,10 +157,17 @@ internal class ProtocolWire {
             NotifyRole.DATA -> data
         }
         val resyncsBefore = asm.resyncs
-        val inbound = asm.feed(chunk).map { inner ->
-            val packet = Decoder.decode(inner)
+        val inbound = asm.feed(chunk).flatMap { inner ->
+            val packet = Decoder.decode(inner, profile)
             if (packet == null && role == NotifyRole.DATA) dataFailures++
-            interpret(packet)
+            if (packet is Packet.Response) {
+                val helloInfo = if (packet.opcode == 0x91 && packet.result == 1) gen5HelloInfo(packet.body) else null
+                val clock = if (packet.result == 1) clockEpoch(packet.opcode, packet.body) else null
+                if (packet.result != 2) pending[packet.opcode to packet.originSeq]?.complete(WireReply(packet.result, helloInfo, clock))
+            }
+            val type = inner.firstOrNull()?.toInt()?.and(255)
+            val counted = type == 0x30 || type == 0x32 || type in 0x35..0x37
+            if (counted && generation == StrapGeneration.GEN5) listOf(Inbound.Traffic, interpret(packet)) else listOf(interpret(packet))
         }
         if (role == NotifyRole.DATA) dataFailures += asm.resyncs - resyncsBefore
         return inbound
@@ -125,48 +180,55 @@ internal class ProtocolWire {
     var dataFailures: Int = 0
         private set
 
-    fun setClock(seq: Int, epochSeconds: Long): ByteArray = vetted(Commands.setClock(seq, epochSeconds))
+    fun setClock(seq: Int, epochSeconds: Long): ByteArray = vetted(builders.setClock(seq, epochSeconds))
 
-    fun hello(seq: Int): ByteArray = vetted(Commands.getHello(seq))
+    fun setClockAt(seq: Int, at: java.time.Instant): ByteArray =
+        vetted(builders.setClock(seq, at.epochSecond, (at.nano.toLong() * 32768 / 1_000_000_000).toInt()))
 
-    fun battery(seq: Int): ByteArray = vetted(Commands.getBattery(seq))
+    fun getClock(seq: Int): ByteArray = vetted(builders.getClock(seq))
 
-    fun linkValid(seq: Int): ByteArray = vetted(Commands.linkValid(seq))
+    fun historyFailure(seq: Int): ByteArray = vetted(builders.historyFailure(seq))
 
-    fun advertisingName(seq: Int): ByteArray = vetted(Commands.getAdvertisingName(seq))
+    fun hello(seq: Int): ByteArray = vetted(builders.getHello(seq))
 
-    fun dataRange(seq: Int): ByteArray = vetted(Commands.getDataRange(seq))
+    fun battery(seq: Int): ByteArray = vetted(builders.getBattery(seq))
 
-    fun alarm(seq: Int): ByteArray = vetted(Commands.getAlarm(seq))
+    fun linkValid(seq: Int): ByteArray = vetted(builders.linkValid(seq))
 
-    fun historical(seq: Int): ByteArray = vetted(Commands.sendHistoricalData(seq))
+    fun advertisingName(seq: Int): ByteArray = vetted(builders.getAdvertisingName(seq))
 
-    fun abort(seq: Int): ByteArray = vetted(Commands.abortHistorical(seq))
+    fun dataRange(seq: Int): ByteArray = vetted(builders.getDataRange(seq))
 
-    fun historyAck(seq: Int, token: ByteArray): ByteArray = vetted(Commands.historyAck(seq, token))
+    fun alarm(seq: Int): ByteArray = vetted(builders.getAlarm(seq))
 
-    fun realtime(seq: Int, on: Boolean): ByteArray = vetted(Commands.toggleRealtimeHr(seq, on))
+    fun historical(seq: Int): ByteArray = vetted(builders.sendHistoricalData(seq))
 
-    fun broadcast(seq: Int, on: Boolean): ByteArray = vetted(Commands.toggleGenericHrProfile(seq, on))
+    fun abort(seq: Int): ByteArray = vetted(builders.abortHistorical(seq))
 
-    fun haptics(seq: Int, pattern: Int): ByteArray = vetted(Commands.runHaptics(seq, pattern))
+    fun historyAck(seq: Int, token: ByteArray): ByteArray = vetted(builders.historyAck(seq, token))
+
+    fun realtime(seq: Int, on: Boolean): ByteArray = vetted(builders.toggleRealtimeHr(seq, on))
+
+    fun broadcast(seq: Int, on: Boolean): ByteArray = vetted(builders.toggleGenericHrProfile(seq, on))
+
+    fun haptics(seq: Int, pattern: Int): ByteArray = vetted(builders.runHaptics(seq, pattern))
 
     fun testBuzz(seq: Int): ByteArray = haptics(seq, app.circlet.protocol.Haptics.SHORT_PULSE)
 
     fun findBuzz(seq: Int): ByteArray = runAlarm(seq)
 
-    fun stopHaptics(seq: Int): ByteArray = vetted(Commands.stopHaptics(seq))
+    fun stopHaptics(seq: Int): ByteArray = vetted(builders.stopHaptics(seq))
 
-    fun setAlarm(seq: Int, epochSeconds: Long): ByteArray = vetted(Commands.setAlarm(seq, epochSeconds))
+    fun setAlarm(seq: Int, epochSeconds: Long): ByteArray = vetted(builders.setAlarm(seq, epochSeconds))
 
-    fun runAlarm(seq: Int): ByteArray = vetted(Commands.runAlarm(seq))
+    fun runAlarm(seq: Int): ByteArray = vetted(builders.runAlarm(seq))
 
-    fun disableAlarm(seq: Int): ByteArray = vetted(Commands.disableAlarm(seq))
+    fun disableAlarm(seq: Int): ByteArray = vetted(builders.disableAlarm(seq))
 
-    fun rename(seq: Int, name: String): ByteArray = vetted(Commands.setAdvertisingName(seq, name))
+    fun rename(seq: Int, name: String): ByteArray = vetted(builders.setAdvertisingName(seq, name))
 
     fun vetted(frame: ByteArray): ByteArray {
-        val inner = FrameReassembler().feed(frame).firstOrNull()
+        val inner = FrameReassembler(profile).feed(frame).firstOrNull()
             ?: error("refusing an unreadable frame")
         val opcode = if (inner.size > 2) inner[2].toInt() and 0xFF else error("refusing a short frame")
         Harmful.ensure(opcode)
@@ -186,18 +248,20 @@ internal class ProtocolWire {
                 MetadataKind.COMPLETE -> MetaKind.COMPLETE
             },
             packet.token,
+            packet.expectedPacketCount,
         )
         is Packet.Other -> Inbound.Ignore
     }
 
     private fun response(packet: Packet.Response): Inbound = when (packet.opcode) {
         0x16, 0x17 -> Inbound.HistoryReply(packet.opcode, packet.originSeq, packet.result)
+        0x91 -> if (packet.result == 1 && generation == StrapGeneration.GEN5) gen5HelloInfo(packet.body) ?: Inbound.Ignore else Inbound.Ignore
         0x23 -> {
             val info = hello(packet.body)
             Inbound.HelloInfo(info.serial, info.firmware, info.batteryPercent)
         }
         0x1A -> batteryPercent(packet.body)?.let { Inbound.Battery(it) } ?: Inbound.Ignore
-        0x4C -> if (packet.result == 1) {
+        0x4C, 0x8D -> if (packet.result == 1) {
             advertisingName(packet.body)?.let { Inbound.Name(it) } ?: Inbound.Ignore
         } else {
             Inbound.Ignore
@@ -210,6 +274,12 @@ internal class ProtocolWire {
             Inbound.Range(stored)
         }
         else -> Inbound.Ignore
+    }
+
+    private fun gen5HelloInfo(body: ByteArray): Inbound.HelloInfo? {
+        val info = gen5Hello(body) ?: return null
+        return Inbound.HelloInfo(info.serial, info.firmware, info.batteryPercent, info.charging,
+            info.onWrist, info.clockMillis, info.revision, info.identityValid, info.locked)
     }
 
     private fun signal(packet: Packet.Event): Inbound {
@@ -233,10 +303,17 @@ internal class ProtocolWire {
     }
 
     private fun sampled(packet: Packet.Historical): Inbound {
-        val decoded = records.decode(packet.raw)
+        val gen5 = if (generation == StrapGeneration.GEN5) decodeGen5Summary(packet.raw) else null
+        val decoded = if (generation == StrapGeneration.GEN5) gen5?.record else records.decode(packet.raw)
         val epoch = decoded?.epochSecond ?: epochAt(packet.raw)
-        val raw = RawRecord(epoch, packet.raw.copyOf())
-        return Inbound.Sampled(decoded?.let { sampleOf(it, packet.raw) }, raw)
+        val raw = RawRecord(epoch, packet.raw.copyOf(), generation)
+        return Inbound.Sampled(decoded?.let {
+            sampleOf(it, packet.raw).copy(
+                generation = generation,
+                skinTemperatureCentiC = gen5?.skinTemperatureCentiC,
+                bandState = gen5?.bandState,
+            )
+        }, raw)
     }
 
     private fun sampleOf(record: R24, raw: ByteArray): Sample {

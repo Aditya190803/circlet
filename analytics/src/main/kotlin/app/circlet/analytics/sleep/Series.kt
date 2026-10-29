@@ -1,3 +1,4 @@
+// Ported from OpenStrap analytics/lib/src/onehz/sleep/band_offset.dart — band-state alignment.
 // Sample alignment for the OpenStrap 1 Hz sleep and heart ports.
 // Heart rate 0 is off-wrist. RR intervals are stamped at the sample's whole second,
 // which is the edge behaviour when the strap does not send a sub-second beat time.
@@ -8,6 +9,7 @@ import app.circlet.analytics.foundations.AccelSample
 import app.circlet.core.AbsentReason
 import app.circlet.core.Confidence
 import app.circlet.core.Metric
+import app.circlet.core.measurementBpm
 import app.circlet.core.Sample
 import java.time.Instant
 import java.time.ZoneId
@@ -19,6 +21,7 @@ internal data class AlignedSeries(
     val rrTsMs: List<Double>,
     /** True when any sample has a measured heart rate or a non-zero gravity vector. */
     val worn: Boolean,
+    val bandState: List<Int> = emptyList(),
 )
 
 internal fun alignSamples(samples: List<Sample>, now: Instant): AlignedSeries {
@@ -46,7 +49,7 @@ internal fun alignSamples(samples: List<Sample>, now: Instant): AlignedSeries {
                 valid = valid,
             ),
         )
-        val bpm = sample.heartRateBpm
+        val bpm = sample.measurementBpm()
         if (bpm != null && bpm > 0) worn = true
         hr.add(if (bpm != null && bpm > 0) bpm.toDouble() else 0.0)
         val stamp = sample.epochSecond * 1000.0
@@ -57,7 +60,7 @@ internal fun alignSamples(samples: List<Sample>, now: Instant): AlignedSeries {
             }
         }
     }
-    return AlignedSeries(accel, hr, rrMs, rrTsMs, worn)
+    return AlignedSeries(accel, hr, rrMs, rrTsMs, worn, ordered.map { it.bandState ?: -1 })
 }
 
 internal fun zoneOffsets(zone: ZoneId): (Int) -> Int = { epochSec ->

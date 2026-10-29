@@ -1,9 +1,10 @@
 # Circlet: rules for every agent working in this repository
 
-Circlet is a production Android app that makes a WHOOP 4.0 strap useful with no account, no
-subscription and no cloud. It talks to the strap over Bluetooth LE, stores everything on the
-phone, and computes sleep, recovery, strain and the rest locally. WHOOP 4.0 (Gen 4, service
-`61080001-…`) is the only supported device. Do not add code paths for other straps or wearables.
+Circlet is a production Android app that makes WHOOP 4.0 and WHOOP 5.0 / MG straps useful with no account, no
+subscription and no vendor cloud. It talks to the strap over Bluetooth LE, stores everything on the
+phone, and computes sleep, recovery, strain and the rest locally. Supported devices are
+WHOOP 4.0 (Gen 4, service `61080001-…`) and WHOOP 5.0 / MG (Gen 5, service `fd4b0001-…`).
+Do not add code paths for other straps or wearables.
 
 Read `docs/SPEC.md` before writing anything. It holds the feature list, the protocol facts and
 the contract between the backend and the UI.
@@ -37,8 +38,11 @@ the request into `docs/HANDOFF.md` under your task heading instead of editing it
 - compileSdk 35, targetSdk 35, minSdk 31, applicationId and namespace root `app.circlet`
 - Compose BOM 2024.12.01, Room 2.6.1, kotlinx-coroutines 1.9.0, WorkManager 2.9.1, JUnit 4.13.2
 - Versions live in `gradle/libs.versions.toml`. Add a dependency only when the task needs it,
-  and say so in your report. No Firebase, no analytics SDKs, no network libraries: the app
-  must not declare the `INTERNET` permission.
+  and say so in your report. No Firebase SDK, no analytics SDKs, no network libraries.
+- The only network use is the optional backup to the user's own Firebase project
+  (`data/.../cloud`): its REST API over `HttpURLConnection`, HTTPS only. The phone keeps the full
+  history; the cloud is a backup and must never become the only copy. Nothing else may use
+  `INTERNET`.
 - Android SDK is at `C:\Users\SKA35\Android\Sdk`; JDK 21 is installed. Build with
   `gradlew.bat` from the repository root.
 

@@ -70,6 +70,7 @@ import app.circlet.ui.design.label
 import app.circlet.ui.design.number
 import app.circlet.ui.design.positionTag
 import app.circlet.ui.design.signedDeviation
+import app.circlet.ui.design.unscored
 import app.circlet.ui.design.words
 import app.circlet.ui.state.DayUiState
 import app.circlet.ui.state.Loadable
@@ -405,12 +406,13 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         ) { it.decimal() }
         Divider()
         val skin = summary.skinTemperature
-        val scored = skin != null && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
+        val scored = skin != null && !skin.unscored && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
         val deviation = if (scored) skin?.deviation?.value else null
         StatRow(
             "SKIN TEMPERATURE", deviation?.signedDeviation(), "SD",
             note = when {
                 skin == null -> "Current temperature unavailable from this strap"
+                skin.unscored -> "Not scored yet for WHOOP 5.0 / MG"
                 !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
                 else -> "Deviation from your own nights"
             },

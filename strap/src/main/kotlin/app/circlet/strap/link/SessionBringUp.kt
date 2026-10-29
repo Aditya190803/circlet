@@ -3,6 +3,7 @@ package app.circlet.strap.link
 import app.circlet.core.CoreError
 import app.circlet.core.Outcome
 import app.circlet.core.StrapError
+import app.circlet.core.StrapGeneration
 import app.circlet.strap.wire.ProtocolWire
 import java.time.Duration
 import java.time.Instant
@@ -12,9 +13,8 @@ import java.time.Instant
 // and `_bootstrapSetClock` before `initPackets` in protocol/lib/src/commands.dart.
 // GET_BATTERY follows hello because opcode 0x1A is the battery reading the UI shows.
 /**
- * Opens a Gen 4 session.
- * The clock is always written before [send-historical]. The five init frames keep
- * OpenStrap's order: hello, advertising name, data range, alarm, historical.
+ * Opens the discovered generation's session. Gen 4 always sets its clock;
+ * Gen 5 reads HELLO first and only corrects a drifting clock.
  */
 internal class SessionBringUp(
     private val transport: GattTransport,
@@ -29,6 +29,7 @@ internal class SessionBringUp(
         now: Instant,
         autoConnect: Boolean,
         trace: MutableList<String>,
+        currentTime: () -> Instant = { now },
         afterHistorical: suspend () -> Unit = {},
         beforeHistorical: suspend () -> Unit = {},
     ): Outcome<Unit> {
@@ -53,11 +54,15 @@ internal class SessionBringUp(
         trace += "discover"
         when (val found = queue.submit { transport.discover() }) {
             is QueueOutcome.Done -> if (!found.value) {
-                return strap(StrapError.Rejected("This device is not a WHOOP 4.0"))
+                return strap(StrapError.Rejected("This device is not a WHOOP 4.0 or 5.0 / MG"))
             }
             QueueOutcome.TimedOut -> return strap(StrapError.TimedOut)
             is QueueOutcome.Failed -> return strap(StrapError.LinkLost)
         }
+
+        wire.generation = transport.strapGeneration
+        wire.reset()
+        if (wire.generation == StrapGeneration.GEN5) sleep(600)
 
         for ((step, role) in listOf(
             "subscribe-commands" to NotifyRole.COMMANDS,
@@ -70,6 +75,11 @@ internal class SessionBringUp(
                 QueueOutcome.TimedOut -> return strap(StrapError.TimedOut)
                 is QueueOutcome.Failed -> return strap(StrapError.LinkLost)
             }
+        }
+
+        if (wire.generation == StrapGeneration.GEN5) {
+            sleep(500)
+            return gen5(currentTime, trace, beforeHistorical, afterHistorical)
         }
 
         val frames = listOf(
@@ -92,11 +102,45 @@ internal class SessionBringUp(
         return Outcome.Ok(Unit)
     }
 
+    // Ported from OpenStrap edge/lib/ble/ble_engine.dart — _bootstrapAfterRegistration,
+    // _gen5ClockContract and sendInit: HELLO owns the initial clock reading.
+    private suspend fun gen5(
+        now: () -> Instant,
+        trace: MutableList<String>,
+        beforeHistorical: suspend () -> Unit,
+        afterHistorical: suspend () -> Unit,
+    ): Outcome<Unit> {
+        trace += "get-hello"
+        val hello = wire.exchange(wire.hello(seq.live()), ::write)?.hello
+            ?: return strap(StrapError.TimedOut)
+        if (hello.locked == true) return strap(LOCKED_STRAP)
+        if (!hello.identityValid) return strap(StrapError.Rejected("Invalid strap identity"))
+        if (hello.revision != 1 || hello.clockMillis == null ||
+            kotlin.math.abs(now().toEpochMilli() - hello.clockMillis) >= 2_000
+        ) {
+            trace += "set-clock"
+            val reply = wire.exchange(wire.setClockAt(seq.live(), now()), ::write)
+            if (reply?.result != 1) return strap(StrapError.TimedOut)
+        }
+        trace += "get-advertising-name"
+        wire.exchange(wire.advertisingName(seq.live()), ::write)
+        trace += "get-data-range"
+        if (!write(wire.dataRange(seq.live()))) return strap(StrapError.LinkLost)
+        sleep(120)
+        beforeHistorical()
+        trace += "send-historical"
+        if (!write(wire.historical(4))) return strap(StrapError.LinkLost)
+        afterHistorical()
+        return Outcome.Ok(Unit)
+    }
+
     private suspend fun write(frame: ByteArray): Boolean =
         queue.submit { transport.write(frame) } is QueueOutcome.Done
 }
 
 private fun strap(error: StrapError): Outcome<Unit> = Outcome.Err(CoreError.Strap(error))
+
+internal val LOCKED_STRAP = StrapError.AccountLocked
 
 /** Live commands use 0xA0 and up. Batch acks use 5 and up, after the init sequences 0..4. */
 internal class Seq {

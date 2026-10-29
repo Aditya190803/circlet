@@ -85,7 +85,7 @@ class PureTest {
 
     @Test
     fun schemaVersionHasNoMissingMigrations() {
-        assertEquals(3, CircletDatabase.VERSION)
+        assertEquals(4, CircletDatabase.VERSION)
         assertTrue(CircletMigrations.missingSteps().isEmpty())
     }
 

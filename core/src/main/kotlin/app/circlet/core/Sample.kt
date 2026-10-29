@@ -1,3 +1,5 @@
+// Ported from OpenStrap protocol/lib/src/{records,gen5_records}.dart — physiological bounds,
+// and analytics/lib/src/onehz/device.dart — measuring-family HR ceiling.
 package app.circlet.core
 
 import java.time.Instant
@@ -32,7 +34,9 @@ data class OpticalChannels(
  * not a measured rate. Null means the record had no heart-rate field.
  * [rrIntervalsMs] are beat-to-beat intervals in milliseconds, in order.
  * [rawRecord] is the original record body so a later decoder can re-read it.
- * [skinTempCount] is the uncalibrated u16 at inner offset 68. It is not degrees.
+ * [generation] records which strap measured this second. [skinTemperatureCentiC] is the
+ * signed Gen 5 AS6221 reading; -5000 means unavailable and is stored as null.
+ * [skinTempCount] is the Gen 4 uncalibrated u16 at inner offset 68. It is not degrees.
  * Null means that layout did not carry the word. OpenStrap's protocol audit found
  * the word moving several counts a second on a large capture, which a skin
  * temperature cannot; it is stored so a nightly settled mean can be compared
@@ -47,10 +51,13 @@ data class Sample(
     val optical: OpticalChannels?,
     val rawRecord: List<Byte>?,
     val skinTempCount: Int? = null,
+    val generation: StrapGeneration = StrapGeneration.GEN4,
+    val skinTemperatureCentiC: Int? = null,
+    val bandState: Int? = null,
 )
 
 /** Measured heart rate in bpm, or null when the sample is off-wrist, missing, or implausible. */
-fun Sample.measurementBpm(): Int? = heartRateBpm?.takeIf(SignalBounds::plausibleBpm)
+fun Sample.measurementBpm(): Int? = heartRateBpm?.takeIf { it in SignalBounds.MIN_BPM..generation.maxHeartRate }
 
 /** True when every stored RR interval sits inside [SignalBounds]. */
 fun Sample.rrIntervalsInRange(): Boolean = rrIntervalsMs.all(SignalBounds::plausibleRr)
@@ -97,7 +104,10 @@ object SignalBounds {
     fun plausibleRr(intervalMs: Int): Boolean = intervalMs in MIN_RR_MS..MAX_RR_MS
 
     /** Magnitude between 0.5 g and 1.8 g, compared on the square so the gate matches the decoder. */
-    fun plausibleGravity(vector: GravityVector): Boolean {
+    fun plausibleGravity(vector: GravityVector, generation: StrapGeneration = StrapGeneration.GEN4): Boolean {
+        if (generation == StrapGeneration.GEN5) {
+            return listOf(vector.x, vector.y, vector.z).all { it.isFinite() && kotlin.math.abs(it) <= 16f }
+        }
         val x = vector.x.toDouble()
         val y = vector.y.toDouble()
         val z = vector.z.toDouble()

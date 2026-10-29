@@ -3,6 +3,7 @@ package app.circlet.strap.sync
 import app.circlet.core.RawRecord
 import app.circlet.core.Sample
 import app.circlet.core.SampleSink
+import app.circlet.core.StrapGeneration
 
 // Ported from OpenStrap edge/lib/ble/ble_engine.dart — DrainController and the
 // idle watchdog (kBackfillIdleTimeoutSeconds = 60, kHistoryFirstStartTimeoutSeconds = 10).
@@ -12,15 +13,16 @@ import app.circlet.core.SampleSink
 // An uncommitted remainder is dropped on idle, stall, or disconnect, so the strap re-sends it.
 // A sample committed early is replaced if the strap sends that second again.
 
-internal const val HISTORY_FLUSH_EVERY = 60
+internal const val HISTORY_FLUSH_EVERY = 300
 /**
- * Gen 4 history batches. START is optional; data or END can be the first answer.
+ * Gen 4 accepts data or END without START. Gen 5 requires START and validates its burst count.
  *
  * [onEnd] calls [SampleSink.commit] and returns [EndResult.Ack] only after that call returns.
  * A second end with the same token does not commit again. [onComplete] never asks for an ack.
  */
 class HistoryDrain(
     private val sink: SampleSink,
+    var strapGeneration: StrapGeneration = StrapGeneration.GEN4,
 ) {
     var open: Boolean = false
         private set
@@ -32,6 +34,9 @@ class HistoryDrain(
     private val samples = ArrayList<Sample>()
     private val raws = ArrayList<RawRecord>()
     private var lastToken: ByteArray? = null
+    private var traffic = 0L
+    private var tallyClosed = true
+    private var validationFailures = 0
 
     /** A batch was dropped and no start marker has arrived since, so an end marker belongs to the dropped batch. */
     private var staleEnd = false
@@ -46,6 +51,9 @@ class HistoryDrain(
         raws.clear()
         lastToken = null
         staleEnd = false
+        traffic = 0
+        tallyClosed = true
+        validationFailures = 0
     }
 
     /** The drain is over without an acknowledgement. A later [begin] can start another. */
@@ -82,14 +90,22 @@ class HistoryDrain(
         raws.clear()
         awaitingStart = false
         staleEnd = false
+        traffic = 0
+        tallyClosed = false
     }
 
     fun onRecord(sample: Sample?, raw: RawRecord): Boolean {
         if (!open || finished || staleEnd) return false
+        if (strapGeneration == StrapGeneration.GEN5 && (awaitingStart || tallyClosed)) return false
         awaitingStart = false
+        if (!tallyClosed) traffic++
         if (sample != null) samples += sample
         raws += raw
         return true
+    }
+
+    fun onTraffic() {
+        if (open && !finished && !awaitingStart && !tallyClosed) traffic++
     }
 
     /** Samples held in the open batch and not committed yet. */
@@ -115,7 +131,7 @@ class HistoryDrain(
         return committedSamples.size
     }
 
-    suspend fun onEnd(token: ByteArray): EndResult {
+    suspend fun onEnd(token: ByteArray, expectedPacketCount: Long? = null): EndResult {
         if (!open || finished || token.size != 8) return EndResult.Ignored
         if (staleEnd) return EndResult.Ignored
         val previous = lastToken
@@ -125,6 +141,16 @@ class HistoryDrain(
             raws.clear()
             awaitingStart = true
             return EndResult.AckAgain(token.copyOf())
+        }
+        if (strapGeneration == StrapGeneration.GEN5) {
+            if (awaitingStart) return EndResult.Ignored
+            tallyClosed = true
+            val slack = if (validationFailures >= 3) 2 else 0
+            if (expectedPacketCount != null && expectedPacketCount - slack > traffic) {
+                validationFailures++
+                return if (validationFailures >= 15) EndResult.Stuck else EndResult.Refuse
+            }
+            validationFailures = 0
         }
         val committedSamples = samples.toList()
         val committedRaw = raws.toList()
@@ -140,7 +166,7 @@ class HistoryDrain(
 
     suspend fun onComplete(): EndResult {
         if (!open || finished) return EndResult.Ignored
-        if (staleEnd) return EndResult.Retry
+        if (staleEnd || (strapGeneration == StrapGeneration.GEN5 && (!awaitingStart || validationFailures > 0))) return EndResult.Retry
         val owner = generation
         val committed = flush()
         if (owner != generation) return EndResult.Ignored
@@ -180,6 +206,8 @@ class HistoryDrain(
 }
 
 sealed interface EndResult {
+    data object Refuse : EndResult
+    data object Stuck : EndResult
     data object Ignored : EndResult
     data class Ack(val token: ByteArray, val committed: Int) : EndResult
 

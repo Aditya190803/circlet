@@ -38,7 +38,7 @@ fun movementMinutes(
         val epoch = sample.epochSecond
         if (epoch > nowSec || epoch !in range) continue
         val g = sample.gravity ?: continue
-        if (!SignalBounds.plausibleGravity(g)) continue
+        if (!SignalBounds.plausibleGravity(g, sample.generation)) continue
         accel.add(AccelSample(epoch * 1000.0, g.x.toDouble(), g.y.toDouble(), g.z.toDouble()))
     }
     if (accel.isEmpty()) {

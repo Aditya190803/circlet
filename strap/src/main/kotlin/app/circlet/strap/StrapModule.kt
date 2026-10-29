@@ -1,6 +1,7 @@
 package app.circlet.strap
 
 import android.content.Context
+import android.util.Log
 import app.circlet.core.AlarmController
 import app.circlet.core.Haptic
 import app.circlet.core.StrapController
@@ -20,6 +21,7 @@ import app.circlet.strap.notify.StatusNote
 import app.circlet.strap.workout.StrapWorkouts
 import app.circlet.strap.workout.ZoneBuzzer
 import java.time.Duration
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +46,7 @@ data class StrapBindings(
  * 15 minute watchdog, and presence observation start from here when a strap is paired.
  */
 object StrapModule {
+    private const val TAG = "StrapModule"
     private val gate = Any()
 
     @Volatile
@@ -57,12 +60,17 @@ object StrapModule {
     }
 
     private fun boot(context: Context, ports: StrapPorts, time: TimeSource): StrapBindings {
+        val diagnostics = openSyncDiagnostics(context)
         // Serialize link state with UI commands and Android GATT callbacks; storage ports switch to IO.
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        // This scope runs on the main thread, so a failure in one loop is logged instead of killing the app.
+        val failures = CoroutineExceptionHandler { _, failure ->
+            Log.e(TAG, "strap coroutine failed", failure)
+            diagnostics.swallowed("strap", failure)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + failures)
         val note = StatusNote(context, ports.settings)
         StrapService.hooksNote = note
         val host = AndroidHost(context, note)
-        val diagnostics = openSyncDiagnostics(context)
         val link = StrapLink(
             transport = AndroidGattTransport(context, diagnostics),
             queue = GattOperationQueue(Duration.ofSeconds(8)),
@@ -78,19 +86,29 @@ object StrapModule {
             ports.zoneBuzz,
             ZoneBuzzer { scope.launch { link.buzz(Haptic.TEST) } },
         )
+        var configurationReady = false
         link.onSessionReady = {
-            alarms.onConnected()
-            workouts.onConnected()
+            if (configurationReady) {
+                alarms.onConnected()
+                workouts.onConnected()
+            }
         }
         link.onDoubleTap = { alarms.onDoubleTap() }
         link.onAlarmFired = { alarms.onFired() }
-        alarms.watch(scope)
         scope.launch {
+            ports.awaitConfiguration()
             alarms.load()
             workouts.restore()
+            configurationReady = true
+            alarms.watch(scope)
+            link.configurationReady()
+        }
+        scope.launch {
             link.start()
             val address = ports.prefs.pairedAddress()
             if (!address.isNullOrBlank()) StrapCompanion.observeIfAssociated(context, address)
+            // Retain a system wake that arrived before storage and the link were ready.
+            StrapService.wakes.collect { if (it > 0) link.resumeBackground() }
         }
         return StrapBindings(link, alarms, workouts, diagnostics)
     }

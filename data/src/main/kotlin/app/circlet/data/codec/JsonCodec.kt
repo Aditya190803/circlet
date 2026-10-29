@@ -475,6 +475,7 @@ private fun wellness(json: JSONObject): WellnessFlag = WellnessFlag(
 )
 
 private fun skinTempJson(temp: SkinTemperature): JSONObject = JSONObject().apply {
+    put("unit", temp.unit.name)
     put("deviation", metricJson(temp.deviation) { put("value", it) })
     put("baselineNights", temp.baselineNights)
     put("flag", temp.flag.name)
@@ -483,6 +484,7 @@ private fun skinTempJson(temp: SkinTemperature): JSONObject = JSONObject().apply
 }
 
 private fun skinTemp(json: JSONObject): SkinTemperature = SkinTemperature(
+    unit = app.circlet.core.SkinTemperatureUnit.valueOf(json.optString("unit", "ADC_COUNTS")),
     deviation = json.readMetric("deviation") { getDouble("value") },
     baselineNights = json.getInt("baselineNights"),
     flag = SkinTempFlag.valueOf(json.getString("flag")),

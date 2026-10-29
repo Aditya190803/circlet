@@ -10,14 +10,15 @@ import java.time.Instant
 data class RawRecord(
     val epochSecond: Long,
     val bytes: ByteArray,
+    val generation: StrapGeneration = StrapGeneration.GEN4,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is RawRecord) return false
-        return epochSecond == other.epochSecond && bytes.contentEquals(other.bytes)
+        return epochSecond == other.epochSecond && generation == other.generation && bytes.contentEquals(other.bytes)
     }
 
-    override fun hashCode(): Int = 31 * epochSecond.hashCode() + bytes.contentHashCode()
+    override fun hashCode(): Int = 31 * (31 * epochSecond.hashCode() + generation.hashCode()) + bytes.contentHashCode()
 }
 
 /**
@@ -38,6 +39,10 @@ interface StrapEventSink {
  * A null address means no strap is paired.
  */
 interface StrapPrefs {
+    suspend fun pairedGeneration(): StrapGeneration? = null
+
+    suspend fun setPairedGeneration(generation: StrapGeneration?) {}
+
     suspend fun pairedAddress(): String?
 
     suspend fun setPairedAddress(address: String?)
@@ -79,7 +84,7 @@ interface WorkoutStore {
  * Null means there is no estimate.
  */
 fun interface SleepStageEstimate {
-    fun current(): SleepStage?
+    suspend fun current(): SleepStage?
 
     companion object {
         val UNKNOWN: SleepStageEstimate = SleepStageEstimate { null }
@@ -140,4 +145,6 @@ data class StrapPorts(
     val liveLoad: LiveStrainEstimator = LiveStrainEstimator.NONE,
     val settings: () -> UserSettings? = { null },
     val zoneBuzz: ZoneBuzzPolicy = ZoneBuzzPolicy { false },
+    /** Wait for authoritative alarms/workout state; sample collection can start before it. */
+    val awaitConfiguration: suspend () -> Unit = {},
 )

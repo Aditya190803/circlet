@@ -13,6 +13,7 @@ import app.circlet.core.ZoneBuzzPolicy
 import app.circlet.core.Metric
 import app.circlet.core.RawRecord
 import app.circlet.core.Sample
+import app.circlet.core.StrapGeneration
 import app.circlet.core.SampleSink
 import app.circlet.core.SignalBounds
 import app.circlet.core.SleepStage
@@ -53,11 +54,15 @@ internal class SampleSinkImpl(
 ) : SampleSink {
     override suspend fun commit(samples: List<Sample>, rawRecords: List<RawRecord>) {
         if (samples.isEmpty() && rawRecords.isEmpty()) return
-        val archived = LinkedHashMap<Long, ByteArray>()
-        for (record in rawRecords) archived[record.epochSecond] = record.bytes
+        val archived = LinkedHashMap<String, RawRecordEntity>()
+        for (record in rawRecords) {
+            val row = record.toEntity()
+            archived[row.archiveKey] = row
+        }
         for (sample in samples) {
             val raw = sample.rawRecord ?: continue
-            if (sample.epochSecond !in archived) archived[sample.epochSecond] = raw.toByteArray()
+            val row = RawRecord(sample.epochSecond, raw.toByteArray(), sample.generation).toEntity()
+            archived.putIfAbsent(row.archiveKey, row)
         }
         store.lock.withLock {
             store.io {
@@ -65,7 +70,7 @@ internal class SampleSinkImpl(
                 db.runInTransaction {
                     samples.map { it.toEntity() }.chunked(INSERT_BATCH).forEach { db.samples().insert(it) }
                     if (archived.isNotEmpty()) {
-                        archived.entries.map { RawRecordEntity(it.key, it.value) }
+                        archived.values.toList()
                             .chunked(INSERT_BATCH)
                             .forEach { db.rawRecords().insert(it) }
                     }
@@ -75,7 +80,7 @@ internal class SampleSinkImpl(
                 }
             }
         }
-        pipeline.nudge()
+        pipeline.nudgeAfterSamples()
     }
 }
 
@@ -106,6 +111,14 @@ internal class StrapPrefsImpl(
     private val store: Store,
     private val memory: Memory,
 ) : StrapPrefs {
+    override suspend fun pairedGeneration(): StrapGeneration? = stored {
+        store.database.kv().get(Keys.PAIRED_GENERATION)?.let(StrapGeneration::valueOf)
+    }
+
+    override suspend fun setPairedGeneration(generation: StrapGeneration?) = stored {
+        putOrDelete(Keys.PAIRED_GENERATION, generation?.name)
+    }
+
     override suspend fun pairedAddress(): String? = stored { memory.address.value }
 
     override suspend fun setPairedAddress(address: String?) = stored {
@@ -241,12 +254,11 @@ internal class SettingsZoneBuzz(private val memory: Memory) : ZoneBuzzPolicy {
     override fun enabled(): Boolean = memory.settings.value.zoneBuzz
 }
 
-/**
- * Sleep stage from the stored day, when [now] falls inside an epoch.
- * Reads Room. Call it off the main thread.
- */
+/** Sleep stage from the stored day, when [now] falls inside an epoch. Reads Room on the store's IO dispatcher. */
 internal class StoredSleepStage(private val store: Store) : SleepStageEstimate {
-    override fun current(): SleepStage? {
+    override suspend fun current(): SleepStage? = store.io { read() }
+
+    private fun read(): SleepStage? {
         val now = store.time.now()
         val zone = store.time.zone()
         val today = now.atZone(zone).toLocalDate()

@@ -49,6 +49,48 @@ class PhoneStepsTest {
     }
 
     @Test
+    fun millisecondTimestampReversalsDoNotAddTheWholeCounter() {
+        val readings = listOf(
+            at(0, 55_493),
+            at(10, 57_394, 500), at(10, 57_395, 499), at(10, 57_396, 901),
+            at(20, 68_223, 541), at(20, 68_224, 540), at(20, 68_225, 940),
+            at(30, 68_450),
+        )
+        assertEquals(12_957, phoneStepsOnDay(readings, ZoneOffset.UTC, date))
+    }
+
+    @Test
+    fun todaysTimestampReversalsDoNotAddFalseResets() {
+        val readings = listOf(
+            at(0, 68_450),
+            at(10, 69_506, 657), at(10, 69_507, 656), at(10, 69_511, 3_409),
+            at(20, 69_717, 643), at(20, 69_718, 642), at(20, 69_719, 1_058),
+            at(30, 71_417),
+        )
+        assertEquals(2_967, phoneStepsOnDay(readings, ZoneOffset.UTC, date))
+    }
+
+    @Test
+    fun staleCountsDoNotLowerTheBaselineOrDoubleCountTheRecovery() {
+        val readings = listOf(at(0, 100), at(1, 110), at(1, 109, 1), at(1, 110, 2), at(2, 115))
+        assertEquals(15.0, phoneStepsPerMinute(readings).values.sum(), 1e-9)
+    }
+
+    @Test
+    fun equalTimestampsKeepTheHighestCounterInEitherInputOrder() {
+        for (counts in listOf(listOf(130L, 120L), listOf(120L, 130L))) {
+            val readings = listOf(at(0, 100)) + counts.map { at(1, it) } + at(2, 140)
+            assertEquals(40.0, phoneStepsPerMinute(readings).values.sum(), 1e-9)
+        }
+    }
+
+    @Test
+    fun aResetInitiallyTooCloseIsCountedOnceLaterReadingsConfirmIt() {
+        val readings = listOf(at(0, 9_000), at(0, 10, 500), at(0, 20, 1_000), at(1, 50))
+        assertEquals(50.0, phoneStepsPerMinute(readings).values.sum(), 1e-9)
+    }
+
+    @Test
     fun readingsOutOfOrderAndRepeatedAreTidied() {
         val minutes = phoneStepsPerMinute(listOf(at(3, 130), at(1, 100), at(1, 100), at(3, 130)))
         assertEquals(30.0, minutes.values.sum(), 1e-9)

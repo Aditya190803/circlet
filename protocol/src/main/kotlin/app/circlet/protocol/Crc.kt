@@ -1,4 +1,4 @@
-// Ported from OpenStrap protocol/lib/src/crc.dart — crc8, crc32.
+// Ported from OpenStrap protocol/lib/src/crc.dart — crc8, crc32, crc16Modbus.
 package app.circlet.protocol
 
 private val CRC8_TABLE = intArrayOf(
@@ -40,4 +40,13 @@ internal fun crc32(data: ByteArray): Long {
     val crc = java.util.zip.CRC32()
     crc.update(data)
     return crc.value
+}
+
+internal fun crc16Modbus(data: ByteArray): Int {
+    var crc = 0xFFFF
+    for (byte in data) {
+        crc = crc xor (byte.toInt() and 0xFF)
+        repeat(8) { crc = if (crc and 1 != 0) (crc ushr 1) xor 0xA001 else crc ushr 1 }
+    }
+    return crc and 0xFFFF
 }

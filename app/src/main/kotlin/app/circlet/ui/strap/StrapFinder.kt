@@ -85,7 +85,10 @@ fun StrapFinder(
         ) {
             Icon(Glyph.Strap, Palette.White, 22.dp)
             Spacer(Modifier.width(12.dp))
-            Text(item.name, style = title(17.sp), modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(item.name, style = title(17.sp))
+                item.generation?.let { Text(it.model, style = body(12.sp, Palette.Faint)) }
+            }
             Text(distance(item.rssiDbm), style = label(11.sp, Palette.Faint))
         }
         Spacer(Modifier.height(8.dp))

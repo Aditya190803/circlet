@@ -10,9 +10,9 @@ private val recordingPath = Regex("(?:steps/[0-9]{4}-[0-9]{2}-[0-9]{2}\\.csv|rou
 
 internal fun recordingFiles(context: Context): List<ArchivedRecording> =
     listOf("steps", "routes").flatMap { folder ->
-        File(context.filesDir, folder).listFiles().orEmpty().filter { it.isFile }.mapNotNull { file ->
+        app.circlet.core.RecordingFiles.list(File(context.filesDir, folder)).mapNotNull { file ->
             val path = "$folder/${file.name}"
-            if (recordingPath.matches(path)) ArchivedRecording(path, file.readBytes()) else null
+            if (recordingPath.matches(path)) app.circlet.core.RecordingFiles.read(file)?.let { ArchivedRecording(path, it) } else null
         }
     }
 
@@ -38,10 +38,14 @@ internal fun replaceRecordings(context: Context, recordings: List<ArchivedRecord
     require(recordings.all { recordingPath.matches(it.path) }) { "Invalid recording path" }
     val keep = recordings.map { it.path }.toSet()
     for (existing in recordingFiles(context)) {
-        if (existing.path !in keep) check(File(context.filesDir, existing.path).delete()) { "Could not remove recording" }
+        if (existing.path !in keep) check(app.circlet.core.RecordingFiles.delete(File(context.filesDir, existing.path))) { "Could not remove recording" }
     }
     for (recording in recordings) {
         val target = File(context.filesDir, recording.path)
+        if (app.circlet.core.RecordingFiles.storage != null) {
+            app.circlet.core.RecordingFiles.write(target, recording.bytes)
+            continue
+        }
         check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs()) { "Could not create recording folder" }
         val staged = File.createTempFile("recording-", ".tmp", target.parentFile)
         try {

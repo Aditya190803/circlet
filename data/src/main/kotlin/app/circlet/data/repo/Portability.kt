@@ -48,6 +48,7 @@ internal class DataPortabilityImpl(
     fun writePermissions(): Set<String> = health.writePermissions()
 
     override suspend fun exportDatabase(): Outcome<ExportResult> = catchStorage {
+        store.prepareCloudExport()
         val bytes = store.lock.withLock { store.io { snapshotBytes(store.database, store.context) } }
         val name = "circlet-${stamp()}.db"
         val uri = store.io { documents.write(store.context.cacheDir.absolutePath, name, bytes) }
@@ -55,6 +56,7 @@ internal class DataPortabilityImpl(
     }
 
     override suspend fun exportCsv(uri: String): Outcome<Unit> = catchStorage {
+        store.prepareCloudExport()
         val zone = store.time.zone()
         val today = store.time.now().atZone(zone).toLocalDate()
         store.io {

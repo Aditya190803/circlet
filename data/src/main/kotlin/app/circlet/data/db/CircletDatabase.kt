@@ -43,7 +43,7 @@ abstract class CircletDatabase : RoomDatabase() {
     abstract fun sleepEdits(): SleepEditDao
 
     companion object {
-        const val VERSION = 3
+        const val VERSION = 4
         const val NAME = "circlet.db"
     }
 }

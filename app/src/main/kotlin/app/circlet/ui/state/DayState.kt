@@ -91,6 +91,7 @@ data class DayUiState(
             return when {
                 error == StrapError.PermissionMissing -> Notice.NeedsPermission
                 error == StrapError.BluetoothOff -> Notice.BluetoothOff
+                error == StrapError.AccountLocked -> Notice.StrapTrouble(error)
                 strap.link == LinkState.UNPAIRED -> Notice.Unpaired
                 strap.link != LinkState.CONNECTED -> Notice.Searching
                 error != null -> Notice.StrapTrouble(error)

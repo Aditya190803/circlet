@@ -29,6 +29,7 @@ import app.circlet.core.OnboardingChecks
 import app.circlet.core.OnboardingState
 import app.circlet.core.Outcome
 import app.circlet.core.SleepEdit
+import app.circlet.core.StrapGeneration
 import app.circlet.core.PersonalRecord
 import app.circlet.core.Profile
 import app.circlet.core.ProfileRepository
@@ -243,8 +244,8 @@ class FakeCirclet(
     override suspend fun startScan(): Outcome<Unit> {
         scanningState.value = true
         found.value = listOf(
-            FoundStrap("C0:FF:EE:00:00:01", "Circlet", -62),
-            FoundStrap("C0:FF:EE:00:00:02", "Circlet 2", -74),
+            FoundStrap("C0:FF:EE:00:00:01", "Circlet", -62, StrapGeneration.GEN4),
+            FoundStrap("C0:FF:EE:00:00:02", "Circlet 2", -74, StrapGeneration.GEN5),
         )
         return Outcome.Ok(Unit)
     }
@@ -259,6 +260,7 @@ class FakeCirclet(
             link = LinkState.CONNECTED,
             name = strap.name,
             serial = "W4A0-1042",
+            generation = strap.generation,
             firmware = "1.0.0",
             batteryPercent = 76.0,
             charging = false,
@@ -592,6 +594,7 @@ class FakeCirclet(
             link = LinkState.CONNECTED,
             name = "Circlet",
             serial = "W4A0-1042",
+            generation = StrapGeneration.GEN4,
             firmware = "1.0.0",
             batteryPercent = 76.0,
             charging = false,

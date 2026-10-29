@@ -13,8 +13,10 @@ import app.circlet.core.StrapEvent
 import app.circlet.core.StrapEventSink
 import app.circlet.core.StrapPorts
 import app.circlet.core.StrapPrefs
+import app.circlet.core.StrapGeneration
 import app.circlet.core.StrapState
 import app.circlet.core.WorkoutStore
+import app.circlet.protocol.BandProfile
 import app.circlet.protocol.FrameReassembler
 import app.circlet.protocol.Frames
 import app.circlet.strap.StrapHost
@@ -34,8 +36,11 @@ internal class MemoryPrefs : StrapPrefs {
     var address: String? = null
     var name: String? = null
     var synced: Instant? = null
+    var generation: StrapGeneration? = null
     var stored: List<StrapAlarm> = emptyList()
 
+    override suspend fun pairedGeneration(): StrapGeneration? = generation
+    override suspend fun setPairedGeneration(generation: StrapGeneration?) { this.generation = generation }
     override suspend fun pairedAddress(): String? = address
     override suspend fun setPairedAddress(address: String?) { this.address = address }
     override suspend fun strapName(): String? = name
@@ -54,7 +59,7 @@ internal class RecordingSink : SampleSink {
 
     override suspend fun commit(samples: List<Sample>, rawRecords: List<RawRecord>) {
         gate?.await()
-        batches += samples.toList() to rawRecords.map { RawRecord(it.epochSecond, it.bytes.copyOf()) }
+        batches += samples.toList() to rawRecords.map { RawRecord(it.epochSecond, it.bytes.copyOf(), it.generation) }
     }
 }
 
@@ -74,6 +79,8 @@ internal class FakeHost : StrapHost {
 }
 
 internal class FakeTransport : GattTransport {
+    override var strapGeneration = StrapGeneration.GEN4
+    var onWrite: suspend (ByteArray) -> Unit = {}
     override var connectionGeneration: Long = 0
         private set
     private val noteFlow = MutableSharedFlow<GattNotice>(extraBufferCapacity = 64)
@@ -146,6 +153,7 @@ internal class FakeTransport : GattTransport {
             error("write refused")
         }
         writes += frame.copyOf()
+        onWrite(frame)
     }
 
     override fun bonded(address: String): Boolean = alreadyBonded
@@ -173,7 +181,8 @@ internal fun testPorts(sink: SampleSink, prefs: StrapPrefs): StrapPorts = StrapP
     doubleTap = DoubleTapPolicy { DoubleTapAction.MARK_MOMENT },
 )
 
-internal fun innerOf(frame: ByteArray): ByteArray = FrameReassembler().feed(frame).single()
+internal fun innerOf(frame: ByteArray): ByteArray =
+    FrameReassembler(if (frame[1] == 1.toByte()) BandProfile.Gen5 else BandProfile.Gen4).feed(frame).single()
 
 internal fun opcodeOf(frame: ByteArray): Int = innerOf(frame)[2].toInt() and 0xFF
 

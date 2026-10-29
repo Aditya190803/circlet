@@ -118,7 +118,7 @@ class SessionBringUpTest {
         val transport = FakeTransport().apply { discoverValue = false }
         val error = strapError(session(transport).run(ADDRESS, now, false, mutableListOf()))
         assertTrue(error is StrapError.Rejected)
-        assertEquals("This device is not a WHOOP 4.0", (error as StrapError.Rejected).detail)
+        assertEquals("This device is not a WHOOP 4.0 or 5.0 / MG", (error as StrapError.Rejected).detail)
     }
 
     @Test

@@ -22,6 +22,7 @@ internal object Keys {
     const val SAMPLE_RETENTION = "sample_retention_days"
     const val RAW_RETENTION = "raw_retention_days"
     const val PAIRED_ADDRESS = "paired_address"
+    const val PAIRED_GENERATION = "paired_generation"
     const val PAIRED_NAME = "paired_name"
     const val LAST_SYNC = "last_sync_epoch_ms"
     const val BACKUP_ENABLED = "backup_enabled"
@@ -78,7 +79,20 @@ internal object CircletMigrations {
         }
     }
 
-    val ALL: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3)
+    val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE samples ADD COLUMN generation TEXT NOT NULL DEFAULT 'GEN4'")
+            db.execSQL("ALTER TABLE samples ADD COLUMN skinTemperatureCentiC INTEGER")
+            db.execSQL("ALTER TABLE samples ADD COLUMN bandState INTEGER")
+            db.execSQL("CREATE TABLE raw_records_new (epochSecond INTEGER NOT NULL, bytes BLOB NOT NULL, archiveKey TEXT NOT NULL PRIMARY KEY)")
+            db.execSQL("INSERT INTO raw_records_new SELECT epochSecond, bytes, CAST(epochSecond AS TEXT) FROM raw_records")
+            db.execSQL("DROP TABLE raw_records")
+            db.execSQL("ALTER TABLE raw_records_new RENAME TO raw_records")
+            db.execSQL("CREATE INDEX index_raw_records_epochSecond ON raw_records(epochSecond)")
+        }
+    }
+
+    val ALL: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
     fun missingSteps(from: Int = 1, to: Int = CircletDatabase.VERSION): List<Pair<Int, Int>> {
         val have = ALL.map { it.startVersion to it.endVersion }.toSet()

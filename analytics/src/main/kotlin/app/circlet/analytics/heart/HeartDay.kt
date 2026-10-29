@@ -21,6 +21,7 @@ import app.circlet.core.Metric
 import app.circlet.core.Profile
 import app.circlet.core.RespiratoryRate
 import app.circlet.core.RestingHeartRate
+import app.circlet.core.measurementBpm
 import app.circlet.core.Sample
 import java.time.Duration
 import java.time.Instant
@@ -267,7 +268,7 @@ private fun dayRates(samples: List<Sample>, zone: ZoneId, date: LocalDate, now: 
     for (sample in samples) {
         val epoch = sample.epochSecond
         if (epoch > nowSec || epoch !in range) continue
-        val bpm = sample.heartRateBpm ?: continue
+        val bpm = sample.measurementBpm() ?: continue
         if (bpm > 0) rates.add(bpm)
     }
     return rates

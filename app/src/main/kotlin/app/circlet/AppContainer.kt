@@ -37,6 +37,7 @@ class AppContainer(
     val onboarding: OnboardingState,
     val zoneDefaults: ZoneDefaults = PercentOfMaxZones,
     val diagnostics: SyncDiagnostics = NoSyncDiagnostics,
+    val cloud: app.circlet.core.CloudSyncController = app.circlet.core.NoCloudSync,
 ) {
     companion object {
         @Volatile

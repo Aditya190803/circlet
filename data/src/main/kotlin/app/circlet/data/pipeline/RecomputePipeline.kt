@@ -36,12 +36,16 @@ internal class RecomputePipeline(
     private val gate = kotlinx.coroutines.sync.Mutex()
     private val quiet = QuietPeriod(store.debounceMs)
 
+    @Volatile
+    private var samplesCommittedAt = 0L
+
     fun start() {
         store.scope.launch {
             store.ready.await()
             nudge()
             for (signal in signals) {
                 quiet.await(signals)
+                awaitSamplesQuiet()
                 recomputeDirty()
             }
         }
@@ -56,6 +60,22 @@ internal class RecomputePipeline(
 
     fun nudge() {
         signals.trySend(Unit)
+    }
+
+    /** Samples were committed. Recompute after the drain goes quiet, not between its batches. */
+    fun nudgeAfterSamples() {
+        samplesCommittedAt = System.nanoTime()
+        nudge()
+    }
+
+    private suspend fun awaitSamplesQuiet() {
+        while (true) {
+            val committed = samplesCommittedAt
+            if (committed == 0L) return
+            val wait = store.sampleQuietMs - (System.nanoTime() - committed) / 1_000_000
+            if (wait <= 0) return
+            delay(wait)
+        }
     }
 
     internal suspend fun retryHealthExports() = gate.withLock { exportPending() }
@@ -77,10 +97,10 @@ internal class RecomputePipeline(
     }
 
     private suspend fun recomputeOne(date: LocalDate): Step {
+        if (!store.ensureCloudSamples(date)) return Step.FAILED
         val iso = date.toString()
-        val captured = store.lock.withLock {
-            store.io { capture(date) }
-        } ?: return Step.DONE
+        // Reads only. A commit that lands meanwhile bumps the generation, and the store step below retries.
+        val captured = store.io { capture(date) } ?: return Step.DONE
         val computed = try {
             store.dayEngine.computeDay(captured.input)
         } catch (error: Exception) {
@@ -182,7 +202,8 @@ internal class RecomputePipeline(
                 sleepEdit = store.database.sleepEdits().get(iso)?.toEdit(),
                 now = store.time.now(),
                 priorSkinTemp = history.mapNotNull { day ->
-                    day.skinTemperature?.settledMeanCounts?.let { day.date to it }
+                    day.skinTemperature?.takeIf { it.unit == app.circlet.core.SkinTemperatureUnit.ADC_COUNTS }
+                        ?.settledMeanCounts?.let { day.date to it }
                 }.toMap(),
                 phoneSteps = readPhoneSteps(phoneStepsDir(store.context.filesDir), date),
             ),

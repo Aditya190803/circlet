@@ -10,7 +10,7 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 
 // Ported from OpenStrap edge/android KeepAliveWorker.kt — a 15 minute check that
-// restarts the foreground service when a strap is paired and the service is gone.
+// restores presence observation and nudges a paired strap's background connection.
 class StrapWatchdog(
     context: Context,
     params: WorkerParameters,
@@ -18,9 +18,9 @@ class StrapWatchdog(
     override fun doWork(): Result {
         val ctx = applicationContext
         if (!PairedFlag.isPaired(ctx)) return Result.success()
-        if (StrapService.running) return Result.success()
-        Log.i(TAG, "paired strap, service not running")
-        StrapService.start(ctx)
+        Log.i(TAG, "checking paired strap background connection")
+        PairedFlag.address(ctx)?.let { StrapCompanion.observeIfAssociated(ctx, it) }
+        StrapService.start(ctx, reconnect = true)
         return Result.success()
     }
 

@@ -226,7 +226,7 @@ fun WelcomePage(onStart: () -> Unit) {
         Text("Your strap, read on\nyour own phone.", style = title(34.sp))
         Spacer(Modifier.height(12.dp))
         Text(
-            "Circlet talks to your strap directly over Bluetooth. Sleep, recovery and strain are worked out here, with no account and no cloud.",
+            "Circlet reads your strap over Bluetooth and keeps your history on this phone, with an optional backup to your personal Firebase account. Sleep, recovery and strain are worked out on your phone.",
             style = body(16.sp),
         )
         Spacer(Modifier.height(28.dp))
@@ -242,7 +242,7 @@ fun ProfilePage(draft: ProfileDraft, unit: MassUnit, error: String?, onNext: () 
     val complete = draft.parsedAge != null && draft.parsedHeight != null && draft.parsedWeightKg(unit) != null
     Page(
         "A little about you",
-        "These set your heart rate zones and calorie estimates. They are stored on this phone only, and you can change them later.",
+        "These set your heart rate zones and calorie estimates. They stay on this phone, are backed up if you connect Firebase, and you can change them later.",
         footer = { PrimaryButton("CONTINUE", enabled = complete, onClick = onNext) },
     ) {
         Card { ProfileFields(draft, unit, showMaxHeartRate = false) }
