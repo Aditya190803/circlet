@@ -88,7 +88,7 @@ internal class JournalRepositoryImpl(
     }
 
     override suspend fun correlations(): Outcome<List<TagCorrelation>> = try {
-        metrics.settle(null, null)
+        metrics.settle()
         val days = metrics.loadStoredDays()
         val entries = store.io { store.database.journal().entries().map { it.toEntry() } }
         Outcome.Ok(store.insightEngine.correlations(days, memory.tags.value, entries))

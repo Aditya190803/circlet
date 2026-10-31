@@ -75,6 +75,61 @@ class StoreTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     @Test(timeout = 60_000)
+    fun archivedBaselineSurvivesUnpairRepairAndAlgorithmUpgrade() = runBlocking {
+        val filename = "baseline-repair-${System.nanoTime()}.db"
+        val first = open(fileName = filename)
+        val today = time.now().atZone(zone).toLocalDate()
+        val saved = (14 downTo 1).map { ago ->
+            val date = today.minusDays(ago.toLong())
+            val summary = emptyDay(date, AbsentReason.NOT_ENOUGH_DATA).copy(
+                recovery = app.circlet.core.Recovery(Metric.of(70, Confidence.HIGH),
+                    app.circlet.core.CalibrationStatus.READY, emptyList()),
+            )
+            app.circlet.data.db.DaySummaryEntity(date.toString(), 1, time.now().toEpochMilli(), DayCodec.encode(summary))
+        }
+        saved.forEach { first.data.database.days().upsert(it) }
+        first.data.ports.prefs.setPairedAddress("AA:BB:CC:DD:EE:01")
+        first.data.ports.prefs.setPairedAddress(null)
+        first.data.ports.prefs.setPairedGeneration(null)
+        first.data.ports.prefs.setStrapName(null)
+        first.close()
+        val second = open(fileName = filename)
+        try {
+            second.data.ports.prefs.setPairedAddress("AA:BB:CC:DD:EE:01")
+            second.engine.version = 2
+            val metrics = second.data.metrics as MetricsRepositoryImpl
+            metrics.settle()
+            saved.forEach { row -> assertEquals(row, second.data.database.days().get(row.date)) }
+            assertTrue(second.engine.calls.isEmpty())
+            assertTrue(second.data.database.dirty().dates().isEmpty())
+            second.data.ports.samples.commit(listOf(sample(time.now().epochSecond, 70, listOf(800))), emptyList())
+            second.data.recomputeNow()
+            assertEquals(14, second.engine.histories.getValue(today).count { it.recovery.score.present })
+        } finally { second.close() }
+    }
+
+    @Test(timeout = 60_000)
+    fun algorithmUpgradeRecomputesEveryStaleDayOldestFirst() = runBlocking {
+        val opened = open()
+        try {
+            val today = time.now().atZone(zone).toLocalDate()
+            val days = (2L downTo 0L).map { today.minusDays(it) }
+            opened.data.ports.samples.commit(
+                days.map { sample(it.atTime(3, 0).atZone(zone).toEpochSecond(), 60, listOf(1000)) },
+                emptyList(),
+            )
+            opened.data.recomputeNow()
+            opened.engine.version = 2
+            opened.engine.calls.clear()
+
+            (opened.data.metrics as MetricsRepositoryImpl).noteStale(today)
+            opened.data.recomputeNow()
+
+            assertEquals(days, opened.engine.calls.toList())
+        } finally { opened.close() }
+    }
+
+    @Test(timeout = 60_000)
     fun gen5SamplesAndPacketKindsRoundTripWithoutMixingTemperatureUnits() = runBlocking {
         val opened = open()
         try {
@@ -696,6 +751,7 @@ private class FakeDayEngine : DayEngine {
     var version: Int = 1
     var fail: Boolean = false
     val calls = CopyOnWriteArrayList<LocalDate>()
+    val histories = java.util.concurrent.ConcurrentHashMap<LocalDate, List<DaySummary>>()
     val manuals = CopyOnWriteArrayList<String>()
 
     override val algorithmVersion: Int get() = version
@@ -703,6 +759,7 @@ private class FakeDayEngine : DayEngine {
     override fun computeDay(input: DayInput): DaySummary {
         if (fail) error("engine failed")
         calls += input.date
+        histories[input.date] = input.history
         manuals.clear()
         manuals += input.manualActivities.map { it.id }
         val start = input.date.atTime(8, 0).atZone(input.zone).toInstant()

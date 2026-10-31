@@ -91,7 +91,7 @@ class ImportBaselineTest {
             assertImportedHistory(opened.engine.history)
             assertEquals(6, opened.data.database.days().get(today.toString())!!.algorithmVersion)
             assertEquals(IMPORTED_ALGORITHM_VERSION, opened.data.database.days().get("2026-01-01")!!.algorithmVersion)
-            assertEquals(5, opened.data.database.days().get(today.minusDays(1).toString())!!.algorithmVersion)
+            assertEquals(6, opened.data.database.days().get(today.minusDays(1).toString())!!.algorithmVersion)
         } finally {
             opened.close()
         }

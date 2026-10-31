@@ -72,7 +72,7 @@ data class DayUiState(
     val week: List<DaySummary> get() = history.takeLast(7)
 
     /** Days before [date], used for averages the day is compared against. */
-    val earlier: List<DaySummary> get() = history.dropLast(1)
+    val earlier: List<DaySummary> get() = history.filter { it.date < date }.distinctBy { it.date }
 
     val nightsRecorded: Int get() = history.count { it.sleep.present }
 
@@ -80,6 +80,9 @@ data class DayUiState(
     val baselineNights: Int get() = earlier.count { it.recovery.score.present }.coerceAtMost(BASELINE_NIGHTS)
 
     val baselineNightsLeft: Int get() = BASELINE_NIGHTS - baselineNights
+
+    val recoveryCalibrating: Boolean get() =
+        day.valueOrNull?.recovery?.calibration == CalibrationStatus.CALIBRATING && baselineNights < BASELINE_NIGHTS
 
     val notice: Notice?
         get() {
@@ -97,8 +100,8 @@ data class DayUiState(
                 error != null -> Notice.StrapTrouble(error)
                 strap.sync.draining && strap.sync.samplesPulled >= 600 ->
                     Notice.CatchingUp((strap.sync.samplesPulled / 60).toInt())
-                summary.recovery.calibration == CalibrationStatus.CALIBRATING ->
-                    if (nightsRecorded == 0) Notice.FirstNight else Notice.Calibrating(baselineNights, baselineNightsLeft)
+                recoveryCalibrating && history.isNotEmpty() ->
+                    if (nightsRecorded == 0 && baselineNights == 0) Notice.FirstNight else Notice.Calibrating(baselineNights, baselineNightsLeft)
                 summary.wellness.isNotEmpty() -> Notice.Wellness(summary.wellness.first())
                 !summary.hasData -> Notice.EmptyDay(today = true, reason = summary.emptyReason)
                 else -> null
