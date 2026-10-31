@@ -230,7 +230,7 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
     if (forgetting) {
         Sheet("Forget ${strap.name ?: "this strap"}?", onDismiss = { forgetting = false }) {
             Text(
-                "Circlet stops connecting to it and you will need to pair again. Uploaded history remains in your personal Firebase account.",
+                "Circlet stops connecting to it and you will need to pair again. Your recorded history and baseline stay on this phone.",
                 style = body(14.sp),
             )
             Spacer(Modifier.height(16.dp))

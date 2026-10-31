@@ -71,6 +71,10 @@ interface DayDao {
 
     @Query("SELECT date FROM day_summaries")
     fun dates(): List<String>
+
+    /** Days computed by another algorithm version. Imported days ([imported]) are never recomputed. */
+    @Query("SELECT date FROM day_summaries WHERE algorithmVersion != :current AND algorithmVersion != :imported ORDER BY date")
+    fun staleDates(current: Int, imported: Int): List<String>
 }
 
 @Dao

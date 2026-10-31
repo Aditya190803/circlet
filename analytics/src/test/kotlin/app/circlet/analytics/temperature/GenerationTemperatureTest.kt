@@ -1,4 +1,4 @@
-// Ported from OpenStrap analytics/lib/src/onehz/wellness/temp_circadian.dart — per-family refusal.
+// Ported from OpenStrap analytics/lib/src/onehz/wellness/temp_circadian.dart — per-family units.
 package app.circlet.analytics.temperature
 
 import app.circlet.core.AbsentReason
@@ -9,11 +9,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GenerationTemperatureTest {
-    @Test fun gen5HasNoMeasuredSettlingCalibration() {
-        assertNotNull(nightlySkinTemp(List(100) { 935 }).value)
-        val gen5 = nightlySkinTemp(List(100) { 3057 }, generation = StrapGeneration.GEN5)
-        assertNull(gen5.value)
-        assertEquals(AbsentReason.CALIBRATING, gen5.absentReason)
+    @Test fun gen5UsesItsOwnBandInCentiDegrees() {
+        val night = List(3600) { i -> if (i < 1200) 3150 else 3300 }
+        val gen5 = nightlySkinTemp(night, generation = StrapGeneration.GEN5).value!!
+        assertEquals(3300.0, gen5.meanCounts, 1e-9)
+        assertEquals(1.0 - 1200.0 / 3600, gen5.settledFraction, 1e-9)
+        assertEquals(AbsentReason.NOT_ENOUGH_DATA, nightlySkinTemp(List(100) { 3057 }, generation = StrapGeneration.GEN5).absentReason)
     }
 
     @Test fun differentTemperatureUnitsNeverSeedEachOthersBaselines() {

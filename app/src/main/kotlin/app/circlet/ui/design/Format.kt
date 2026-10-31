@@ -5,7 +5,6 @@ import app.circlet.core.AbsentReason
 import app.circlet.core.Confidence
 import app.circlet.core.CoreError
 import app.circlet.core.SkinTemperature
-import app.circlet.core.SkinTemperatureUnit
 import app.circlet.core.Sport
 import app.circlet.core.StrapError
 import app.circlet.core.SyncOutcome
@@ -109,9 +108,6 @@ fun StrapError.words(): String = when (this) {
         "This strap is locked to a WHOOP account, so it will not share its data. Remove it from your devices in the official app, then pair it here again."
     is StrapError.Rejected -> "The strap turned that down: $detail"
 }
-
-/** A night from a strap whose skin temperature Circlet cannot score yet: WHOOP 5.0 / MG reports a channel with no verified calibration. */
-val SkinTemperature.unscored: Boolean get() = unit == SkinTemperatureUnit.CENTI_CELSIUS && importedCelsius == null
 
 fun CoreError.words(): String = when (this) {
     CoreError.NotPaired -> "No strap is paired."

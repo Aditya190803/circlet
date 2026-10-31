@@ -9,6 +9,7 @@ import app.circlet.data.importer.parseWhoopCycles
 import android.content.Context
 import android.net.Uri
 import app.circlet.data.export.csvZip
+import java.io.File
 import java.io.IOException
 import app.circlet.core.BackupSettings
 import app.circlet.core.CoreError
@@ -23,7 +24,7 @@ import app.circlet.data.backup.BACKUP_PREFIX
 import app.circlet.data.backup.restoreSnapshot
 import app.circlet.data.backup.rotate
 import app.circlet.data.backup.scheduleBackup
-import app.circlet.data.backup.snapshotBytes
+import app.circlet.data.backup.snapshotFile
 import app.circlet.data.backup.validateSnapshot
 import app.circlet.data.db.Keys
 import app.circlet.data.db.KvEntity
@@ -49,10 +50,14 @@ internal class DataPortabilityImpl(
 
     override suspend fun exportDatabase(): Outcome<ExportResult> = catchStorage {
         store.prepareCloudExport()
-        val bytes = store.lock.withLock { store.io { snapshotBytes(store.database, store.context) } }
+        val snapshot = store.lock.withLock { store.io { snapshotFile(store.database, store.context) } }
         val name = "circlet-${stamp()}.db"
-        val uri = store.io { documents.write(store.context.cacheDir.absolutePath, name, bytes) }
-        ExportResult(displayName = name, uri = uri, byteCount = bytes.size.toLong())
+        try {
+            val uri = store.io { documents.write(store.context.cacheDir.absolutePath, name, snapshot) }
+            ExportResult(displayName = name, uri = uri, byteCount = snapshot.length())
+        } finally {
+            snapshot.delete()
+        }
     }
 
     override suspend fun exportCsv(uri: String): Outcome<Unit> = catchStorage {
@@ -96,26 +101,32 @@ internal class DataPortabilityImpl(
     }
 
     override suspend fun restore(uri: String): Outcome<Unit> {
-        val bytes = try {
-            store.io { documents.read(uri) }
-        } catch (error: Exception) {
-            return Outcome.Err(CoreError.Storage(error.message ?: "unreadable"))
-        }
-        val problem = try {
-            store.io { validateSnapshot(bytes) }
-        } catch (error: Exception) {
-            return Outcome.Err(CoreError.Storage(error.message ?: "Invalid backup"))
-        }
-        if (problem != null) return Outcome.Err(CoreError.Storage(problem))
-        return catchStorage {
-            store.lock.withLock {
-                store.io { restoreSnapshot(store.database, bytes, store.context) }
-                memory.readIntoMemory()
+        // A backup can be larger than the app's heap, so it is streamed to a file and attached from there.
+        val incoming = store.io { File.createTempFile("circlet-incoming", ".db", store.context.cacheDir) }
+        try {
+            try {
+                store.io { documents.copyTo(uri, incoming) }
+            } catch (error: Exception) {
+                return Outcome.Err(CoreError.Storage(error.message ?: "unreadable"))
             }
-            store.generation.value = store.generation.value + 1
-            refreshHealth()
-            scheduleBackup(store.context, memory.backup.value)
-            pipeline.nudge()
+            val problem = try {
+                store.io { validateSnapshot(incoming) }
+            } catch (error: Exception) {
+                return Outcome.Err(CoreError.Storage(error.message ?: "Invalid backup"))
+            }
+            if (problem != null) return Outcome.Err(CoreError.Storage(problem))
+            return catchStorage {
+                store.lock.withLock {
+                    store.io { restoreSnapshot(store.database, incoming, store.context) }
+                    memory.readIntoMemory()
+                }
+                store.generation.value = store.generation.value + 1
+                refreshHealth()
+                scheduleBackup(store.context, memory.backup.value)
+                pipeline.nudge()
+            }
+        } finally {
+            incoming.delete()
         }
     }
 
@@ -217,12 +228,16 @@ internal class DataPortabilityImpl(
     }
 
     private suspend fun writeBackup(folder: String): Outcome<Unit> = catchStorage {
-        val bytes = store.lock.withLock { store.io { snapshotBytes(store.database, store.context) } }
+        val snapshot = store.lock.withLock { store.io { snapshotFile(store.database, store.context) } }
         val at = store.time.now()
         val name = "$BACKUP_PREFIX${at.toEpochMilli().toString().padStart(13, '0')}.db"
-        store.io {
-            documents.write(folder, name, bytes)
-            rotate(documents, folder, BACKUP_PREFIX, BACKUP_KEEP)
+        try {
+            store.io {
+                documents.write(folder, name, snapshot)
+                rotate(documents, folder, BACKUP_PREFIX, BACKUP_KEEP)
+            }
+        } finally {
+            snapshot.delete()
         }
         store.io { store.database.kv().put(KvEntity(Keys.LAST_BACKUP, at.toEpochMilli().toString())) }
         memory.backup.value = memory.backup.value.copy(lastBackup = at)

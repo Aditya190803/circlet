@@ -11,21 +11,29 @@ import app.circlet.data.db.USER_TABLES
 import app.circlet.core.RecordingFiles
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.nio.ByteBuffer
 
 internal class DocumentStore(private val context: Context) {
-    fun write(location: String, name: String, bytes: ByteArray): String {
+    /** Streams [source] into [location], so a whole database never has to fit in the heap. */
+    fun write(location: String, name: String, source: File): String {
         val parsed = Uri.parse(location)
-        return if (parsed.scheme == "content") writeContent(parsed, name, bytes) else writeFile(location, name, bytes)
+        return if (parsed.scheme == "content") writeContent(parsed, name, source) else writeFile(location, name, source)
     }
 
-    fun read(uri: String): ByteArray {
+    fun read(uri: String): ByteArray = open(uri).use { it.readBytes() }
+
+    /** Streams [uri] into [target]. */
+    fun copyTo(uri: String, target: File) {
+        open(uri).use { input -> target.outputStream().use { input.copyTo(it) } }
+    }
+
+    private fun open(uri: String): InputStream {
         val parsed = Uri.parse(uri)
         if (parsed.scheme == "content") {
-            return context.contentResolver.openInputStream(parsed)?.use { it.readBytes() }
-                ?: throw IOException("unreadable")
+            return context.contentResolver.openInputStream(parsed) ?: throw IOException("unreadable")
         }
-        return asFile(uri).readBytes()
+        return asFile(uri).inputStream()
     }
 
     /** Pairs of uri and display name. */
@@ -58,15 +66,15 @@ internal class DocumentStore(private val context: Context) {
         }
     }
 
-    private fun writeFile(location: String, name: String, bytes: ByteArray): String {
+    private fun writeFile(location: String, name: String, source: File): String {
         val directory = asFile(location)
         directory.mkdirs()
         val out = File(directory, name)
-        out.writeBytes(bytes)
+        source.copyTo(out, overwrite = true)
         return out.toURI().toString()
     }
 
-    private fun writeContent(uri: Uri, name: String, bytes: ByteArray): String {
+    private fun writeContent(uri: Uri, name: String, source: File): String {
         val resolver = context.contentResolver
         val target = if (DocumentsContract.isTreeUri(uri)) {
             val parent = DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
@@ -75,7 +83,7 @@ internal class DocumentStore(private val context: Context) {
         } else {
             uri
         }
-        resolver.openOutputStream(target, "wt")?.use { it.write(bytes) }
+        resolver.openOutputStream(target, "wt")?.use { output -> source.inputStream().use { it.copyTo(output) } }
             ?: throw IOException("could not write")
         return target.toString()
     }
@@ -120,6 +128,16 @@ internal fun rotate(store: DocumentStore, folder: String, prefix: String, keep: 
  * this in one step, but it needs SQLite 3.27 and the unit-test driver is older.
  */
 internal fun snapshotBytes(database: CircletDatabase, context: Context): ByteArray {
+    val file = snapshotFile(database, context)
+    return try {
+        file.readBytes()
+    } finally {
+        file.delete()
+    }
+}
+
+/** The snapshot as a temporary file in the cache directory. The caller deletes it. */
+internal fun snapshotFile(database: CircletDatabase, context: Context): File {
     val sqlite = database.openHelper.writableDatabase
     val temp = File.createTempFile("circlet-snap", ".db", context.cacheDir)
     temp.delete()
@@ -135,88 +153,93 @@ internal fun snapshotBytes(database: CircletDatabase, context: Context): ByteArr
         } finally {
             sqlite.execSQL("DETACH DATABASE snap")
         }
-        return temp.readBytes()
-    } finally {
+        return temp
+    } catch (failed: Exception) {
         temp.delete()
+        throw failed
     }
 }
 
-internal fun validateSnapshot(bytes: ByteArray): String? {
-    if (bytes.size < 100) return "file is too small"
-    val header = String(bytes, 0, 15, Charsets.UTF_8)
-    if (header != "SQLite format 3") return "not a sqlite database"
-    val version = ByteBuffer.wrap(bytes, 60, 4).int
+internal fun validateSnapshot(bytes: ByteArray): String? = withTempFile(bytes) { validateSnapshot(it) }
+
+internal fun validateSnapshot(file: File): String? {
+    val head = ByteArray(100)
+    val read = file.inputStream().use { it.readNBytes(head, 0, head.size) }
+    if (read < head.size) return "file is too small"
+    if (String(head, 0, 15, Charsets.UTF_8) != "SQLite format 3") return "not a sqlite database"
+    val version = ByteBuffer.wrap(head, 60, 4).int
     if (version !in 1..CircletDatabase.VERSION) return "unsupported schema version $version"
-    val temp = File.createTempFile("circlet-check", ".db")
+    return inspect(file)
+}
+
+internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray, context: Context? = null) =
+    withTempFile(bytes) { restoreSnapshot(database, it, context) }
+
+private fun <T> withTempFile(bytes: ByteArray, block: (File) -> T): T {
+    val temp = File.createTempFile("circlet-snapshot", ".db")
     return try {
         temp.writeBytes(bytes)
-        inspect(temp)
+        block(temp)
     } finally {
         temp.delete()
     }
 }
 
 /**
- * Replaces every user table from a validated snapshot without closing the database,
+ * Replaces every user table from a validated snapshot file without closing the database,
  * so open flows keep their connection and see the new rows.
  */
-internal fun restoreSnapshot(database: CircletDatabase, bytes: ByteArray, context: Context? = null) {
-    val temp = File.createTempFile("circlet-restore", ".db")
+internal fun restoreSnapshot(database: CircletDatabase, file: File, context: Context? = null) {
+    val path = file.absolutePath.replace('\\', '/').replace("'", "''")
+    val sqlite = database.openHelper.writableDatabase
+    sqlite.execSQL("ATTACH DATABASE '$path' AS incoming")
     try {
-        temp.writeBytes(bytes)
-        val path = temp.absolutePath.replace('\\', '/').replace("'", "''")
-        val sqlite = database.openHelper.writableDatabase
-        sqlite.execSQL("ATTACH DATABASE '$path' AS incoming")
-        try {
-            val incoming = mutableSetOf<String>()
-            sqlite.query("SELECT name FROM incoming.sqlite_master WHERE type='table'").use { cursor ->
-                while (cursor.moveToNext()) incoming += cursor.getString(0)
-            }
-            RecordingFiles.locked {
-                val recordings = if (context != null && "recording_files" in incoming) readRecordings(sqlite) else null
-                val previous = if (recordings != null) recordingFiles(context!!) else null
-                var changedFiles = false
+        val incoming = mutableSetOf<String>()
+        sqlite.query("SELECT name FROM incoming.sqlite_master WHERE type='table'").use { cursor ->
+            while (cursor.moveToNext()) incoming += cursor.getString(0)
+        }
+        RecordingFiles.locked {
+            val recordings = if (context != null && "recording_files" in incoming) readRecordings(sqlite) else null
+            val previous = if (recordings != null) recordingFiles(context!!) else null
+            var changedFiles = false
+            try {
+                sqlite.beginTransaction()
                 try {
-                    sqlite.beginTransaction()
-                    try {
-                        for (table in USER_TABLES) {
-                            sqlite.execSQL("DELETE FROM $table")
-                            if (table in incoming) {
-                                val columns = tableColumns(sqlite, "incoming", table)
-                                val common = tableColumns(sqlite, "main", table).filter { it in columns }
-                                    .joinToString(",") { "\"$it\"" }
-                                check(common.isNotEmpty()) { "Incompatible backup table $table" }
-                                if (table == "raw_records" && "archiveKey" !in columns) {
-                                    sqlite.execSQL("INSERT INTO raw_records ($common, archiveKey) SELECT $common, CAST(epochSecond AS TEXT) FROM incoming.raw_records")
-                                } else {
-                                    sqlite.execSQL("INSERT INTO $table ($common) SELECT $common FROM incoming.$table")
-                                }
+                    for (table in USER_TABLES) {
+                        sqlite.execSQL("DELETE FROM $table")
+                        if (table in incoming) {
+                            val columns = tableColumns(sqlite, "incoming", table)
+                            val common = tableColumns(sqlite, "main", table).filter { it in columns }
+                                .joinToString(",") { "\"$it\"" }
+                            check(common.isNotEmpty()) { "Incompatible backup table $table" }
+                            if (table == "raw_records" && "archiveKey" !in columns) {
+                                sqlite.execSQL("INSERT INTO raw_records ($common, archiveKey) SELECT $common, CAST(epochSecond AS TEXT) FROM incoming.raw_records")
+                            } else {
+                                sqlite.execSQL("INSERT INTO $table ($common) SELECT $common FROM incoming.$table")
                             }
                         }
-                        if (recordings != null) {
-                            changedFiles = true
-                            replaceRecordings(context!!, recordings)
-                        }
-                        sqlite.setTransactionSuccessful()
-                    } finally {
-                        sqlite.endTransaction()
                     }
-                } catch (failed: Exception) {
-                    if (changedFiles && previous != null) {
-                        try {
-                            replaceRecordings(context!!, previous)
-                        } catch (rollback: Exception) {
-                            failed.addSuppressed(rollback)
-                        }
+                    if (recordings != null) {
+                        changedFiles = true
+                        replaceRecordings(context!!, recordings)
                     }
-                    throw failed
+                    sqlite.setTransactionSuccessful()
+                } finally {
+                    sqlite.endTransaction()
                 }
+            } catch (failed: Exception) {
+                if (changedFiles && previous != null) {
+                    try {
+                        replaceRecordings(context!!, previous)
+                    } catch (rollback: Exception) {
+                        failed.addSuppressed(rollback)
+                    }
+                }
+                throw failed
             }
-        } finally {
-            sqlite.execSQL("DETACH DATABASE incoming")
         }
     } finally {
-        temp.delete()
+        sqlite.execSQL("DETACH DATABASE incoming")
     }
 }
 

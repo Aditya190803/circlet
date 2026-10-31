@@ -129,7 +129,7 @@ class MoreViewModel(
 
     fun rename(name: String) = run(StrapAction.RENAME, "Strap renamed.") { strap.rename(name) }
 
-    fun forget() = run(StrapAction.FORGET, "Strap forgotten. Its history remains in your Firebase account.") { strap.forget() }
+    fun forget() = run(StrapAction.FORGET, "Strap forgotten. Your history and baseline remain on this phone.") { strap.forget() }
 
     fun setBroadcast(enabled: Boolean) = run(StrapAction.BROADCAST, null) {
         when (val result = strap.setBroadcast(enabled)) {

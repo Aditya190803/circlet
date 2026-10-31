@@ -6,8 +6,10 @@
 // threshold is ours on an uncalibrated relative channel; Smarr reports +0.63 C
 // against a per-subject baseline and supplies no z threshold.
 //
-// Gen 4 uses the measured 40-count settling band. OpenStrap has no measured
-// Gen 5 settling band, so its centi-degree channel abstains from nightly metrics.
+// The nightly mean is ours, not OpenStrap's: its median-anchored settling gate
+// rejected about half of real Gen 4 nights, whose covered and uncovered stretches
+// sit hundreds of counts apart. The 40-count band now grades confidence only.
+// Gen 5 runs the same method on its centi-degree channel with a 1 C band.
 // Counts and centi-degrees never share a baseline.
 
 package app.circlet.analytics.temperature
@@ -24,14 +26,20 @@ import app.circlet.core.StrapGeneration
 import app.circlet.core.SkinTemperatureUnit
 import java.time.LocalDate
 
-/** A sample is settled while it sits no more than this far below the night median, in counts. */
+/** A Gen 4 sample is settled while it sits no more than this far below the warm mean, in counts. */
 const val SKIN_TEMP_SETTLE_BAND_COUNTS = 40.0
 
-/** Minimum settled fraction before a nightly mean may be used. Costs about one night in eight. */
-const val SKIN_TEMP_MIN_SETTLED_FRACTION = 0.80
+/** A Gen 5 sample is settled while it sits no more than this far below the warm mean, in centi-degrees. */
+const val SKIN_TEMP_SETTLE_BAND_CENTI_C = 100.0
 
-/** Minimum valid samples in the sleep window. */
-const val SKIN_TEMP_MIN_SAMPLES = 60
+/** Settled fraction at or above which a nightly mean is HIGH confidence. */
+const val SKIN_TEMP_HIGH_SETTLED_FRACTION = 0.80
+
+/** Settled fraction at or above which a nightly mean is MEDIUM confidence; below it, LOW. */
+const val SKIN_TEMP_MEDIUM_SETTLED_FRACTION = 0.50
+
+/** Minimum valid samples in the sleep window: half an hour at 1 Hz. */
+const val SKIN_TEMP_MIN_SAMPLES = 1800
 
 /** Trailing baseline window, in calendar days. */
 const val SKIN_TEMP_BASELINE_DAYS = 21
@@ -46,45 +54,49 @@ const val SKIN_TEMP_PERSIST_NIGHTS = 2
 const val SKIN_TEMP_MIN_BASELINE_NIGHTS = 7
 
 /**
- * One night's settled mean. [meanCounts] is ADC counts, never degrees.
- * [settledFraction] is the share of valid samples the mean is made of.
+ * One night's warm-plateau mean, in the strap's own unit: ADC counts on Gen 4, centi-degrees on
+ * Gen 5. [settledFraction] is the share of valid samples within the settling band of that mean.
  */
 data class SettledSkinTemp(
     val meanCounts: Double,
     val settledFraction: Double,
 )
 
+/** The unit a strap family's nightly skin-temp means are kept in. Units never share a baseline. */
+fun StrapGeneration.skinTempUnit(): SkinTemperatureUnit =
+    if (this == StrapGeneration.GEN5) SkinTemperatureUnit.CENTI_CELSIUS else SkinTemperatureUnit.ADC_COUNTS
+
 /**
- * Nightly skin-temp mean over the settled portion of a sleep window.
+ * Nightly skin-temp mean over the warm half of a sleep window.
  *
- * Null and non-positive counts are not samples. A night under [minSamples]
- * valid samples, or one whose settled fraction is under [minSettledFraction],
- * has no usable temperature: the result is absent and the caller drops the
- * input instead of substituting one. The channel itself is never nulled here.
+ * Wrist skin drops for whole stretches of a night while the arm is uncovered, so a single
+ * night spans hundreds of counts on Gen 4. The covered-wrist plateau is the comparable part:
+ * the mean of the samples at or above the night median. On real Gen 4 nights it moves about a
+ * tenth as much between nights as the median does. Coolings that cover more of the night
+ * lower the confidence instead of discarding it.
+ *
+ * Null and non-positive readings are not samples. A night under [minSamples] valid samples has
+ * no usable temperature: the result is absent and the caller drops it.
  */
 fun nightlySkinTemp(
     counts: List<Int?>,
     minSamples: Int = SKIN_TEMP_MIN_SAMPLES,
-    minSettledFraction: Double = SKIN_TEMP_MIN_SETTLED_FRACTION,
-    settleBandLow: Double = SKIN_TEMP_SETTLE_BAND_COUNTS,
     generation: StrapGeneration = StrapGeneration.GEN4,
+    settleBand: Double = if (generation == StrapGeneration.GEN5) SKIN_TEMP_SETTLE_BAND_CENTI_C else SKIN_TEMP_SETTLE_BAND_COUNTS,
 ): Metric<SettledSkinTemp> {
-    // OpenStrap has no measured Gen 5 settling band; Gen 4 counts cannot calibrate centi-°C.
-    if (generation != StrapGeneration.GEN4) return Metric.absent(AbsentReason.CALIBRATING)
     val valid = ArrayList<Double>(counts.size)
     for (count in counts) {
         if (count != null && count > 0) valid += count.toDouble()
     }
     if (valid.size < minSamples) return Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
-    val floor = median(valid)!! - settleBandLow
-    val kept = valid.filter { it >= floor }
-    val fraction = kept.size.toDouble() / valid.size
-    if (fraction < minSettledFraction) return Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
+    val middle = median(valid)!!
+    val warm = mean(valid.filter { it >= middle })!!
+    val fraction = valid.count { it >= warm - settleBand }.toDouble() / valid.size
     return Metric.of(
-        SettledSkinTemp(mean(kept)!!, fraction),
+        SettledSkinTemp(warm, fraction),
         when {
-            fraction >= 0.95 -> Confidence.HIGH
-            fraction >= 0.85 -> Confidence.MEDIUM
+            fraction >= SKIN_TEMP_HIGH_SETTLED_FRACTION -> Confidence.HIGH
+            fraction >= SKIN_TEMP_MEDIUM_SETTLED_FRACTION -> Confidence.MEDIUM
             else -> Confidence.LOW
         },
     )

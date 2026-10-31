@@ -14,6 +14,8 @@ import app.circlet.analytics.temperature.NightlyTemp
 import app.circlet.analytics.temperature.nightlySkinTemp
 import app.circlet.analytics.motion.phoneStepsOnDay
 import app.circlet.analytics.temperature.scoreSkinTemp
+import app.circlet.analytics.temperature.skinTempUnit
+import app.circlet.core.SkinTemperatureUnit.ADC_COUNTS
 import app.circlet.core.Steps
 import app.circlet.analytics.strain.QUIET_HRR_TRAIT_MIN_MINUTES
 import app.circlet.analytics.strain.dailyQuietWakingHrr
@@ -46,8 +48,9 @@ import kotlin.math.roundToInt
 
 /**
  * Bump when stored days need recomputing. Version 9 repairs phone-step timestamp reversals.
+ * Version 11 scores skin temperature from the warm half of every night, on both strap families.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 10
+const val CIRCLET_ALGORITHM_VERSION: Int = 11
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -196,60 +199,48 @@ private data class TailSections(
     val skin: SkinTemperature,
 )
 
-/**
- * The night's skin temperature for [DaySummary.skinTemperature].
- *
- * Tonight's settled mean is rebuilt from the main sleep window's
- * [Sample.skinTempCount][app.circlet.core.Sample.skinTempCount] values with
- * [nightlySkinTemp]; prior nights come from [DayInput.priorSkinTemp], which the
- * caller fills from the settled means stored on earlier summaries. Without priors the flag is
- * honestly [SkinTempFlag.NOT_ENOUGH_BASELINE][app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE],
- * never a substituted temperature.
- */
 private fun phoneSteps(input: DayInput): app.circlet.core.Metric<Int> {
     val total = phoneStepsOnDay(input.phoneSteps, input.zone, input.date)
         ?: return app.circlet.core.Metric.absent(app.circlet.core.AbsentReason.NOT_ENOUGH_DATA)
     return app.circlet.core.Metric.of(total, app.circlet.core.Confidence.MEDIUM)
 }
 
+/**
+ * The night's skin temperature for [DaySummary.skinTemperature].
+ *
+ * Tonight's mean is rebuilt from the main sleep window with [nightlySkinTemp]: Gen 4
+ * [Sample.skinTempCount][app.circlet.core.Sample.skinTempCount] counts or Gen 5
+ * [Sample.skinTemperatureCentiC][app.circlet.core.Sample.skinTemperatureCentiC]. Prior nights are
+ * the means stored on earlier summaries in the same unit. A night that mixes strap families has
+ * no comparable reading. Without priors the flag is honestly
+ * [SkinTempFlag.NOT_ENOUGH_BASELINE][app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE].
+ */
 private fun skinTemperatureOf(
     input: DayInput,
     session: app.circlet.core.SleepSession?,
 ): app.circlet.core.SkinTemperature {
-    val families = input.samples.filter {
-        session != null && it.epochSecond >= session.start.epochSecond && it.epochSecond < session.end.epochSecond
-    }.map { it.generation }.toSet()
-    if (families.any { it != app.circlet.core.StrapGeneration.GEN4 }) {
-        return SkinTemperature(
-            app.circlet.core.Metric.absent(app.circlet.core.AbsentReason.CALIBRATING),
-            0,
-            app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE,
-            unit = app.circlet.core.SkinTemperatureUnit.CENTI_CELSIUS,
-        )
+    val night = nightSamples(input, session)
+    val families = night.map { it.generation }.toSet()
+    val generation = families.singleOrNull() ?: app.circlet.core.StrapGeneration.GEN4
+    val unit = generation.skinTempUnit()
+    val tonight = if (families.size > 1) {
+        null
+    } else {
+        nightlySkinTemp(night.map { if (unit == ADC_COUNTS) it.skinTempCount else it.skinTemperatureCentiC }, generation = generation)
+            .value?.meanCounts
     }
-    val nights = ArrayList<NightlyTemp>(input.priorSkinTemp.size + 1)
-    for ((date, mean) in input.priorSkinTemp) {
-        if (date < input.date) nights += NightlyTemp(date, mean)
-    }
-    nights.sortBy { it.date }
-    val tonight = tonightSkinTemp(input, session)
-    nights += NightlyTemp(input.date, tonight)
+    val nights = input.history.mapNotNull { day ->
+        val skin = day.skinTemperature?.takeIf { day.date < input.date && it.unit == unit } ?: return@mapNotNull null
+        skin.settledMeanCounts?.let { NightlyTemp(day.date, it, unit) }
+    }.sortedBy { it.date } + NightlyTemp(input.date, tonight, unit)
     return scoreSkinTemp(nights, luteal = null).copy(settledMeanCounts = tonight)
 }
 
-/** Tonight's settled skin-temp mean in counts, or null when the night has none. */
-private fun tonightSkinTemp(input: DayInput, session: app.circlet.core.SleepSession?): Double? {
-    val start = session?.start?.epochSecond ?: return null
-    val end = session?.end?.epochSecond ?: return null
-    if (end <= start) return null
-    val nowSec = input.now.epochSecond
-    val counts = ArrayList<Int?>()
-    for (sample in input.samples) {
-        if (sample.epochSecond < start || sample.epochSecond >= end) continue
-        if (sample.epochSecond > nowSec) continue
-        counts += sample.skinTempCount
-    }
-    return nightlySkinTemp(counts).value?.meanCounts
+/** Samples inside the main sleep window that have already happened. */
+private fun nightSamples(input: DayInput, session: app.circlet.core.SleepSession?): List<Sample> {
+    val start = session?.start?.epochSecond ?: return emptyList()
+    val end = minOf(session.end.epochSecond, input.now.epochSecond + 1)
+    return input.samples.filter { it.epochSecond in start until end }
 }
 
 /**

@@ -62,12 +62,12 @@ internal class MetricsRepositoryImpl(
             TrendRange.WEEK -> today.minusDays(6)
             TrendRange.MONTH -> today.minusDays(29)
         }
-        settle(from, today)
+        settle()
         Outcome.Ok(store.insightEngine.trend(loadRange(from, today), metric))
     }
 
     override suspend fun records(): Outcome<List<PersonalRecord>> = storage {
-        settle(null, null)
+        settle()
         Outcome.Ok(store.insightEngine.records(loadStoredDays()))
     }
 
@@ -76,7 +76,7 @@ internal class MetricsRepositoryImpl(
             return Outcome.Err(CoreError.Invalid("week starts on Monday"))
         }
         return storage {
-            settle(weekStart, weekStart.plusDays(6))
+            settle()
             Outcome.Ok(store.insightEngine.weeklyRecap(weekStart, loadRange(weekStart, weekStart.plusDays(6))))
         }
     }
@@ -124,23 +124,24 @@ internal class MetricsRepositoryImpl(
             row != null && row.algorithmVersion != IMPORTED_ALGORITHM_VERSION &&
                 row.algorithmVersion != store.dayEngine.algorithmVersion
         }
-        if (stale) store.io { store.database.dirty().mark(iso) }
+        if (stale) markStale()
         val dirty = stale || store.io { store.database.dirty().generation(iso) != null }
         if (dirty) pipeline.nudge()
     }
 
-    /** Mark version-mismatched rows dirty, then compute the oldest dirty day first. */
-    internal suspend fun settle(from: LocalDate?, to: LocalDate?) {
-        store.io {
-            val rows = if (from == null || to == null) {
-                store.database.days().all()
-            } else {
-                store.database.days().range(from.toString(), to.toString())
-            }
-            rows.filter { it.algorithmVersion != IMPORTED_ALGORITHM_VERSION && it.algorithmVersion != store.dayEngine.algorithmVersion }
-                .forEach { store.database.dirty().mark(it.date) }
-        }
+    /**
+     * Mark every version-mismatched row dirty, then compute the oldest dirty day first.
+     * All of them, not just the asked range: a day's baselines read the days before it, so
+     * recomputing a recent day ahead of its stale predecessors would freeze stale baselines into it.
+     */
+    internal suspend fun settle() {
+        markStale()
         pipeline.recomputeDirty()
+    }
+
+    private suspend fun markStale() = store.io {
+        store.database.days().staleDates(store.dayEngine.algorithmVersion, IMPORTED_ALGORITHM_VERSION)
+            .forEach { store.database.dirty().mark(it) }
     }
 
     internal suspend fun loadRange(from: LocalDate, to: LocalDate): List<DaySummary> {

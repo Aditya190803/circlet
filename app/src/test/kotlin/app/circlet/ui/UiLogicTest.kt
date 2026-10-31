@@ -8,9 +8,6 @@ import app.circlet.core.MassUnit
 import app.circlet.core.Metric
 import app.circlet.core.Recovery
 import app.circlet.core.Sex
-import app.circlet.core.SkinTempFlag
-import app.circlet.core.SkinTemperature
-import app.circlet.core.SkinTemperatureUnit
 import app.circlet.core.StrapError
 import app.circlet.core.StrapState
 import app.circlet.core.Strain
@@ -23,7 +20,6 @@ import app.circlet.core.fake.FakeScenario
 import app.circlet.ui.design.words
 import app.circlet.ui.design.stalled
 import app.circlet.ui.design.syncProgressLabel
-import app.circlet.ui.design.unscored
 import app.circlet.ui.more.ProfileDraft
 import app.circlet.ui.more.parseNotice
 import app.circlet.ui.state.DayUiState
@@ -107,6 +103,28 @@ class UiLogicTest {
     }
 
     @Test
+    fun repairingWithAnEmptyTodayKeepsTheSavedBaseline() {
+        val today = LocalDate.of(2026, 10, 12)
+        val prior = (14 downTo 1).map { ago ->
+            emptyDay(today.minusDays(ago.toLong()), AbsentReason.NOT_ENOUGH_DATA).copy(
+                recovery = Recovery(Metric.of(70, Confidence.HIGH), CalibrationStatus.READY, emptyList()),
+            )
+        }
+        val state = DayUiState(today, today, Loadable.Ready(emptyDay(today, AbsentReason.NOT_ENOUGH_DATA)),
+            prior.reversed(), StrapState(link = LinkState.UNPAIRED))
+        assertEquals(Notice.Unpaired, state.notice)
+        val repaired = state.copy(strap = StrapState(link = LinkState.CONNECTED))
+        assertEquals(14, repaired.baselineNights)
+        assertEquals(0, repaired.baselineNightsLeft)
+        assertEquals(false, repaired.recoveryCalibrating)
+        assertTrue(repaired.notice is Notice.EmptyDay)
+        assertNull((repaired.day as Loadable.Ready).value.recovery.score.value)
+        val incomplete = repaired.copy(history = prior.take(5))
+        assertTrue(incomplete.recoveryCalibrating)
+        assertEquals(Notice.Calibrating(5, 9), incomplete.notice)
+    }
+
+    @Test
     fun aLoadingDayHasNoNotice() {
         assertNull(ready(FakeScenario.PAIRED).copy(day = Loadable.Loading).notice)
     }
@@ -136,14 +154,5 @@ class UiLogicTest {
         assertEquals(40, changed?.ageYears)
         assertEquals(63.96, changed?.weightKg ?: 0.0, 0.01)
         assertNull(ProfileDraft("40", "168", "64", "90", Sex.FEMALE).toProfile(base, MassUnit.KILOGRAM, today))
-    }
-
-    @Test
-    fun aWhoop5NightIsNotScoredRatherThanStuckBuildingABaseline() {
-        val absent = Metric.absent<Double>(AbsentReason.CALIBRATING)
-        val gen5 = SkinTemperature(absent, 0, SkinTempFlag.NOT_ENOUGH_BASELINE, unit = SkinTemperatureUnit.CENTI_CELSIUS)
-        assertTrue(gen5.unscored)
-        assertTrue(!gen5.copy(importedCelsius = 33.1).unscored)
-        assertTrue(!gen5.copy(unit = SkinTemperatureUnit.ADC_COUNTS).unscored)
     }
 }

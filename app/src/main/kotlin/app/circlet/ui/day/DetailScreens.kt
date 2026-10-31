@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.circlet.core.AbsentReason
-import app.circlet.core.CalibrationStatus
 import app.circlet.core.DaySummary
 import app.circlet.core.MetricKind
 import app.circlet.core.MetricReference
@@ -64,7 +63,6 @@ import app.circlet.ui.design.hoursMinutes
 import app.circlet.ui.design.label
 import app.circlet.ui.design.number
 import app.circlet.ui.design.signedDeviation
-import app.circlet.ui.design.unscored
 import app.circlet.ui.design.words
 import app.circlet.ui.design.ProgressSteps
 import app.circlet.ui.state.BASELINE_NIGHTS
@@ -242,7 +240,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
     DetailFrame("RECOVERY", state, onBack, onRetry, "RECOVERY") { day ->
         val recovery = day.recovery
         val score = recovery.score.value
-        val calibrating = recovery.calibration == CalibrationStatus.CALIBRATING
+        val calibrating = state.recoveryCalibrating
         HeroDial(
             "RECOVERY", Glyph.Pulse, Palette.recovery(score), score?.toString(), "%", score?.div(100f),
             when {
@@ -331,11 +329,6 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
                 Spacer(Modifier.height(6.dp))
                 Text("As scored by WHOOP, from your imported history.", style = body(12.sp, Palette.Faint))
             }
-            skin.unscored -> Text(
-                "Not scored yet for WHOOP 5.0 / MG. There is no verified way yet to compare this strap's temperature readings night to night, " +
-                    "so Circlet shows nothing rather than a guess.",
-                style = body(13.sp, Palette.Faint),
-            )
             skin.flag == SkinTempFlag.NOT_ENOUGH_BASELINE -> Text(
                 "Building your baseline. ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"} so far, " +
                     "so there is nothing to compare yet. Readings are a deviation from your own nights, not a temperature.",

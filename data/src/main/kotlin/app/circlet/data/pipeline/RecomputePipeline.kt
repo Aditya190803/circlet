@@ -99,6 +99,20 @@ internal class RecomputePipeline(
     private suspend fun recomputeOne(date: LocalDate): Step {
         if (!store.ensureCloudSamples(date)) return Step.FAILED
         val iso = date.toString()
+        // Retention can remove the inputs while the saved night still trains the baseline.
+        val archived = store.lock.withLock {
+            store.io {
+                val window = sampleWindow(date, store.time.zone())
+                val saved = store.database.days().get(iso)?.let { runCatching { DayCodec.decode(it.payload) }.getOrNull() }
+                if (saved != null && (saved.sleep.present || saved.recovery.score.present) &&
+                    store.database.samples().count(window.first, window.last) == 0L
+                ) {
+                    store.database.dirty().generation(iso)?.let { store.database.dirty().clear(iso, it) }
+                    true
+                } else false
+            }
+        }
+        if (archived) return Step.DONE
         // Reads only. A commit that lands meanwhile bumps the generation, and the store step below retries.
         val captured = store.io { capture(date) } ?: return Step.DONE
         val computed = try {
@@ -201,10 +215,6 @@ internal class RecomputePipeline(
                 manualActivities = manual,
                 sleepEdit = store.database.sleepEdits().get(iso)?.toEdit(),
                 now = store.time.now(),
-                priorSkinTemp = history.mapNotNull { day ->
-                    day.skinTemperature?.takeIf { it.unit == app.circlet.core.SkinTemperatureUnit.ADC_COUNTS }
-                        ?.settledMeanCounts?.let { day.date to it }
-                }.toMap(),
                 phoneSteps = readPhoneSteps(phoneStepsDir(store.context.filesDir), date),
             ),
         )

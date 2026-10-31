@@ -35,9 +35,11 @@ class TemperatureTest {
     }
 
     @Test
-    fun nightBelowSkinTemperatureRefuses() {
+    fun longUncoveredStretchKeepsTheWarmPlateauAtLowerConfidence() {
         val nightly = nightlySkinTemp(night(coldSec = 7200))
-        assertEquals(AbsentReason.NOT_ENOUGH_DATA, nightly.absentReason)
+        assertEquals(805.0, nightly.value!!.meanCounts, 1e-9)
+        assertEquals(0.75, nightly.value!!.settledFraction, 1e-9)
+        assertEquals(Confidence.MEDIUM, nightly.confidence)
     }
 
     @Test

@@ -15,6 +15,8 @@ import app.circlet.core.Sample
 import app.circlet.core.Sex
 import app.circlet.core.StepReading
 import app.circlet.core.SkinTempFlag
+import app.circlet.core.SkinTemperature
+import app.circlet.core.SkinTemperatureUnit
 import app.circlet.core.SleepEdit
 import app.circlet.core.SleepPerformance
 import app.circlet.core.Sport
@@ -239,7 +241,7 @@ class DayEngineTest {
             importedNight(date.minusDays(ago.toLong()), 50 + ago, 40.0 + ago, 48 + (ago % 5), 14.0 + ago * 0.1, 70 + ago)
         }
         val now = date.plusDays(1).atStartOfDay(zone).toInstant()
-        assertEquals(10, engine.algorithmVersion)
+        assertEquals(11, engine.algorithmVersion)
         val summary = engine.computeDay(input(date, daySamples(date, 0, includeRun = false), now, history))
         assertEquals(CalibrationStatus.READY, summary.recovery.calibration)
         assertNotNull(summary.recovery.score.value)
@@ -296,6 +298,30 @@ class DayEngineTest {
         // mean and the flag honestly reports the missing baseline.
         assertEquals(SkinTempFlag.NOT_ENOUGH_BASELINE, summary.skinTemperature!!.flag)
         assertTrue(summary.stress.bandMinutes.totalMinutes > 0)
+    }
+
+    @Test
+    fun gen4SkinTemperatureScoresAgainstEarlierNightsOfTheSameUnit() {
+        val now = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val sleepStart = date.minusDays(1).atTime(23, 0).atZone(zone).toEpochSecond()
+        val sleepEnd = date.atTime(6, 30).atZone(zone).toEpochSecond()
+        val samples = daySamples(date, 0).map {
+            if (it.epochSecond in sleepStart until sleepEnd) it.copy(skinTempCount = if (it.epochSecond % 3 == 0L) 640 else 790) else it
+        }
+        fun night(ago: Long, mean: Double, unit: SkinTemperatureUnit) =
+            emptyDay(date.minusDays(ago), AbsentReason.NOT_ENOUGH_DATA, CalibrationStatus.READY).copy(
+                skinTemperature = SkinTemperature(Metric.absent(AbsentReason.CALIBRATING), 0, SkinTempFlag.NOT_ENOUGH_BASELINE, mean, unit = unit),
+            )
+        val counts = (1L..8L).map { night(it, 780.0 + it * 2, SkinTemperatureUnit.ADC_COUNTS) }
+        val centi = (9L..12L).map { night(it, 3300.0, SkinTemperatureUnit.CENTI_CELSIUS) }
+
+        val skin = engine.computeDay(input(date, samples, now, counts + centi)).skinTemperature!!
+
+        assertEquals(SkinTemperatureUnit.ADC_COUNTS, skin.unit)
+        assertEquals(790.0, skin.settledMeanCounts!!, 1e-9)
+        assertEquals(8, skin.baselineNights)
+        assertTrue(skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE)
+        assertNotNull(skin.deviation.value)
     }
 
     @Test(timeout = 180_000)
