@@ -38,6 +38,17 @@
             </intent-filter>
         </service>
 
+        <!-- Incoming-call notifications from the phone and WhatsApp, so the strap can buzz while a call rings. -->
+        <service
+            android:name=".bg.CallListener"
+            android:exported="true"
+            android:label="Circlet call buzz"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".bg.StrapBootReceiver"
             android:exported="true">

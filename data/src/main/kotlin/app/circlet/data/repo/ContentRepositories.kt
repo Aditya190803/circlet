@@ -143,6 +143,7 @@ internal class SettingsRepositoryImpl(
             putOrClear(kv, Keys.QUIET_END, settings.quietEndMinute)
             kv.put(KvEntity(Keys.PHONE_STEPS, settings.countPhoneSteps.toString()))
             kv.put(KvEntity(Keys.ZONE_BUZZ, settings.zoneBuzz.toString()))
+            kv.put(KvEntity(Keys.CALL_BUZZ, settings.callBuzz.joinToString(",") { it.name }))
         }
         memory.settings.value = settings
         return Outcome.Ok(settings)

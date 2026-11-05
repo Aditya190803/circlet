@@ -18,6 +18,7 @@ internal object Keys {
     const val QUIET_START = "alert_quiet_start_minute"
     const val QUIET_END = "alert_quiet_end_minute"
     const val ZONE_BUZZ = "zone_buzz"
+    const val CALL_BUZZ = "call_buzz"
     const val ONBOARDING = "onboarding_complete"
     const val SAMPLE_RETENTION = "sample_retention_days"
     const val RAW_RETENTION = "raw_retention_days"

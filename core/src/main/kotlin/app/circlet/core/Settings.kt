@@ -21,6 +21,12 @@ enum class DoubleTapAction {
     MARK_MOMENT,
 }
 
+/** Apps whose ringing calls can buzz the strap. */
+enum class CallSource {
+    PHONE,
+    WHATSAPP,
+}
+
 /**
  * Preferences that do not change the physiology.
  * [heartRateBroadcast] is the standard heart-rate profile toggle for gym equipment.
@@ -28,6 +34,7 @@ enum class DoubleTapAction {
  * both null means quiet hours are off.
  * [countPhoneSteps] records this phone's step counter, the only source of the step count.
  * [zoneBuzz] buzzes the strap when the heart-rate zone changes during a workout.
+ * [callBuzz] lists the apps whose ringing calls buzz the strap; a tap on the strap silences the call.
  */
 data class UserSettings(
     val mass: MassUnit,
@@ -41,6 +48,7 @@ data class UserSettings(
     val quietEndMinute: Int? = null,
     val countPhoneSteps: Boolean = false,
     val zoneBuzz: Boolean = false,
+    val callBuzz: Set<CallSource> = emptySet(),
 )
 
 /** Units, clock, double tap, and heart-rate broadcast. */

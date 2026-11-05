@@ -2,6 +2,7 @@ package app.circlet.data.repo
 
 import android.content.Context
 import app.circlet.core.BackupSettings
+import app.circlet.core.CallSource
 import app.circlet.core.ClockStyle
 import app.circlet.core.DayEngine
 import app.circlet.core.DoubleTapAction
@@ -197,6 +198,9 @@ internal fun readSettings(db: CircletDatabase): UserSettings {
         quietEndMinute = db.kv().get(Keys.QUIET_END)?.toIntOrNull()?.takeIf { it in 0..1439 },
         countPhoneSteps = db.kv().get(Keys.PHONE_STEPS) == "true",
         zoneBuzz = db.kv().get(Keys.ZONE_BUZZ) == "true",
+        callBuzz = db.kv().get(Keys.CALL_BUZZ).orEmpty().split(',')
+            .mapNotNull { name -> runCatching { CallSource.valueOf(name) }.getOrNull() }
+            .toSet(),
     )
 }
 

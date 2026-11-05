@@ -13,6 +13,8 @@ import app.circlet.strap.alarm.StrapAlarms
 import app.circlet.strap.bg.AndroidHost
 import app.circlet.strap.bg.StrapCompanion
 import app.circlet.strap.bg.StrapService
+import app.circlet.strap.call.CallBuzz
+import app.circlet.strap.call.CallHaptics
 import app.circlet.strap.diag.openSyncDiagnostics
 import app.circlet.strap.link.AndroidGattTransport
 import app.circlet.strap.link.GattOperationQueue
@@ -51,6 +53,11 @@ object StrapModule {
 
     @Volatile
     private var bindings: StrapBindings? = null
+
+    /** Ringing-call buzz, for the notification listener. Null until [open] has run. */
+    @Volatile
+    internal var calls: CallBuzz? = null
+        private set
 
     fun open(context: Context, ports: StrapPorts, time: TimeSource): StrapBindings {
         bindings?.let { return it }
@@ -93,7 +100,21 @@ object StrapModule {
                 workouts.onConnected()
             }
         }
-        link.onDoubleTap = { alarms.onDoubleTap() }
+        val callBuzz = CallBuzz(
+            scope,
+            enabled = { ports.settings()?.callBuzz.orEmpty() },
+            haptics = object : CallHaptics {
+                override suspend fun pulse() {
+                    link.buzz(Haptic.TEST)
+                }
+
+                override suspend fun stop() {
+                    link.stop()
+                }
+            },
+        )
+        calls = callBuzz
+        link.onDoubleTap = { if (!callBuzz.silence()) alarms.onDoubleTap() }
         link.onAlarmFired = { alarms.onFired() }
         scope.launch {
             ports.awaitConfiguration()
