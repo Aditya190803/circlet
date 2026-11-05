@@ -6,6 +6,7 @@ import app.circlet.core.RawRecord
 import app.circlet.core.Sample
 import app.circlet.strap.support.RecordingSink
 import app.circlet.strap.sync.EndResult
+import app.circlet.strap.sync.HISTORY_FLUSH_EVERY
 import app.circlet.strap.sync.HistoryDrain
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
@@ -114,17 +115,17 @@ class HistoryDrainTest {
     }
 
     @Test
-    fun aFullMinuteIsCommittedBeforeTheEndAndTheEndCountsOnlyTheRest() = runTest {
+    fun aFullChunkIsCommittedBeforeTheEndAndTheEndCountsOnlyTheRest() = runTest {
         val sink = RecordingSink()
         val drain = open(sink)
-        repeat(60) { index ->
+        repeat(HISTORY_FLUSH_EVERY) { index ->
             drain.onRecord(sample.copy(epochSecond = sample.epochSecond + index), raw)
         }
-        assertEquals(60, drain.flush())
+        assertEquals(HISTORY_FLUSH_EVERY, drain.flush())
         assertEquals(1, sink.batches.size)
-        assertEquals(60, sink.batches.single().first.size)
+        assertEquals(HISTORY_FLUSH_EVERY, sink.batches.single().first.size)
         repeat(5) { index ->
-            drain.onRecord(sample.copy(epochSecond = sample.epochSecond + 60 + index), raw)
+            drain.onRecord(sample.copy(epochSecond = sample.epochSecond + HISTORY_FLUSH_EVERY + index), raw)
         }
         val ack = drain.onEnd(token)
         assertTrue(ack is EndResult.Ack)

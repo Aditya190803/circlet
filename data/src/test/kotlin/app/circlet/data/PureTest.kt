@@ -12,6 +12,7 @@ import app.circlet.core.Metric
 import app.circlet.core.MetricKind
 import app.circlet.core.MetricReference
 import app.circlet.core.ReferenceRange
+import app.circlet.core.TargetStrain
 import app.circlet.core.Sample
 import app.circlet.core.SleepCycle
 import app.circlet.core.SleepEpoch
@@ -126,6 +127,7 @@ class PureTest {
             calories = Metric.of(240, Confidence.LOW),
             activities = listOf(activity),
             heartRateByMinute = listOf(null, 60, null),
+            targetStrain = TargetStrain(Metric.of(11.5, Confidence.MEDIUM), ReferenceRange(9.0, 14.0)),
         )
         assertEquals(day, DayCodec.decode(DayCodec.encode(day)))
     }

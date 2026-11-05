@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
  * [rr] is little-endian unsigned 16-bit milliseconds, empty when there were no beats.
  * [gravity] is three little-endian floats (x, y, z), or null when the record had no vector.
  * Optical columns are ADC counts. Null means that layout did not carry the channel.
- * [skinTempCount] is the uncalibrated skin-temperature count from the record.
+ * [skinTempCount] is the legacy-named raw word at offset 68, not verified temperature.
  * Null means that layout did not carry the word. Never degrees.
  * The untouched record bytes live in [RawRecordEntity], not here, so a range read of a
  * full day does not drag the archive along.

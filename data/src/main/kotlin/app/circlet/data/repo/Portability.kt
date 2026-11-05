@@ -2,6 +2,7 @@ package app.circlet.data.repo
 
 import app.circlet.core.ImportResult
 import app.circlet.data.codec.DayCodec
+import app.circlet.core.withVerifiedSkinTemperature
 import app.circlet.data.db.DaySummaryEntity
 import app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION
 import app.circlet.data.importer.cyclesCsvFrom
@@ -48,6 +49,7 @@ internal class DataPortabilityImpl(
     fun writePermissions(): Set<String> = health.writePermissions()
 
     override suspend fun exportDatabase(): Outcome<ExportResult> = catchStorage {
+        store.prepareCloudExport()
         val bytes = store.lock.withLock { store.io { snapshotBytes(store.database, store.context) } }
         val name = "circlet-${stamp()}.db"
         val uri = store.io { documents.write(store.context.cacheDir.absolutePath, name, bytes) }
@@ -55,10 +57,11 @@ internal class DataPortabilityImpl(
     }
 
     override suspend fun exportCsv(uri: String): Outcome<Unit> = catchStorage {
+        store.prepareCloudExport()
         val zone = store.time.zone()
         val today = store.time.now().atZone(zone).toLocalDate()
         store.io {
-            val days = store.database.days().all().map { DayCodec.decode(it.payload) }
+            val days = store.database.days().all().map { DayCodec.decode(it.payload).withVerifiedSkinTemperature() }
             val bytes = csvZip(days, today, zone)
             val output = store.context.contentResolver.openOutputStream(Uri.parse(uri), "wt")
                 ?: throw IOException("cannot write there")

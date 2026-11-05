@@ -34,8 +34,8 @@ data class R24(
      * degrees, and its temperature interpretation is unconfirmed: OpenStrap's
      * protocol audit found the word moving several counts a second on a large
      * capture, which a skin temperature cannot do. Zero is the absent sentinel
-     * for layouts that do not carry the word. Stored so a nightly settled mean
-     * can be compared with this user's own nights; never converted to °C.
+     * for layouts that do not carry the word. Preserved for backup compatibility
+     * and protocol research; never use it for a temperature metric or baseline.
      */
     val skinTempCountRaw: Int = 0,
     val rawTail: ByteArray,

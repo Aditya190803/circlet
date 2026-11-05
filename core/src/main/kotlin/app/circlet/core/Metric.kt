@@ -59,4 +59,7 @@ enum class AbsentReason {
 
     /** Worn data exists, and no sleep was found in it. */
     NO_SLEEP,
+
+    /** This connection has no verified sensor channel for the metric. */
+    UNSUPPORTED_SENSOR,
 }

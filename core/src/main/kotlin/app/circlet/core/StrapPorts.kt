@@ -79,7 +79,7 @@ interface WorkoutStore {
  * Null means there is no estimate.
  */
 fun interface SleepStageEstimate {
-    fun current(): SleepStage?
+    suspend fun current(): SleepStage?
 
     companion object {
         val UNKNOWN: SleepStageEstimate = SleepStageEstimate { null }
@@ -140,4 +140,6 @@ data class StrapPorts(
     val liveLoad: LiveStrainEstimator = LiveStrainEstimator.NONE,
     val settings: () -> UserSettings? = { null },
     val zoneBuzz: ZoneBuzzPolicy = ZoneBuzzPolicy { false },
+    /** Wait for authoritative alarms/workout state; sample collection can start before it. */
+    val awaitConfiguration: suspend () -> Unit = {},
 )

@@ -70,6 +70,9 @@ interface GattTransport {
     /** Write with response. Completes when the stack acknowledges the write. */
     suspend fun write(frame: ByteArray)
 
+    /** Asks for the fastest link the radio allows before a history drain. A radio may ignore it. */
+    suspend fun boostLink() = Unit
+
     fun bonded(address: String): Boolean
 
     suspend fun bond(address: String): BondStatus

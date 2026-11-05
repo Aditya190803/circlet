@@ -32,7 +32,8 @@ data class OpticalChannels(
  * not a measured rate. Null means the record had no heart-rate field.
  * [rrIntervalsMs] are beat-to-beat intervals in milliseconds, in order.
  * [rawRecord] is the original record body so a later decoder can re-read it.
- * [skinTempCount] is the uncalibrated u16 at inner offset 68. It is not degrees.
+ * [skinTempCount] preserves the legacy-named u16 at inner offset 68 for backup
+ * compatibility. Its temperature interpretation is unverified; do not use it as temperature.
  * Null means that layout did not carry the word. OpenStrap's protocol audit found
  * the word moving several counts a second on a large capture, which a skin
  * temperature cannot; it is stored so a nightly settled mean can be compared
@@ -73,6 +74,12 @@ sealed interface StrapEvent {
 
     /** The strap asked the phone to drain history soon. */
     data class HighFrequencySyncPrompt(override val at: Instant) : StrapEvent
+
+    /**
+     * One second of the live motion stream: accelerometer magnitude in g, gravity included,
+     * at [sampleRateHz] in time order. Only arrives while the motion stream is on.
+     */
+    data class Motion(override val at: Instant, val magnitudesG: List<Double>, val sampleRateHz: Int) : StrapEvent
 }
 
 // Ported from OpenStrap protocol/lib/src/records.dart: kMinRrMs, kMaxRrMs,

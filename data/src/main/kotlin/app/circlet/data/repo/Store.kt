@@ -42,13 +42,19 @@ internal class Store(
     val io: CoroutineDispatcher,
     val debounceMs: Long,
     database: CircletDatabase? = null,
+    /** Recompute waits this long after the last sample commit, so a history drain is not slowed by it. */
+    val sampleQuietMs: Long = debounceMs,
+    cloudSession: app.circlet.data.cloud.FirebaseCloudSession? = null,
 ) {
     val database: CircletDatabase = database ?: openDatabase(context)
     val generation = MutableStateFlow(0)
     val lock = Mutex()
     val ready = CompletableDeferred<Unit>()
+    val cloud = cloudSession?.let { app.circlet.data.cloud.CloudMirror(this.database, it) }
 
-    suspend fun <T> io(block: () -> T): T = withContext(io) { block() }
+    suspend fun <T> io(block: () -> T): T = withContext(io) { if (cloud == null) block() else cloud.local(block) }
+    suspend fun ensureCloudSamples(date: java.time.LocalDate): Boolean = withContext(io) { cloud?.ensureSamples(date, time.zone()) ?: true }
+    suspend fun prepareCloudExport() = withContext(io) { cloud?.loadForExport() }
 }
 
 internal class Memory(private val store: Store) {
@@ -209,6 +215,16 @@ internal fun applyRetention(db: CircletDatabase, now: Instant) {
     if (rawDays > 0) db.rawRecords().deleteBefore(now.minus(Duration.ofDays(rawDays)).epochSecond)
     val sampleDays = db.kv().get(Keys.SAMPLE_RETENTION)?.toLongOrNull()
     if (sampleDays != null && sampleDays > 0) {
-        db.samples().deleteBefore(now.minus(Duration.ofDays(sampleDays)).epochSecond)
+        val cutoff = now.minus(Duration.ofDays(sampleDays)).epochSecond
+        // An hour still waiting for its cloud upload is kept until Firebase has it.
+        val waiting = oldestUnsentHour(db)?.let { it * 3600 }
+        db.samples().deleteBefore(if (waiting == null) cutoff else minOf(cutoff, waiting))
     }
+}
+
+private fun oldestUnsentHour(db: CircletDatabase): Long? {
+    val sql = db.openHelper.writableDatabase
+    val journaled = sql.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_hours'").use { it.moveToFirst() }
+    if (!journaled) return null
+    return sql.query("SELECT MIN(hour) FROM cloud_hours").use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
 }

@@ -9,6 +9,7 @@ import app.circlet.core.Sample
 import app.circlet.core.Sex
 import app.circlet.core.SignalBounds
 import app.circlet.core.Strain
+import app.circlet.core.ReferenceRange
 import app.circlet.core.TargetStrain
 import app.circlet.core.ZoneMinutes
 import app.circlet.core.ageOn
@@ -95,8 +96,8 @@ fun dayLoad(
 
 /**
  * Target strain for today from a recovery score, on the 0–21 scale.
- * The OpenStrap band (coaching.dart `strainTarget`) is reduced to its midpoint
- * because [TargetStrain] carries one number. Load ratios use raw daily TRIMP.
+ * The OpenStrap band (coaching.dart `strainTarget`) is kept as [TargetStrain.range],
+ * with its midpoint as the score. Load ratios use raw daily TRIMP.
  */
 fun targetStrain(
     recoveryScore: Int?,
@@ -107,7 +108,7 @@ fun targetStrain(
     val band = strainTargetBand(recoveryScore?.toDouble(), ctl, atl, tsb)
     val value = band.value ?: return TargetStrain(Metric.absent(reasonFor(band.note)))
     val mid = (value.low + value.high) / 2.0
-    return TargetStrain(Metric.of(mid, confidenceTier(band.confidence)))
+    return TargetStrain(Metric.of(mid, confidenceTier(band.confidence)), ReferenceRange(value.low, value.high))
 }
 
 internal data class StrainBand(val low: Double, val high: Double, val name: String)
@@ -173,17 +174,7 @@ fun zoneMinutes(
         if (bpm == 0 || !SignalBounds.plausibleBpm(bpm)) continue
         points.add(HrPoint(epoch * 1000.0, bpm.toDouble()))
     }
-    val time = HeartRateZones.timeInZone(points, set) ?: return ZoneMinutes.ZERO
-    val rounded = time.toRoundedMinuteMap()
-    val below = kotlin.math.round(time.belowZone1 / 60.0).toInt()
-    return ZoneMinutes.of(
-        below,
-        rounded.getValue("z1"),
-        rounded.getValue("z2"),
-        rounded.getValue("z3"),
-        rounded.getValue("z4"),
-        rounded.getValue("z5"),
-    )
+    return HeartRateZones.timeInZone(points, set)?.toWholeMinutes() ?: ZoneMinutes.ZERO
 }
 
 internal fun zoneSet(

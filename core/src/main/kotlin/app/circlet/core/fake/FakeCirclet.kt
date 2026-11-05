@@ -290,6 +290,9 @@ class FakeCirclet(
         return Outcome.Ok(Unit)
     }
 
+    override suspend fun setMotionStream(enabled: Boolean): Outcome<Unit> =
+        if (strap.value.link == LinkState.UNPAIRED) Outcome.Err(CoreError.NotPaired) else Outcome.Ok(Unit)
+
     override suspend fun setLiveHeartRate(enabled: Boolean): Outcome<Unit> {
         if (strap.value.link == LinkState.UNPAIRED) return Outcome.Err(CoreError.NotPaired)
         liveHeartRate = enabled
@@ -326,7 +329,7 @@ class FakeCirclet(
                 onWrist = event.onWrist,
                 liveHeartRateBpm = if (event.onWrist) strap.value.liveHeartRateBpm else null,
             )
-            is StrapEvent.DoubleTap, is StrapEvent.HighFrequencySyncPrompt -> strap.value
+            is StrapEvent.DoubleTap, is StrapEvent.HighFrequencySyncPrompt, is StrapEvent.Motion -> strap.value
         }
     }
 

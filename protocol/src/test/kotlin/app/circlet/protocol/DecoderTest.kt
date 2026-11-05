@@ -35,6 +35,33 @@ class DecoderTest {
     }
 
     @Test
+    fun rawR10CarriesOneSecondOfAccelerationMagnitude() {
+        val inner = ByteArray(R10_MIN_LENGTH)
+        inner[0] = 0x2B
+        inner[1] = 10
+        putU32(inner, 7, 1_750_000_000L)
+        inner[17] = 80
+        // Gravity straight down the z axis: 4096 counts is 1 g, x and y at rest.
+        for (i in 0 until 100) {
+            inner[485 + 2 * i] = 0x00
+            inner[486 + 2 * i] = 0x10
+        }
+        val packet = Decoder.decode(inner) as Packet.Realtime
+        assertEquals(80, packet.heartRate)
+        assertEquals(100, packet.accelG!!.size)
+        packet.accelG!!.forEach { assertEquals(1.0, it, 1e-9) }
+    }
+
+    @Test
+    fun theOptionalRealtimePacketHasNoAcceleration() {
+        val inner = ByteArray(20)
+        inner[0] = 0x28
+        putU32(inner, 2, 1_750_000_000L)
+        inner[8] = 72
+        assertNull((Decoder.decode(inner) as Packet.Realtime).accelG)
+    }
+
+    @Test
     fun eventUsesTheNamedIdAndLengthBoundedPayload() {
         val inner = byteArrayOf(
             0x30, 0x00,

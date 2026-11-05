@@ -36,8 +36,11 @@ data class Strain(
 )
 
 /**
- * The strain to aim for today given recovery, on the same 0–21 scale.
+ * The strain to aim for today given recovery, on the same 0–21 scale. [score] is the middle of
+ * [range], the optimal band itself; [range] is null when the score is absent or was stored
+ * before the band was kept.
  */
 data class TargetStrain(
     val score: Metric<Double>,
+    val range: ReferenceRange? = null,
 )

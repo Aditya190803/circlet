@@ -80,11 +80,27 @@ class TemperatureTest {
     }
 
     @Test
-    fun shortBaselineScoresAsNotEnoughBaseline() {
+    fun twoPriorNightsAreStillCalibrating() {
+        val scored = scoreSkinTemp(nightlies(2000.0, 2002.0, 2010.0))
+        assertEquals(SkinTempFlag.NOT_ENOUGH_BASELINE, scored.flag)
+        assertEquals(2, scored.baselineNights)
+        assertEquals(AbsentReason.CALIBRATING, scored.deviation.absentReason)
+    }
+
+    @Test
+    fun threePriorNightsGiveAnEarlyLowConfidenceEstimateThatNeverFlags() {
         val scored = scoreSkinTemp(nightlies(2000.0, 2002.0, 1998.0, 2010.0))
         assertEquals(SkinTempFlag.NOT_ENOUGH_BASELINE, scored.flag)
         assertEquals(3, scored.baselineNights)
-        assertEquals(AbsentReason.CALIBRATING, scored.deviation.absentReason)
+        assertTrue(scored.deviation.value!! > 0.0)
+        assertEquals(Confidence.LOW, scored.deviation.confidence)
+    }
+
+    @Test
+    fun anEarlyEstimateOverAFlatBaselineIsAbsent() {
+        val scored = scoreSkinTemp(nightlies(2000.0, 2000.0, 2000.0, 2010.0))
+        assertEquals(SkinTempFlag.NOT_ENOUGH_BASELINE, scored.flag)
+        assertNull(scored.deviation.value)
     }
 
     @Test

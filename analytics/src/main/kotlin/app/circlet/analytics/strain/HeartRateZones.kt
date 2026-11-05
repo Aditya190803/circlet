@@ -1,6 +1,7 @@
 package app.circlet.analytics.strain
 
 import app.circlet.analytics.support.percentileSorted
+import app.circlet.core.ZoneMinutes
 import app.circlet.analytics.support.sampleCadenceSeconds
 import kotlin.math.min
 
@@ -56,6 +57,19 @@ internal data class TimeInHeartRateZone(
         "z4" to (seconds[3] / 60.0).let { kotlin.math.round(it).toInt() },
         "z5" to (seconds[4] / 60.0).let { kotlin.math.round(it).toInt() },
     )
+
+    /**
+     * Zone 0 through zone 5 as whole minutes that add up to the whole minutes of the total, so the
+     * zones never sum to more than the time they cover. Rounding each zone alone can. The
+     * leftover minutes go to the zones with the largest remainders.
+     */
+    fun toWholeMinutes(): ZoneMinutes {
+        val all = listOf(belowZone1) + seconds
+        val floors = all.map { (it / 60.0).toInt() }
+        val left = (all.sum() / 60.0).toInt() - floors.sum()
+        val extra = all.indices.sortedByDescending { all[it] / 60.0 - floors[it] }.take(left).toSet()
+        return ZoneMinutes(floors.mapIndexed { i, f -> if (i in extra) f + 1 else f })
+    }
 }
 
 internal data class HrPoint(val tsMs: Double, val hr: Double) {

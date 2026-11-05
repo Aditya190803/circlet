@@ -28,6 +28,7 @@ object StrapCompanion {
     /** The activity that can show the system association dialog. Cleared in [detach]. */
     fun attach(activity: Activity) {
         activityRef.set(WeakReference(activity))
+        PairedFlag.address(activity)?.let { associateIfAttached(activity, it) }
     }
 
     fun detach(activity: Activity) {
@@ -160,10 +161,16 @@ object StrapCompanion {
 class StrapPresenceService : CompanionDeviceService() {
     @Deprecated("Deprecated in API 33")
     override fun onDeviceAppeared(address: String) {
-        if (Build.VERSION.SDK_INT < 33) StrapService.start(this)
+        if (Build.VERSION.SDK_INT < 33) wake(address)
     }
 
     override fun onDeviceAppeared(associationInfo: AssociationInfo) {
-        StrapService.start(this)
+        associationInfo.deviceMacAddress?.toString()?.let(::wake)
+    }
+
+    private fun wake(address: String) {
+        if (PairedFlag.address(this)?.equals(address, ignoreCase = true) == true) {
+            StrapService.start(this, reconnect = true)
+        }
     }
 }

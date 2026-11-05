@@ -165,7 +165,7 @@ class StoreTest {
             val manual = manual(LocalDate.of(2026, 6, 12))
             opened.data.ports.workouts.insert(manual)
             opened.data.recomputeNow()
-            assertTrue(opened.engine.manuals.contains(manual.id))
+            assertTrue(opened.engine.inputs.any { input -> input.manualActivities.any { it.id == manual.id } })
             assertEquals(Sport.YOGA, opened.data.ports.workouts.get(manual.id)!!.sport)
         } finally {
             opened.close()
@@ -205,6 +205,24 @@ class StoreTest {
             assertEquals(listOf(first, second), opened.engine.calls.toList())
             Thread.sleep(400)
             assertEquals(2, opened.engine.calls.size)
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 30_000)
+    fun aDrainKeepsRecomputeWaitingUntilSampleCommitsGoQuiet() = runBlocking {
+        val opened = open(debounceMs = 50, startPipeline = true, sampleQuietMs = 1_200)
+        try {
+            val day = LocalDate.of(2026, 6, 10)
+            repeat(4) {
+                opened.data.ports.samples.commit(listOf(noon(day)), emptyList())
+                Thread.sleep(400)
+            }
+            assertTrue(opened.engine.calls.isEmpty())
+            val deadline = System.nanoTime() + 8_000_000_000L
+            while (opened.engine.calls.isEmpty() && System.nanoTime() < deadline) Thread.sleep(40)
+            assertEquals(listOf(day), opened.engine.calls.toList())
         } finally {
             opened.close()
         }
@@ -535,6 +553,88 @@ class StoreTest {
         }
     }
 
+    @Test(timeout = 60_000)
+    fun backfilledSamplesRebuildLaterBaselinesInDateOrder() = runBlocking {
+        val opened = open()
+        try {
+            val dates = (11..13).map { LocalDate.of(2026, 6, it) }
+            val samples = dates.map { sample(it.atTime(12, 0).atZone(zone).toEpochSecond(), 60, emptyList()) }
+            opened.data.ports.samples.commit(samples, emptyList())
+            opened.data.recomputeNow()
+            opened.engine.calls.clear()
+            opened.engine.inputs.clear()
+            opened.engine.version = 2
+            opened.data.ports.samples.commit(listOf(samples.first().copy(skinTempCount = 935)), emptyList())
+            opened.data.recomputeNow()
+            assertEquals(dates, opened.engine.calls.toList())
+            val last = opened.engine.inputs.last()
+            assertEquals(listOf(2, 2), last.history.map { it.calories.value })
+            assertTrue(opened.data.database.dirty().dates().isEmpty())
+            assertEquals(935, opened.data.database.samples().range(samples.first().epochSecond, samples.first().epochSecond).single().skinTempCount)
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun sleepCorrectionsRebuildLaterDaysAndKeepImportedTemperature() = runBlocking {
+        val opened = open()
+        try {
+            val first = LocalDate.of(2026, 6, 11)
+            val importedDate = first.plusDays(1)
+            val later = first.plusDays(2)
+            val db = opened.data.database
+            for (day in listOf(first, importedDate, later)) {
+                val imported = emptyDay(day, AbsentReason.NOT_ENOUGH_DATA).copy(
+                    skinTemperature = app.circlet.core.SkinTemperature.unavailable().copy(importedCelsius = 33.4),
+                )
+                db.days().upsert(app.circlet.data.db.DaySummaryEntity(
+                    day.toString(),
+                    if (day == importedDate) app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION else 1,
+                    0,
+                    DayCodec.encode(imported),
+                ))
+            }
+            opened.data.metrics.saveSleepEdit(first, app.circlet.core.SleepEdit(deleted = true))
+            opened.data.recomputeNow()
+            assertEquals(listOf(first, later), opened.engine.calls.toList())
+            for (day in listOf(first, importedDate, later)) {
+                val skin = opened.data.metrics.observeDay(day).first().skinTemperature!!
+                assertEquals(33.4, skin.importedCelsius!!, 0.0)
+                assertNull(skin.deviation.value)
+            }
+            assertEquals(app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION, db.days().get(importedDate.toString())!!.algorithmVersion)
+        } finally {
+            opened.close()
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun failedEarlierDayLeavesDependentBaselinesDirtyUntilRetry() = runBlocking {
+        val opened = open()
+        try {
+            val first = LocalDate.of(2026, 6, 11)
+            val later = first.plusDays(1)
+            val samples = listOf(first, later).map { sample(it.atTime(12, 0).atZone(zone).toEpochSecond(), 60, emptyList()) }
+            opened.data.ports.samples.commit(samples, emptyList())
+            opened.data.recomputeNow()
+            opened.engine.calls.clear()
+            opened.engine.version = 2
+            opened.engine.failOn = first
+            opened.data.ports.samples.commit(listOf(samples.first()), emptyList())
+            opened.data.recomputeNow()
+            assertTrue(opened.engine.calls.isEmpty())
+            assertEquals(listOf(first.toString(), later.toString()), opened.data.database.dirty().dates())
+            assertEquals(1, opened.data.database.days().get(later.toString())!!.algorithmVersion)
+            opened.engine.failOn = null
+            opened.data.recomputeNow()
+            assertEquals(listOf(first, later), opened.engine.calls.toList())
+            assertTrue(opened.data.database.dirty().dates().isEmpty())
+        } finally {
+            opened.close()
+        }
+    }
+
     private fun sample(epoch: Long, heart: Int, rr: List<Int>) = Sample(
         epochSecond = epoch,
         heartRateBpm = heart,
@@ -564,6 +664,7 @@ class StoreTest {
         startPipeline: Boolean = false,
         fileName: String? = null,
         healthExportClient: app.circlet.data.health.HealthRecordClient? = null,
+        sampleQuietMs: Long = debounceMs,
     ): Opened {
         val engine = FakeDayEngine()
         val database = if (fileName == null) openMemoryDatabase(context) else openNamedDatabase(context, fileName)
@@ -578,6 +679,7 @@ class StoreTest {
             debounceMs = debounceMs,
             startPipeline = startPipeline,
             healthExportClient = healthExportClient,
+            sampleQuietMs = sampleQuietMs,
         )
         data.awaitReady()
         return Opened(data, engine)
@@ -604,13 +706,16 @@ private class Opened(val data: CircletData, val engine: FakeDayEngine) {
 private class FakeDayEngine : DayEngine {
     var version: Int = 1
     var fail: Boolean = false
+    var failOn: LocalDate? = null
+    val inputs = CopyOnWriteArrayList<DayInput>()
     val calls = CopyOnWriteArrayList<LocalDate>()
     val manuals = CopyOnWriteArrayList<String>()
 
     override val algorithmVersion: Int get() = version
 
     override fun computeDay(input: DayInput): DaySummary {
-        if (fail) error("engine failed")
+        if (fail || input.date == failOn) error("engine failed")
+        inputs += input
         calls += input.date
         manuals.clear()
         manuals += input.manualActivities.map { it.id }

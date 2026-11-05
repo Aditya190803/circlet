@@ -7,6 +7,7 @@ import java.util.TreeMap
 import kotlin.math.roundToInt
 
 private const val MINUTE_MS = 60_000L
+private const val MIN_RESET_GAP_MS = 1_000L
 
 /** A gap longer than this is not spread: the steps go to the minute of the later reading. */
 private const val MAX_SPREAD_MINUTES = 60L
@@ -16,21 +17,26 @@ private const val MAX_SPREAD_MINUTES = 60L
  *
  * Each reading after the first adds its rise over the one before to the minutes
  * from the earlier reading's minute to its own, split evenly. A counter that
- * drops restarted from zero, so the new value is the rise. Readings at the same
- * instant keep the last one. The first reading only sets the baseline.
+ * drops after at least a second restarted from zero, so the new value is the rise.
+ * Faster drops are timestamp jitter, not a reboot. Readings at the same instant
+ * keep the highest count. The first reading only sets the baseline.
  */
 fun phoneStepsPerMinute(readings: List<StepReading>): Map<Long, Double> {
     val ordered = readings.sortedBy { it.epochMs }.fold(ArrayList<StepReading>()) { kept, reading ->
-        if (kept.isNotEmpty() && kept.last().epochMs == reading.epochMs) kept[kept.lastIndex] = reading else kept.add(reading)
+        if (kept.isNotEmpty() && kept.last().epochMs == reading.epochMs) {
+            if (reading.count > kept.last().count) kept[kept.lastIndex] = reading
+        } else kept.add(reading)
         kept
     }
     val minutes = TreeMap<Long, Double>()
-    for (i in 1 until ordered.size) {
-        val before = ordered[i - 1]
-        val after = ordered[i]
+    var before = ordered.firstOrNull() ?: return minutes
+    for (after in ordered.drop(1)) {
+        // Legacy recordings can put the next sensor event one millisecond before the previous one.
+        if (after.count < before.count && after.epochMs - before.epochMs < MIN_RESET_GAP_MS) continue
         val rise = if (after.count >= before.count) after.count - before.count else after.count
-        if (rise == 0L) continue
         val first = Math.floorDiv(before.epochMs, MINUTE_MS)
+        before = after
+        if (rise == 0L) continue
         val last = Math.floorDiv(after.epochMs, MINUTE_MS)
         if (last - first > MAX_SPREAD_MINUTES) {
             minutes.merge(last, rise.toDouble(), Double::plus)

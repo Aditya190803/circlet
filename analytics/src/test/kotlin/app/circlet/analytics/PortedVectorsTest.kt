@@ -398,6 +398,8 @@ class PortedVectorsTest {
         assertEquals(7.5, targetStrain(50).score.value!!, 1e-9)
         assertEquals(11.5, targetStrain(70).score.value!!, 1e-9)
         assertEquals(15.5, targetStrain(90).score.value!!, 1e-9)
+        assertEquals(app.circlet.core.ReferenceRange(9.0, 14.0), targetStrain(70).range)
+        assertNull(targetStrain(null).range)
         assertNull(targetStrain(null).score.value)
         assertEquals(AbsentReason.NOT_ENOUGH_DATA, targetStrain(null).score.absentReason)
     }

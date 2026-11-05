@@ -10,10 +10,7 @@ import app.circlet.analytics.reference.references
 import app.circlet.analytics.sleep.alignSamples
 import app.circlet.analytics.sleep.finishSleep
 import app.circlet.analytics.sleep.segmentDay
-import app.circlet.analytics.temperature.NightlyTemp
-import app.circlet.analytics.temperature.nightlySkinTemp
 import app.circlet.analytics.motion.phoneStepsOnDay
-import app.circlet.analytics.temperature.scoreSkinTemp
 import app.circlet.core.Steps
 import app.circlet.analytics.strain.QUIET_HRR_TRAIT_MIN_MINUTES
 import app.circlet.analytics.strain.dailyQuietWakingHrr
@@ -38,20 +35,16 @@ import app.circlet.analytics.motion.MotionDay
 import app.circlet.core.DayStress
 import app.circlet.core.Recovery
 import app.circlet.core.SkinTemperature
+import app.circlet.core.withVerifiedSkinTemperature
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /**
- * First composition of the day packages.
- * Bump this when the maths those packages publish changes what a stored day means.
+ * Bump when stored days need recomputing. Version 10 retires the unverified offset-68 temperature channel.
  */
-/**
- * Bumped when a stored strap day must be scored again.
- * 8 takes the step count from the phone's step counter and drops the strap-motion estimate.
- */
-const val CIRCLET_ALGORITHM_VERSION: Int = 8
+const val CIRCLET_ALGORITHM_VERSION: Int = 10
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
@@ -67,7 +60,7 @@ class CircletDayEngine : DayEngine {
     override val algorithmVersion: Int = CIRCLET_ALGORITHM_VERSION
 
     override fun computeDay(input: DayInput): DaySummary {
-        val history = input.history.sortedBy { it.date }.filter { it.date < input.date }
+        val history = input.history.sortedBy { it.date }.filter { it.date < input.date }.map { it.withVerifiedSkinTemperature() }
         val priorQuiet = history.mapNotNull { quietWakingHrr(it, input.profile) }
         val priorResting = history.mapNotNull { it.heart.resting.bpm.value?.toDouble() }
         val personal = personalQuietWakingHrr(priorQuiet)
@@ -124,7 +117,6 @@ class CircletDayEngine : DayEngine {
                 ),
                 stress = dayStress(input.samples, input.zone, input.date, input.now),
                 byMinute = heartRateByMinute(input.samples, input.zone, input.date, input.now),
-                skin = skinTemperatureOf(input, sleep.main.value),
             )
         } else {
             val pool = workerPool
@@ -139,14 +131,12 @@ class CircletDayEngine : DayEngine {
             val fByMinute = pool.submit<List<Int?>> {
                 heartRateByMinute(input.samples, input.zone, input.date, input.now)
             }
-            val fSkin = pool.submit<SkinTemperature> { skinTemperatureOf(input, sleep.main.value) }
             TailSections(
                 recovery = fRecovery.joinSame(),
                 activities = fActivities.joinSame(),
                 motion = fMotion.joinSame(),
                 stress = fStress.joinSame(),
                 byMinute = fByMinute.joinSame(),
-                skin = fSkin.joinSame(),
             )
         }
         val recovery = provisionalRecovery(tail.recovery, heart, sleep.performance)
@@ -180,8 +170,8 @@ class CircletDayEngine : DayEngine {
             targetStrain = targetStrain(recovery.score.value),
             vo2Max = ratioVo2Max(vo2, resting, maxHr),
             wellness = emptyList(),
-            skinTemperature = tail.skin,
-            references = references(input.profile, input.date, history),
+            skinTemperature = SkinTemperature.unavailable(),
+            references = references(input.profile, input.date, history).filterNot { it.kind == app.circlet.core.MetricKind.SKIN_TEMPERATURE },
         )
         return summary.copy(wellness = wellnessFlags(history + summary))
     }
@@ -197,52 +187,12 @@ private data class TailSections(
     val motion: MotionDay,
     val stress: DayStress,
     val byMinute: List<Int?>,
-    val skin: SkinTemperature,
 )
 
-/**
- * The night's skin temperature for [DaySummary.skinTemperature].
- *
- * Tonight's settled mean is rebuilt from the main sleep window's
- * [Sample.skinTempCount][app.circlet.core.Sample.skinTempCount] values with
- * [nightlySkinTemp]; prior nights come from [DayInput.priorSkinTemp], which the
- * caller fills from the settled means stored on earlier summaries. Without priors the flag is
- * honestly [SkinTempFlag.NOT_ENOUGH_BASELINE][app.circlet.core.SkinTempFlag.NOT_ENOUGH_BASELINE],
- * never a substituted temperature.
- */
 private fun phoneSteps(input: DayInput): app.circlet.core.Metric<Int> {
     val total = phoneStepsOnDay(input.phoneSteps, input.zone, input.date)
         ?: return app.circlet.core.Metric.absent(app.circlet.core.AbsentReason.NOT_ENOUGH_DATA)
     return app.circlet.core.Metric.of(total, app.circlet.core.Confidence.MEDIUM)
-}
-
-private fun skinTemperatureOf(
-    input: DayInput,
-    session: app.circlet.core.SleepSession?,
-): app.circlet.core.SkinTemperature {
-    val nights = ArrayList<NightlyTemp>(input.priorSkinTemp.size + 1)
-    for ((date, mean) in input.priorSkinTemp) {
-        if (date < input.date) nights += NightlyTemp(date, mean)
-    }
-    nights.sortBy { it.date }
-    val tonight = tonightSkinTemp(input, session)
-    nights += NightlyTemp(input.date, tonight)
-    return scoreSkinTemp(nights, luteal = null).copy(settledMeanCounts = tonight)
-}
-
-/** Tonight's settled skin-temp mean in counts, or null when the night has none. */
-private fun tonightSkinTemp(input: DayInput, session: app.circlet.core.SleepSession?): Double? {
-    val start = session?.start?.epochSecond ?: return null
-    val end = session?.end?.epochSecond ?: return null
-    if (end <= start) return null
-    val nowSec = input.now.epochSecond
-    val counts = ArrayList<Int?>()
-    for (sample in input.samples) {
-        if (sample.epochSecond < start || sample.epochSecond >= end) continue
-        if (sample.epochSecond > nowSec) continue
-        counts += sample.skinTempCount
-    }
-    return nightlySkinTemp(counts).value?.meanCounts
 }
 
 /**

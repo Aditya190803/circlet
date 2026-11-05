@@ -2,6 +2,7 @@ package app.circlet.data.pipeline
 
 import app.circlet.core.ActivitySource
 import app.circlet.core.DayInput
+import app.circlet.core.SkinTemperature
 import app.circlet.data.codec.ActivityCodec
 import app.circlet.data.codec.DayCodec
 import app.circlet.data.codec.ProfileCodec
@@ -16,6 +17,7 @@ import app.circlet.data.health.healthWrites
 import app.circlet.data.health.writeMeasured
 import app.circlet.data.repo.Store
 import app.circlet.data.repo.assemble
+import app.circlet.data.importer.IMPORTED_ALGORITHM_VERSION
 import java.time.LocalDate
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -36,12 +38,16 @@ internal class RecomputePipeline(
     private val gate = kotlinx.coroutines.sync.Mutex()
     private val quiet = QuietPeriod(store.debounceMs)
 
+    @Volatile
+    private var samplesCommittedAt = 0L
+
     fun start() {
         store.scope.launch {
             store.ready.await()
             nudge()
             for (signal in signals) {
                 quiet.await(signals)
+                awaitSamplesQuiet()
                 recomputeDirty()
             }
         }
@@ -58,17 +64,39 @@ internal class RecomputePipeline(
         signals.trySend(Unit)
     }
 
+    /** Samples were committed. Recompute after the drain goes quiet, not between its batches. */
+    fun nudgeAfterSamples() {
+        samplesCommittedAt = System.nanoTime()
+        nudge()
+    }
+
+    private suspend fun awaitSamplesQuiet() {
+        while (true) {
+            val committed = samplesCommittedAt
+            if (committed == 0L) return
+            val wait = store.sampleQuietMs - (System.nanoTime() - committed) / 1_000_000
+            if (wait <= 0) return
+            delay(wait)
+        }
+    }
+
     internal suspend fun retryHealthExports() = gate.withLock { exportPending() }
 
     suspend fun recomputeDirty() {
         gate.withLock {
+            markDependentDays()
             var attempts = 0
             while (attempts++ < 8) {
                 val dates = store.io { store.database.dirty().dates() }
                 if (dates.isEmpty()) break
                 var retry = false
                 for (iso in dates) {
-                    if (recomputeOne(LocalDate.parse(iso)) == Step.RETRY) retry = true
+                    val result = recomputeOne(LocalDate.parse(iso))
+                    if (result != Step.DONE) {
+                        // Later baselines must not read an earlier day's stale summary.
+                        retry = result == Step.RETRY
+                        break
+                    }
                 }
                 if (!retry) break
             }
@@ -76,11 +104,26 @@ internal class RecomputePipeline(
         }
     }
 
+    private suspend fun markDependentDays() = store.lock.withLock {
+        store.io {
+            val db = store.database
+            db.runInTransaction {
+                val dirty = db.dirty().dates().toSet()
+                val earliest = dirty.minOrNull() ?: return@runInTransaction
+                // Sleep debt and personal baselines can carry changes beyond a fixed window.
+                // Only existing computed days are invalidated; imported WHOOP scores stay intact.
+                for (date in db.days().computedDatesAfter(earliest, IMPORTED_ALGORITHM_VERSION)) {
+                    if (date !in dirty) db.dirty().mark(date)
+                }
+            }
+        }
+    }
+
     private suspend fun recomputeOne(date: LocalDate): Step {
+        if (!store.ensureCloudSamples(date)) return Step.FAILED
         val iso = date.toString()
-        val captured = store.lock.withLock {
-            store.io { capture(date) }
-        } ?: return Step.DONE
+        // Reads only. A commit that lands meanwhile bumps the generation, and the store step below retries.
+        val captured = store.io { capture(date) } ?: return Step.DONE
         val computed = try {
             store.dayEngine.computeDay(captured.input)
         } catch (error: Exception) {
@@ -97,7 +140,12 @@ internal class RecomputePipeline(
                     val visible = blended.mapNotNull { row ->
                         if (row.suppressed) null else ActivityCodec.decode(row.payload)
                     }
-                    val summary = computed.copy(date = date, activities = visible)
+                    val summary = computed.copy(
+                        date = date,
+                        activities = visible,
+                        skinTemperature = (computed.skinTemperature ?: SkinTemperature.unavailable())
+                            .copy(importedCelsius = captured.importedTemperatureCelsius),
+                    )
                     store.database.days().upsert(
                         DaySummaryEntity(
                             date = iso,
@@ -172,6 +220,9 @@ internal class RecomputePipeline(
         return Captured(
             generation = generation,
             storedActivities = storedActivities,
+            importedTemperatureCelsius = store.database.days().get(iso)?.let { row ->
+                runCatching { DayCodec.decode(row.payload).skinTemperature?.importedCelsius }.getOrNull()
+            }?.takeIf { it.isFinite() && it in 20.0..45.0 },
             input = DayInput(
                 date = date,
                 zone = zone,
@@ -181,9 +232,6 @@ internal class RecomputePipeline(
                 manualActivities = manual,
                 sleepEdit = store.database.sleepEdits().get(iso)?.toEdit(),
                 now = store.time.now(),
-                priorSkinTemp = history.mapNotNull { day ->
-                    day.skinTemperature?.settledMeanCounts?.let { day.date to it }
-                }.toMap(),
                 phoneSteps = readPhoneSteps(phoneStepsDir(store.context.filesDir), date),
             ),
         )
@@ -236,6 +284,7 @@ internal class RecomputePipeline(
     private data class Captured(
         val generation: Long,
         val storedActivities: List<app.circlet.data.db.ActivityEntity>,
+        val importedTemperatureCelsius: Double?,
         val input: DayInput,
     )
 }

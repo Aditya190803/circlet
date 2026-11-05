@@ -75,7 +75,7 @@ internal class SampleSinkImpl(
                 }
             }
         }
-        pipeline.nudge()
+        pipeline.nudgeAfterSamples()
     }
 }
 
@@ -83,6 +83,8 @@ internal class SampleSinkImpl(
 internal class StrapEventSinkImpl(private val store: Store) : StrapEventSink {
     override suspend fun record(event: StrapEvent) {
         val row = when (event) {
+            // A second of motion samples is consumed live; storing one row per second would flood the table.
+            is StrapEvent.Motion -> return
             is StrapEvent.Battery -> StrapEventEntity(atMillis = event.at.toEpochMilli(), kind = "battery", number = event.percent, flag = null)
             is StrapEvent.Charging -> StrapEventEntity(atMillis = event.at.toEpochMilli(), kind = "charging", number = null, flag = event.charging)
             is StrapEvent.Wrist -> StrapEventEntity(atMillis = event.at.toEpochMilli(), kind = "wrist", number = null, flag = event.onWrist)
@@ -241,12 +243,11 @@ internal class SettingsZoneBuzz(private val memory: Memory) : ZoneBuzzPolicy {
     override fun enabled(): Boolean = memory.settings.value.zoneBuzz
 }
 
-/**
- * Sleep stage from the stored day, when [now] falls inside an epoch.
- * Reads Room. Call it off the main thread.
- */
+/** Sleep stage from the stored day, when [now] falls inside an epoch. Reads Room on the store's IO dispatcher. */
 internal class StoredSleepStage(private val store: Store) : SleepStageEstimate {
-    override fun current(): SleepStage? {
+    override suspend fun current(): SleepStage? = store.io { read() }
+
+    private fun read(): SleepStage? {
         val now = store.time.now()
         val zone = store.time.zone()
         val today = now.atZone(zone).toLocalDate()

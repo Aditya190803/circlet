@@ -68,6 +68,9 @@ import kotlinx.coroutines.sync.withLock
 object DataModule {
     const val DEBOUNCE_MS: Long = 1_500
 
+    /** A drain commits every second or two; recomputing between those commits held the write lock the drain needs. */
+    const val SAMPLE_QUIET_MS: Long = 15_000
+
     fun open(
         context: Context,
         dayEngine: DayEngine,
@@ -83,6 +86,8 @@ object DataModule {
         io = Dispatchers.IO,
         debounceMs = DEBOUNCE_MS,
         startPipeline = true,
+        sampleQuietMs = SAMPLE_QUIET_MS,
+        cloudSession = app.circlet.data.cloud.FirebaseCloud.session(context),
     )
 
     internal fun open(
@@ -96,6 +101,8 @@ object DataModule {
         debounceMs: Long,
         startPipeline: Boolean,
         healthExportClient: app.circlet.data.health.HealthRecordClient? = null,
+        sampleQuietMs: Long = debounceMs,
+        cloudSession: app.circlet.data.cloud.FirebaseCloudSession? = null,
     ): CircletData {
         val job = SupervisorJob()
         val effective = if (scope == null) {
@@ -112,8 +119,17 @@ object DataModule {
             io = io,
             debounceMs = debounceMs,
             database = database,
+            sampleQuietMs = sampleQuietMs,
+            cloudSession = cloudSession,
         )
         val memory = Memory(store)
+        val configurationReady = kotlinx.coroutines.CompletableDeferred<Unit>()
+        if (cloudSession == null) configurationReady.complete(Unit)
+        store.cloud?.onReload = {
+            memory.reload()
+            store.generation.value = store.generation.value + 1
+            configurationReady.complete(Unit)
+        }
         val gateway = HealthConnectGateway(context.applicationContext)
         val pipeline = RecomputePipeline(store, healthExportClient ?: gateway)
         val metrics = MetricsRepositoryImpl(store, pipeline)
@@ -141,14 +157,20 @@ object DataModule {
                 liveLoad = ProfileLiveLoad(store, memory),
                 settings = { memory.settings.value },
                 zoneBuzz = SettingsZoneBuzz(memory),
+                awaitConfiguration = { configurationReady.await() },
             ),
         )
         CircletDataHolder.current = data
         effective.launch {
             try {
+                kotlinx.coroutines.withContext(io) { store.cloud?.initialize() }
+                // Only a signed-in phone that started empty waits, and not forever, for its cloud history.
+                if (store.cloud?.needsRestore != true) configurationReady.complete(Unit)
+                else effective.launch { kotlinx.coroutines.delay(60_000); configurationReady.complete(Unit) }
                 memory.reload()
                 portability.refreshHealth()
                 store.ready.complete(Unit)
+                cloudSession?.startWorker()
             } catch (error: Throwable) {
                 store.ready.completeExceptionally(error)
             }
@@ -174,6 +196,8 @@ class CircletData internal constructor(
     val ports: StrapPorts,
 ) {
     val portability: DataPortability = portabilityImpl
+    val cloud: app.circlet.core.CloudSyncController get() =
+        if (store.cloud == null) app.circlet.core.NoCloudSync else app.circlet.data.cloud.FirebaseCloud.get(store.context)
 
     internal val database: CircletDatabase get() = store.database
 

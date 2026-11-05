@@ -1,0 +1,30 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "meta": {
+          "format": { ".validate": "newData.isNumber() && newData.val() === 1" },
+          "schema": { ".validate": "newData.isNumber() && newData.val() === 3" },
+          "$other": { ".validate": false }
+        },
+        "v1": {
+          "$collection": {
+            ".validate": "$collection.matches(/^(sample_hours|strap_events|day_summaries|activities|journal_tags|journal_entries|alarms|kv|profile|spot_checks|dirty_days|live_workout|sleep_edits|recordings)$/)",
+            "$key": {
+              ".validate": "$key.matches(/^[0-9a-f]+$/) && newData.hasChildren(['deleted','updatedAt']) && (newData.child('deleted').val() === true || newData.hasChild('data'))",
+              "deleted": { ".validate": "newData.isBoolean()" },
+              "updatedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
+              "data": { ".validate": "newData.isString() && newData.val().length <= 2000000" },
+              "$other": { ".validate": false }
+            }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

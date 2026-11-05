@@ -255,16 +255,7 @@ private fun zonesOf(
     val points = inside.mapNotNull { s ->
         s.measured()?.let { HrPoint(s.epochSecond * 1000.0, it.toDouble()) }
     }
-    val time = HeartRateZones.timeInZone(points, set) ?: return ZoneMinutes.ZERO
-    val rounded = time.toRoundedMinuteMap()
-    return ZoneMinutes.of(
-        kotlin.math.round(time.belowZone1 / 60.0).toInt(),
-        rounded.getValue("z1"),
-        rounded.getValue("z2"),
-        rounded.getValue("z3"),
-        rounded.getValue("z4"),
-        rounded.getValue("z5"),
-    )
+    return HeartRateZones.timeInZone(points, set)?.toWholeMinutes() ?: ZoneMinutes.ZERO
 }
 
 private fun perMinuteIn(samples: List<Sample>, pauses: List<WorkoutPause>): List<Double> {

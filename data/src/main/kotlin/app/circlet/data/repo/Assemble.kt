@@ -4,6 +4,7 @@ import app.circlet.core.AbsentReason
 import app.circlet.core.Activity
 import app.circlet.core.DaySummary
 import app.circlet.core.emptyDay
+import app.circlet.core.withVerifiedSkinTemperature
 import app.circlet.data.codec.ActivityCodec
 import app.circlet.data.codec.DayCodec
 import app.circlet.data.db.ActivityEntity
@@ -21,7 +22,7 @@ internal fun assemble(date: LocalDate, row: DaySummaryEntity?, activities: List<
             emptyDay(date, AbsentReason.NOT_ENOUGH_DATA)
         }
     }
-    return base.copy(activities = activities.mapNotNull { it.visibleActivity() })
+    return base.withVerifiedSkinTemperature().copy(activities = activities.mapNotNull { it.visibleActivity() })
 }
 
 internal fun ActivityEntity.visibleActivity(): Activity? {

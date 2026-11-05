@@ -71,6 +71,9 @@ interface DayDao {
 
     @Query("SELECT date FROM day_summaries")
     fun dates(): List<String>
+
+    @Query("SELECT date FROM day_summaries WHERE date > :date AND algorithmVersion != :importedVersion ORDER BY date")
+    fun computedDatesAfter(date: String, importedVersion: Int): List<String>
 }
 
 @Dao

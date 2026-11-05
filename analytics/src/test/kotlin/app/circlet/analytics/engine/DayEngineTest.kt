@@ -239,7 +239,7 @@ class DayEngineTest {
             importedNight(date.minusDays(ago.toLong()), 50 + ago, 40.0 + ago, 48 + (ago % 5), 14.0 + ago * 0.1, 70 + ago)
         }
         val now = date.plusDays(1).atStartOfDay(zone).toInstant()
-        assertEquals(8, engine.algorithmVersion)
+        assertEquals(10, engine.algorithmVersion)
         val summary = engine.computeDay(input(date, daySamples(date, 0, includeRun = false), now, history))
         assertEquals(CalibrationStatus.READY, summary.recovery.calibration)
         assertNotNull(summary.recovery.score.value)
@@ -291,11 +291,28 @@ class DayEngineTest {
     fun engineFillsReferencesSkinTemperatureAndStressBands() {
         val now = date.plusDays(1).atStartOfDay(zone).toInstant()
         val summary = engine.computeDay(input(date, daySamples(date, 0), now, emptyList()))
-        assertEquals(10, summary.references.size)
-        // The synthetic samples carry no skin-temp counts, so tonight has no
-        // mean and the flag honestly reports the missing baseline.
-        assertEquals(SkinTempFlag.NOT_ENOUGH_BASELINE, summary.skinTemperature!!.flag)
+        assertEquals(9, summary.references.size)
+        assertEquals(SkinTempFlag.UNAVAILABLE, summary.skinTemperature!!.flag)
+        assertEquals(AbsentReason.UNSUPPORTED_SENSOR, summary.skinTemperature!!.deviation.absentReason)
         assertTrue(summary.stress.bandMinutes.totalMinutes > 0)
+    }
+
+    @Test
+    fun rawOffset68CountsAndLegacyBaselinesCannotProduceTemperature() {
+        val start = date.atTime(2, 0).atZone(zone).toEpochSecond()
+        val samples = (0 until 120).map { second ->
+            sample(start + second, 60, emptyList(), moving = false).copy(skinTempCount = 935)
+        }
+        val prior = (1..10).associate { date.minusDays(it.toLong()) to 900.0 + it }
+        val summary = engine.computeDay(
+            input(date, samples, Instant.ofEpochSecond(start + 120), emptyList()).copy(priorSkinTemp = prior),
+        )
+        val skin = checkNotNull(summary.skinTemperature)
+        assertEquals(SkinTempFlag.UNAVAILABLE, skin.flag)
+        assertEquals(AbsentReason.UNSUPPORTED_SENSOR, skin.deviation.absentReason)
+        assertNull(skin.settledMeanCounts)
+        assertEquals(0, skin.baselineNights)
+        assertTrue(summary.references.none { it.kind == app.circlet.core.MetricKind.SKIN_TEMPERATURE })
     }
 
     @Test(timeout = 180_000)

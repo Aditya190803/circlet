@@ -263,6 +263,23 @@ internal class AndroidGattTransport(
         if (status != BluetoothGatt.GATT_SUCCESS) error("write $status")
     }
 
+    // The strap or the phone can renegotiate a slower interval after connect, so this is asked again per drain.
+    override suspend fun boostLink() {
+        withContext(Dispatchers.Main.immediate) {
+            val current = gatt ?: return@withContext
+            try {
+                current.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                current.setPreferredPhy(
+                    BluetoothDevice.PHY_LE_2M_MASK,
+                    BluetoothDevice.PHY_LE_2M_MASK,
+                    BluetoothDevice.PHY_OPTION_NO_PREFERRED,
+                )
+            } catch (failed: SecurityException) {
+                diag.swallowed("transport", failed)
+            }
+        }
+    }
+
     override fun bonded(address: String): Boolean {
         val device = try {
             adapter()?.getRemoteDevice(address)

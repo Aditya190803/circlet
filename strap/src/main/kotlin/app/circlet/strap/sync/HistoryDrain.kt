@@ -12,7 +12,7 @@ import app.circlet.core.SampleSink
 // An uncommitted remainder is dropped on idle, stall, or disconnect, so the strap re-sends it.
 // A sample committed early is replaced if the strap sends that second again.
 
-internal const val HISTORY_FLUSH_EVERY = 60
+internal const val HISTORY_FLUSH_EVERY = 300
 /**
  * Gen 4 history batches. START is optional; data or END can be the first answer.
  *

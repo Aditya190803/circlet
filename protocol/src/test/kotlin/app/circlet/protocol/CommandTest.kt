@@ -31,6 +31,10 @@ class CommandTest {
         assertArrayEquals(byteArrayOf(0x23, 0x01, 0x14, 0x00), inner(Commands.abortHistorical(1)))
         assertArrayEquals(byteArrayOf(0x23, 0x01, 0x03, 0x01), inner(Commands.toggleRealtimeHr(1, true)))
         assertArrayEquals(byteArrayOf(0x23, 0x01, 0x03, 0x00), inner(Commands.toggleRealtimeHr(1, false)))
+        assertArrayEquals(byteArrayOf(0x23, 0x03, 0x3F, 0x01), inner(Commands.toggleRawStream(3, true)))
+        assertArrayEquals(byteArrayOf(0x23, 0x03, 0x3F, 0x00), inner(Commands.toggleRawStream(3, false)))
+        assertArrayEquals(byteArrayOf(0x23, 0x04, 0x6A, 0x01), inner(Commands.toggleImuStream(4, true)))
+        assertArrayEquals(byteArrayOf(0x23, 0x04, 0x6A, 0x00), inner(Commands.toggleImuStream(4, false)))
         assertArrayEquals(byteArrayOf(0x23, 0x02, 0x0E, 0x01), inner(Commands.toggleGenericHrProfile(2, true)))
         assertArrayEquals(byteArrayOf(0x23, 0x02, 0x0E, 0x00), inner(Commands.toggleGenericHrProfile(2, false)))
         assertArrayEquals(

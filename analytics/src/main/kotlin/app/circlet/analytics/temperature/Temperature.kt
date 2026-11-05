@@ -42,8 +42,14 @@ const val SKIN_TEMP_Z_THRESH = 2.0
 /** Consecutive elevated nights before the flag fires. */
 const val SKIN_TEMP_PERSIST_NIGHTS = 2
 
-/** Minimum valid baseline nights before a deviation is shown, as in the source. */
+/** Minimum valid baseline nights before a deviation is scored and may flag, as in the source. */
 const val SKIN_TEMP_MIN_BASELINE_NIGHTS = 7
+
+/**
+ * Valid prior nights before an early, low-confidence deviation is shown while the baseline
+ * builds. Ours, not the source's: three is the fewest a median and MAD can be taken over.
+ */
+const val SKIN_TEMP_MIN_ESTIMATE_NIGHTS = 3
 
 /**
  * One night's settled mean. [meanCounts] is ADC counts, never degrees.
@@ -178,7 +184,8 @@ fun tempIllnessFlag(
  * night last; the engine rebuilds the means from stored samples. [deviation]
  * is tonight's robust z against the trailing baseline, in standard deviations
  * of the user's own nights. The flag stays [SkinTempFlag.NOT_ENOUGH_BASELINE]
- * until [minBaseline] prior nights exist, and turns
+ * until [minBaseline] prior nights exist; from [SKIN_TEMP_MIN_ESTIMATE_NIGHTS] until then the
+ * deviation is an early estimate against the nights so far, at low confidence. The flag turns
  * [SkinTempFlag.ELEVATED] only on a sustained elevation of [persistDays]
  * consecutive nights at or above [zThresh].
  */
@@ -193,11 +200,12 @@ fun scoreSkinTemp(
     require(nights.isNotEmpty()) { "scoreSkinTemp needs the target night" }
     val target = nights.last()
     val targetDay = target.date.toEpochDay()
-    var baselineNights = 0
+    val prior = ArrayList<Double>()
     for (i in nights.size - 2 downTo 0) {
         if (targetDay - nights[i].date.toEpochDay() > baselineDays) break
-        if (nights[i].meanCounts != null) baselineNights++
+        nights[i].meanCounts?.let { prior += it }
     }
+    val baselineNights = prior.size
     val tonight = tempIllnessFlag(nights, baselineDays, zThresh, persistDays, minBaseline, luteal).last()
     val deviation = tonight.z?.let { Metric.of(it, tonight.confidence) }
         ?: Metric.absent(
@@ -205,10 +213,16 @@ fun scoreSkinTemp(
         )
     // A flat baseline standardises to nothing: history exists but no honest
     // deviation does. That is missing data, not a missing baseline.
-    val honest = if (tonight.z == null && target.meanCounts != null && baselineNights >= minBaseline) {
-        Metric.absent<Double>(AbsentReason.NOT_ENOUGH_DATA)
+    val mean = target.meanCounts
+    val early = if (mean != null && baselineNights in SKIN_TEMP_MIN_ESTIMATE_NIGHTS until minBaseline) {
+        robustBaseline(prior, minValid = SKIN_TEMP_MIN_ESTIMATE_NIGHTS).modZ(mean)?.let { Metric.of(it, Confidence.LOW) }
     } else {
-        deviation
+        null
+    }
+    val honest = when {
+        early != null -> early
+        tonight.z == null && mean != null && baselineNights >= minBaseline -> Metric.absent(AbsentReason.NOT_ENOUGH_DATA)
+        else -> deviation
     }
     val flag = when {
         target.meanCounts == null || baselineNights < minBaseline -> SkinTempFlag.NOT_ENOUGH_BASELINE

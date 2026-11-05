@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import app.circlet.core.ClockStyle
 import app.circlet.core.DoubleTapAction
 import app.circlet.core.LinkState
@@ -39,35 +41,56 @@ internal class StatusNote(
 
     private val offWristAlert = Runnable { postOffWristAlertIfDue() }
 
+    @Volatile
+    private var renderQueued = false
+    private var lastRenderAt = 0L
+    private val render = Runnable {
+        renderQueued = false
+        lastRenderAt = SystemClock.uptimeMillis()
+        show(latest)
+    }
+
     fun current(): StrapState = latest
 
+    /** A drain publishes many times a second; render the newest state at most once per [RENDER_GAP_MS]. */
     fun update(state: StrapState) {
         latest = state
-        handler.post {
-            val previous = offWristEpisode
-            offWristEpisode = OffWristAlertPolicy.update(previous, state, System.currentTimeMillis())
-            persistOffWristEpisode()
-            if (state.onWrist == true || state.link == LinkState.UNPAIRED) {
-                handler.removeCallbacks(offWristAlert)
-                manager().cancel(OFF_WRIST_ID)
-            } else {
-                scheduleOffWristAlert(state)
-            }
-            checkLowBattery(state)
-            if (app.circlet.strap.bg.StrapService.running) {
-                ensureChannel()
-                manager().notify(ID, build(state))
-            }
+        if (renderQueued) return
+        renderQueued = true
+        val wait = (lastRenderAt + RENDER_GAP_MS - SystemClock.uptimeMillis()).coerceAtLeast(0)
+        handler.postDelayed(render, wait)
+    }
+
+    private fun show(state: StrapState) {
+        val previous = offWristEpisode
+        offWristEpisode = OffWristAlertPolicy.update(previous, state, System.currentTimeMillis())
+        persistOffWristEpisode()
+        if (state.onWrist == true || state.link == LinkState.UNPAIRED) {
+            handler.removeCallbacks(offWristAlert)
+            manager().cancel(OFF_WRIST_ID)
+        } else {
+            scheduleOffWristAlert(state)
+        }
+        checkLowBattery(state)
+        if (app.circlet.strap.bg.StrapService.running) {
+            ensureChannel()
+            manager().notify(ID, build(state))
         }
     }
 
     fun foreground(service: Service) {
         ensureChannel()
-        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        val device = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
         if (app.circlet.strap.bg.StrapService.locationWanted && locationGranted()) {
-            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            try {
+                service.startForeground(ID, build(latest), device or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                return
+            } catch (refused: SecurityException) {
+                // Android refuses the location type while the app is in the background; keep the link alive.
+                Log.w(TAG, "location foreground refused: $refused")
+            }
         }
-        service.startForeground(ID, build(latest), types)
+        service.startForeground(ID, build(latest), device)
     }
 
     private fun locationGranted() =
@@ -250,6 +273,8 @@ internal class StatusNote(
     private fun manager() = context.getSystemService(NotificationManager::class.java)
 
     companion object {
+        private const val TAG = "StatusNote"
+        private const val RENDER_GAP_MS = 1_000L
         const val ID: Int = 7101
         const val CHANNEL: String = "circlet_strap"
         const val OFF_WRIST_ID: Int = 7102

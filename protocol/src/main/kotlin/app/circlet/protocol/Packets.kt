@@ -81,10 +81,15 @@ sealed interface Packet {
         }
     }
 
+    /**
+     * [accelG] is one second of accelerometer magnitude in g at 100 Hz, gravity included,
+     * present only on the raw R10 stream.
+     */
     data class Realtime(
         val epochSecond: Long,
         val heartRate: Int,
         val rrMs: List<Int>,
+        val accelG: List<Double>? = null,
     ) : Packet
 
     /**
@@ -169,7 +174,7 @@ object Decoder {
 
     private fun rawRealtime(inner: ByteArray): Packet {
         if (inner.size < 18 || u8(inner, 1) != 10) return Packet.Other(0x2B)
-        return Packet.Realtime(u32(inner, 7), u8(inner, 17), rrOf(inner))
+        return Packet.Realtime(u32(inner, 7), u8(inner, 17), rrOf(inner), frameAccel(inner)?.mags)
     }
 
     private fun rrOf(inner: ByteArray): List<Int> = realtimeRr(inner)?.intervals ?: emptyList()

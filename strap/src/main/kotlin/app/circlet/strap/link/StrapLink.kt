@@ -39,8 +39,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
+/** The raw R10 stream carries 100 accelerometer samples per one-second record. */
+private const val MOTION_SAMPLE_RATE_HZ = 100
 private const val SYNC_START_IDLE_TIMEOUT_MS = 20_000L
 private const val SYNC_PROGRESS_IDLE_TIMEOUT_MS = 60_000L
+
+/** Records arrive about every 20 ms inside a batch; a batch that went silent mid-stream this long has stalled. */
+private const val SYNC_BURST_IDLE_TIMEOUT_MS = 15_000L
 
 // Ported from OpenStrap edge/lib/ble/ble_engine.dart — session, drain, live heart rate,
 // and the reconnect loop — and edge/android EdgeTrackingService's keep-alive behaviour.
@@ -77,6 +82,8 @@ internal class StrapLink(
     private var foregroundHeart = false
     private var workoutHeart = false
     private var heartOn = false
+    private var foregroundMotion = false
+    private var motionOn = false
     private var samplesPulled = 0L
     private var samplesBuffered = 0L
     private var strapStoredSeconds: Long? = null
@@ -93,6 +100,11 @@ internal class StrapLink(
     private var lastDrainStart: Instant? = null
     private var lastRx: Instant = time.now()
     private var heartListener: (Int?) -> Unit = {}
+
+    // OpenStrap pauses maintenance traffic during an offload; a command mid-drain stalled the strap for a minute.
+    private var heldHeart = false
+    private var heldSession = false
+    private var heldMotion = false
 
     var onSessionReady: suspend () -> Unit = {}
     var onDoubleTap: suspend () -> Unit = {}
@@ -142,8 +154,25 @@ internal class StrapLink(
         }
     }
 
-    /** Loads the stored strap and connects when one is paired. Call once, after alarms are loaded. */
+    /** Starts collection from the saved pairing, independently of cloud configuration. */
     suspend fun start() = restore()
+
+    suspend fun configurationReady() {
+        if (!keep && !ports.prefs.pairedAddress().isNullOrBlank()) {
+            restore()
+            return
+        }
+        if (stateFlow.value.link != LinkState.CONNECTED) return
+        if (drain.open) heldSession = true else onSessionReady()
+    }
+
+    /** System wakes recover the link without needing a screen to request live heart rate. */
+    suspend fun resumeBackground() {
+        if (!keep || stateFlow.value.link == LinkState.CONNECTING) return
+        diag.log("background wake link=${stateFlow.value.link}")
+        if (stateFlow.value.link == LinkState.CONNECTED) requestDrain(DrainTrigger.PERIODIC)
+        else syncNow()
+    }
 
     override suspend fun startScan(): Outcome<Unit> {
         if (!transport.bluetoothEnabled()) return strap(StrapError.BluetoothOff)
@@ -194,6 +223,9 @@ internal class StrapLink(
         if (!user.tryLock()) return busy()
         try {
             keep = false
+            heldHeart = false
+            heldSession = false
+            heldMotion = false
             invalidateHistory()
             reconnectJob?.cancel()
             periodicJob?.cancel()
@@ -206,6 +238,8 @@ internal class StrapLink(
             foregroundHeart = false
             workoutHeart = false
             heartOn = false
+            motionOn = false
+            foregroundMotion = false
             host.onForgotten()
             publish { StrapState() }
             return Outcome.Ok(Unit)
@@ -242,6 +276,13 @@ internal class StrapLink(
         }
         reconcileHeart()
         if (enabled) requestDrain(DrainTrigger.FOREGROUND)
+        return Outcome.Ok(Unit)
+    }
+
+    override suspend fun setMotionStream(enabled: Boolean): Outcome<Unit> {
+        if (ports.prefs.pairedAddress().isNullOrBlank()) return notPaired()
+        foregroundMotion = enabled
+        reconcileMotion()
         return Outcome.Ok(Unit)
     }
 
@@ -326,12 +367,16 @@ internal class StrapLink(
     }
 
     private fun onBluetoothOff() {
+        heldHeart = false
+        heldSession = false
+        heldMotion = false
         invalidateHistory()
         reconnectJob?.cancel()
         periodicJob?.cancel()
         livenessJob?.cancel()
         cancelDrainJobs()
         heartOn = false
+        motionOn = false
         samplesBuffered = 0
         if (drain.open) endDrain(SyncOutcome.DISCONNECTED)
         drain.onDisconnect()
@@ -349,8 +394,12 @@ internal class StrapLink(
         if (!keep || opening) return
         if (stateFlow.value.link == LinkState.UNPAIRED) return
         diag.log("link disconnected pulled=$samplesPulled buffered=$samplesBuffered")
+        heldHeart = false
+        heldSession = false
+        heldMotion = false
         invalidateHistory()
         heartOn = false
+        motionOn = false
         samplesBuffered = 0
         cancelDrainJobs()
         if (drain.open) endDrain(SyncOutcome.DISCONNECTED)
@@ -383,13 +432,18 @@ internal class StrapLink(
                 }
                 val started = time.now()
                 publish { it.copy(link = LinkState.RECONNECTING, error = null) }
-                val watch = launch {
-                    sleep(ReconnectPolicy.STALE_ATTEMPT.toMillis())
-                    transport.disconnect()
+                // Try a bounded direct connection when passive autoConnect stays pending.
+                val autoConnect = (attempt + if (directFirst) 1 else 0) % 2 == 0
+                directReconnect = !autoConnect
+                val outcome = kotlinx.coroutines.withTimeoutOrNull(ReconnectPolicy.STALE_ATTEMPT.toMillis()) {
+                    open(address, autoConnect = autoConnect)
                 }
-                val outcome = open(address, autoConnect = !(directFirst && attempt == 0))
                 directReconnect = false
-                watch.cancel()
+                if (outcome == null) {
+                    diag.log("background connection timed out; renewing attempt")
+                    opening = true
+                    try { transport.disconnect() } finally { opening = false }
+                }
                 if (outcome is Outcome.Ok) {
                     sessionReady()
                     return@launch
@@ -442,8 +496,37 @@ internal class StrapLink(
         // The strap may still be streaming from the previous session. Force the command
         // so live heart rate is off unless something in this session asked for it.
         heartOn = !(foregroundHeart || workoutHeart)
+        transport.boostLink()
         reconcileHeart()
-        onSessionReady()
+        // The raw motion stream also survives reconnects, and it costs strap battery: force it
+        // off at every session unless this session wants it.
+        motionOn = !foregroundMotion
+        reconcileMotion()
+        if (drain.open) {
+            heldSession = true
+            diag.log("session commands held until the drain ends")
+        } else {
+            onSessionReady()
+        }
+    }
+
+    /** Sends what [reconcileHeart] and [sessionReady] held back while history was streaming. */
+    private fun releaseHeld() {
+        if (!heldHeart && !heldSession && !heldMotion) return
+        scope.launch {
+            if (heldHeart) {
+                heldHeart = false
+                reconcileHeart()
+            }
+            if (heldMotion) {
+                heldMotion = false
+                reconcileMotion()
+            }
+            if (heldSession && stateFlow.value.link == LinkState.CONNECTED) {
+                heldSession = false
+                onSessionReady()
+            }
+        }
     }
 
     private fun armPeriodic() {
@@ -465,10 +548,10 @@ internal class StrapLink(
                 sleep(10_000)
                 if (connection != transport.connectionGeneration) return@launch
                 elapsed += 10_000
-                if (foregroundHeart || workoutHeart || elapsed % 60_000L == 0L) {
+                if (!drain.open && (foregroundHeart || workoutHeart || elapsed % 60_000L == 0L)) {
                     write(wire.linkValid(seq.live()))
                 }
-                if (Duration.between(lastRx, time.now()).seconds >= 60 && elapsed % 30_000L == 0L) {
+                if (!drain.open && Duration.between(lastRx, time.now()).seconds >= 60 && elapsed % 30_000L == 0L) {
                     write(wire.battery(seq.live()))
                 }
                 if (connection != transport.connectionGeneration) return@launch
@@ -494,6 +577,7 @@ internal class StrapLink(
         lastDrainStart = time.now()
         drainAttempt = 0
         armDrainState()
+        transport.boostLink()
         sendHistoryRequest()
     }
 
@@ -541,10 +625,10 @@ internal class StrapLink(
     private fun armIdle() {
         idleJob?.cancel()
         idleJob = scope.launch {
-            val timeout = if (!drainHeard) {
-                SYNC_START_IDLE_TIMEOUT_MS
-            } else {
-                SYNC_PROGRESS_IDLE_TIMEOUT_MS
+            val timeout = when {
+                !drainHeard -> SYNC_START_IDLE_TIMEOUT_MS
+                drain.bufferedSamples() > 0 -> SYNC_BURST_IDLE_TIMEOUT_MS
+                else -> SYNC_PROGRESS_IDLE_TIMEOUT_MS
             }
             sleep(timeout)
             if (drain.onIdle() is EndResult.Retry) {
@@ -570,6 +654,7 @@ internal class StrapLink(
                 if (owner == historyGeneration && stateFlow.value.link == LinkState.CONNECTED) {
                     write(wire.abort(seq.live()))
                 }
+                releaseHeld()
             }
             return
         }
@@ -629,12 +714,16 @@ internal class StrapLink(
                 publish { it.copy(name = inbound.name) }
             }
             is Inbound.Sampled -> onSample(inbound)
-            is Inbound.Heart -> onHeart(inbound.bpm)
+            is Inbound.Heart -> {
+                onHeart(inbound.bpm)
+                inbound.accelG?.let { onMotion(it) }
+            }
             is Inbound.HistoryReply -> {
                 val expected = if (inbound.opcode == 0x16) historySequence else acknowledgementSequence
                 if (historyRequested && drain.open && inbound.sequence == expected) {
                     diag.log("history response opcode=${inbound.opcode} result=${inbound.result}")
-                    if (inbound.result != 1) {
+                    // 1 is ok and 2 is deferred: the strap answers first and streams after.
+                    if (inbound.result != 1 && inbound.result != 2) {
                         if (inbound.opcode == 0x17) faultDrain(SyncOutcome.ACK_FAILED)
                         retryDrain()
                     }
@@ -735,6 +824,7 @@ internal class StrapLink(
                 if (owner != historyGeneration) return
                 endDrain(SyncOutcome.COMPLETED)
                 publish { it.copy(sync = sync(false), lastSync = now) }
+                releaseHeld()
             }
         }
     }
@@ -842,6 +932,30 @@ internal class StrapLink(
         heartListener(measured)
     }
 
+    private suspend fun onMotion(magnitudes: List<Double>) {
+        if (!motionOn) return
+        emit(StrapEvent.Motion(time.now(), magnitudes, MOTION_SAMPLE_RATE_HZ))
+    }
+
+    /** Raw stream then IMU on; IMU then raw stream off, as OpenStrap orders the Gen 4 live sequence. */
+    private suspend fun reconcileMotion() {
+        if (stateFlow.value.link != LinkState.CONNECTED) return
+        val want = foregroundMotion
+        if (want == motionOn) return
+        // Turning the stream off never waits; turning it on waits for history so the flood
+        // does not compete with the drain.
+        if (want && drain.open) {
+            heldMotion = true
+            return
+        }
+        val frames = if (want) {
+            listOf(wire.rawStream(seq.live(), true), wire.imuStream(seq.live(), true))
+        } else {
+            listOf(wire.imuStream(seq.live(), false), wire.rawStream(seq.live(), false))
+        }
+        if (frames.all { write(it) is Outcome.Ok }) motionOn = want
+    }
+
     private suspend fun reconcileHeart() {
         val want = foregroundHeart || workoutHeart
         if (stateFlow.value.link != LinkState.CONNECTED) {
@@ -849,6 +963,11 @@ internal class StrapLink(
             return
         }
         if (want == heartOn) return
+        // A workout needs its heart rate now; the app's live view can wait for the drain.
+        if (drain.open && !workoutHeart) {
+            heldHeart = true
+            return
+        }
         if (write(wire.realtime(seq.live(), want)) is Outcome.Ok) {
             heartOn = want
             if (!want) {
