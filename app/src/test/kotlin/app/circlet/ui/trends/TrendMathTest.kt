@@ -1,5 +1,6 @@
 package app.circlet.ui.trends
 
+import app.circlet.core.MetricKind
 import app.circlet.core.TrendRange
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -151,5 +152,38 @@ class TrendMathTest {
         assertTrue(canShowMonthAfter(YearMonth.of(2026, 9), today))
         assertEquals(YearMonth.of(2026, 10), shiftMonth(YearMonth.of(2026, 9), 3, today))
         assertEquals(YearMonth.of(2026, 7), shiftMonth(YearMonth.of(2026, 10), -3, today))
+    }
+
+    @Test
+    fun calendarRingsFillStrainOverItsScaleAndScoresOverAHundred() {
+        assertEquals(0.5f, calendarFraction(MetricKind.STRAIN, 10.5), 1e-6f)
+        assertEquals(0.64f, calendarFraction(MetricKind.RECOVERY, 64.0), 1e-6f)
+        assertEquals(1f, calendarFraction(MetricKind.SLEEP_PERFORMANCE, 130.0), 1e-6f)
+        assertEquals(0f, calendarFraction(MetricKind.STRAIN, -1.0), 1e-6f)
+    }
+
+    @Test
+    fun monthTallySkipsUnscoredDaysAndSplitsRecoveryBandsLikeTheDial() {
+        val tally = monthTally(
+            mapOf(
+                today.minusDays(4) to 80.0,
+                today.minusDays(3) to 66.6,
+                today.minusDays(2) to 34.0,
+                today.minusDays(1) to 33.4,
+                today to null,
+            ),
+        )
+        assertEquals(4, tally.scored)
+        assertEquals(53.5, tally.average!!, 1e-9)
+        assertEquals(2, tally.green)
+        assertEquals(1, tally.yellow)
+        assertEquals(1, tally.red)
+    }
+
+    @Test
+    fun monthTallyWithoutScoresHasNoAverage() {
+        val tally = monthTally(mapOf(today to null))
+        assertEquals(0, tally.scored)
+        assertNull(tally.average)
     }
 }

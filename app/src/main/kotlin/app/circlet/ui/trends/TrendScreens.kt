@@ -1,6 +1,8 @@
 package app.circlet.ui.trends
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -92,6 +95,7 @@ fun TrendsScreen(
         DetailHeader("TRENDS", onBack = onBack)
         when (val calendar = state.calendar) {
             Loadable.Loading -> Card(title = monthTitle(state.month)) {
+                CalendarKindPicker(state.calendarKind, vm::showOnCalendar)
                 Skeleton(Modifier.fillMaxWidth().height(240.dp))
             }
             is Loadable.Failed -> ErrorState(calendar.message)
@@ -109,8 +113,10 @@ fun TrendsScreen(
                     }
                 },
             ) {
+                CalendarKindPicker(state.calendarKind, vm::showOnCalendar)
                 WeekdayHeader()
-                CalendarGrid(state.month, state.today, calendar.value, onOpenDay)
+                CalendarGrid(state.month, state.today, state.calendarKind, calendar.value, onOpenDay)
+                MonthSummary(state.calendarKind, calendar.value)
             }
         }
         when (val rows = state.rows) {
@@ -312,9 +318,64 @@ private fun WeekdayHeader() {
 }
 
 @Composable
+private fun CalendarKindPicker(selected: MetricKind, onSelect: (MetricKind) -> Unit) {
+    Segmented(
+        options = CALENDAR_KINDS.map { it.calendarName() },
+        selected = CALENDAR_KINDS.indexOf(selected).coerceAtLeast(0),
+        onSelect = { onSelect(CALENDAR_KINDS[it]) },
+    )
+    Spacer(Modifier.height(12.dp))
+}
+
+private fun MetricKind.calendarName(): String = when (this) {
+    MetricKind.SLEEP_PERFORMANCE -> "Sleep"
+    else -> label()
+}
+
+private fun MetricKind.calendarColor(value: Double?): Color = when (this) {
+    MetricKind.RECOVERY -> Palette.recovery(value?.roundToInt())
+    MetricKind.STRAIN -> Palette.Strain
+    else -> Palette.Sleep
+}
+
+/** The month in one or two lines, and what the plain and faded day numbers mean. */
+@Composable
+private fun MonthSummary(kind: MetricKind, values: Map<LocalDate, Double?>) {
+    val tally = monthTally(values)
+    Spacer(Modifier.height(12.dp))
+    if (tally.average == null) {
+        Text("No ${kind.calendarName().lowercase()} scores this month yet.", style = body(14.sp))
+    } else {
+        val unit = if (kind == MetricKind.STRAIN) "" else "%"
+        val days = if (tally.scored == 1) "1 day" else "${tally.scored} days"
+        Text("$days scored · average ${kind.format(tally.average)}$unit", style = body(14.sp, Palette.White))
+        if (kind == MetricKind.RECOVERY) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                BandCount(tally.green, "green", Palette.RecoveryHigh)
+                BandCount(tally.yellow, "yellow", Palette.RecoveryMid)
+                BandCount(tally.red, "red", Palette.RecoveryLow)
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Text("Faded days have nothing recorded. Plain numbers without a ring were worn but not scored.", style = body(12.sp, Palette.Faint))
+}
+
+@Composable
+private fun BandCount(count: Int, name: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(color, CircleShape))
+        Spacer(Modifier.width(6.dp))
+        Text("$count $name", style = label(12.sp))
+    }
+}
+
+@Composable
 private fun CalendarGrid(
     month: YearMonth,
     today: LocalDate,
+    kind: MetricKind,
     values: Map<LocalDate, Double?>,
     onOpenDay: (LocalDate) -> Unit,
 ) {
@@ -322,7 +383,7 @@ private fun CalendarGrid(
         Row(Modifier.fillMaxWidth()) {
             week.forEach { date ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    CalendarCell(date, today, values, onOpenDay)
+                    CalendarCell(date, today, kind, values, onOpenDay)
                 }
             }
         }
@@ -333,6 +394,7 @@ private fun CalendarGrid(
 private fun CalendarCell(
     date: LocalDate?,
     today: LocalDate,
+    kind: MetricKind,
     values: Map<LocalDate, Double?>,
     onOpenDay: (LocalDate) -> Unit,
 ) {
@@ -349,8 +411,8 @@ private fun CalendarCell(
     val score = values[date]
     MonthCell(
         day = date.dayOfMonth,
-        fraction = score?.let { (it / 100.0).toFloat().coerceIn(0f, 1f) },
-        color = Palette.recovery(score?.roundToInt()),
+        fraction = score?.let { calendarFraction(kind, it) },
+        color = kind.calendarColor(score),
         today = date == today,
         onClick = { onOpenDay(date) },
     )

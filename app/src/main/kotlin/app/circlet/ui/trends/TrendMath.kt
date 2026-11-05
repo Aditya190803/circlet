@@ -5,9 +5,12 @@ import app.circlet.core.PersonalRecord
 import app.circlet.core.RecordKind
 import app.circlet.core.TrendRange
 import app.circlet.core.toIsoWeekStart
+import app.circlet.ui.design.RECOVERY_HIGH_FROM
+import app.circlet.ui.design.RECOVERY_MID_FROM
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlin.math.roundToInt
 
 /**
  * The cells of a month calendar, Monday first. Null entries are blanks: leading blanks
@@ -19,6 +22,36 @@ fun monthGrid(month: YearMonth): List<LocalDate?> {
     val used = leading + days.size
     val trailing = (WEEK_LENGTH - used % WEEK_LENGTH) % WEEK_LENGTH
     return List(leading) { null } + days + List(trailing) { null }
+}
+
+/** The metrics the month calendar can colour its days by, the default first. */
+val CALENDAR_KINDS = listOf(MetricKind.RECOVERY, MetricKind.SLEEP_PERFORMANCE, MetricKind.STRAIN)
+
+private const val STRAIN_TOP = 21.0
+private const val PERCENT_TOP = 100.0
+
+/** How full a calendar ring is for [value]: percentages over 100, strain over its 0-21 scale. */
+fun calendarFraction(kind: MetricKind, value: Double): Float {
+    val top = if (kind == MetricKind.STRAIN) STRAIN_TOP else PERCENT_TOP
+    return (value / top).toFloat().coerceIn(0f, 1f)
+}
+
+/**
+ * A month at a glance. [scored] counts days with a value; [green], [yellow] and [red] split
+ * them into the recovery bands and are only meaningful for [MetricKind.RECOVERY].
+ */
+data class MonthTally(val scored: Int, val average: Double?, val green: Int, val yellow: Int, val red: Int)
+
+fun monthTally(values: Map<LocalDate, Double?>): MonthTally {
+    val scores = values.values.filterNotNull()
+    val rounded = scores.map { it.roundToInt() }
+    return MonthTally(
+        scored = scores.size,
+        average = scores.takeIf { it.isNotEmpty() }?.average(),
+        green = rounded.count { it >= RECOVERY_HIGH_FROM },
+        yellow = rounded.count { it in RECOVERY_MID_FROM until RECOVERY_HIGH_FROM },
+        red = rounded.count { it < RECOVERY_MID_FROM },
+    )
 }
 
 /** The mean of the days that have a value. Missing days are skipped, not counted as zero. Null when none do. */

@@ -51,7 +51,9 @@ data class TrendsUiState(
     val today: LocalDate,
     val month: YearMonth,
     val canShowNext: Boolean,
-    /** Recovery score by date for the displayed month. Days without a score are absent from the map. */
+    /** The metric the calendar rings show: one of [CALENDAR_KINDS]. */
+    val calendarKind: MetricKind,
+    /** [calendarKind] by date for the displayed month. Days without a stored row are absent from the map. */
     val calendar: Loadable<Map<LocalDate, Double?>>,
     val rows: Loadable<List<KindRow>>,
 ) {
@@ -60,6 +62,7 @@ data class TrendsUiState(
             today = today,
             month = YearMonth.from(today),
             canShowNext = false,
+            calendarKind = CALENDAR_KINDS.first(),
             calendar = Loadable.Loading,
             rows = Loadable.Loading,
         )
@@ -70,23 +73,26 @@ data class TrendsUiState(
 class TrendsViewModel(private val metrics: MetricsRepository, time: TimeSource) : ViewModel() {
     private val today: LocalDate = time.today()
     private val month = MutableStateFlow(YearMonth.from(today))
+    private val calendarKind = MutableStateFlow(CALENDAR_KINDS.first())
 
-    private val calendar: Flow<Loadable<Map<LocalDate, Double?>>> = month.flatMapLatest { shown ->
-        metrics.observeRange(shown.atDay(1), minOf(shown.atEndOfMonth(), today))
-            .map { days -> days.associate { it.date to it.metricValue(MetricKind.RECOVERY).value } }
-            .loadable(READ_FAILED)
-    }
+    private val calendar: Flow<Loadable<Map<LocalDate, Double?>>> =
+        combine(month, calendarKind) { shown, kind -> shown to kind }.flatMapLatest { (shown, kind) ->
+            metrics.observeRange(shown.atDay(1), minOf(shown.atEndOfMonth(), today))
+                .map { days -> days.associate { it.date to it.metricValue(kind).value } }
+                .loadable(READ_FAILED)
+        }
 
     private val overview: Flow<Loadable<List<KindRow>>> = metrics
         .observeRange(currentWindow(TrendRange.MONTH, today).from, today)
         .map { days -> overviewRows(days) }
         .loadable(READ_FAILED)
 
-    val state: StateFlow<TrendsUiState> = combine(month, calendar, overview) { shown, cal, rows ->
+    val state: StateFlow<TrendsUiState> = combine(month, calendarKind, calendar, overview) { shown, kind, cal, rows ->
         TrendsUiState(
             today = today,
             month = shown,
             canShowNext = canShowMonthAfter(shown, today),
+            calendarKind = kind,
             calendar = cal,
             rows = rows,
         )
@@ -95,6 +101,11 @@ class TrendsViewModel(private val metrics: MetricsRepository, time: TimeSource) 
     /** Moves the calendar by [months]. Never past the month containing today. */
     fun shiftMonth(months: Long) {
         month.update { shiftMonth(it, months, today) }
+    }
+
+    /** Colours the calendar by [kind], which must be one of [CALENDAR_KINDS]. */
+    fun showOnCalendar(kind: MetricKind) {
+        if (kind in CALENDAR_KINDS) calendarKind.value = kind
     }
 
     private fun overviewRows(days: List<DaySummary>): List<KindRow> {

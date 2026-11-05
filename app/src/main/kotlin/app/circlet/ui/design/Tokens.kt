@@ -22,6 +22,10 @@ import app.circlet.core.SleepStage
  * Every colour the app draws with. Text on [Card] or the background uses [White], [Dim] or
  * [Faint]; [Ghost] and [Track] are for outlines and tracks only because they fail text contrast.
  */
+/** Recovery scores from this value up are green; from [RECOVERY_MID_FROM] up to it, yellow; below, red. */
+const val RECOVERY_HIGH_FROM = 67
+const val RECOVERY_MID_FROM = 34
+
 object Palette {
     val BgTop = Color(0xFF283339)
     val BgBottom = Color(0xFF101518)
@@ -61,8 +65,8 @@ object Palette {
 
     fun recovery(value: Int?) = when {
         value == null -> RecoveryNone
-        value >= 67 -> RecoveryHigh
-        value >= 34 -> RecoveryMid
+        value >= RECOVERY_HIGH_FROM -> RecoveryHigh
+        value >= RECOVERY_MID_FROM -> RecoveryMid
         else -> RecoveryLow
     }
 
