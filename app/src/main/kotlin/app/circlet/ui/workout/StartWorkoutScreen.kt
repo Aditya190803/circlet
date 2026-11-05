@@ -43,7 +43,7 @@ fun StartWorkoutScreen(onBack: () -> Unit, onStarted: () -> Unit) {
     LaunchedEffect(vm) { vm.started.collect { onStarted() } }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("START A WORKOUT", onBack = onBack)
+        DetailHeader("Start a workout", onBack = onBack)
         ScreenColumn {
             TextEntry(
                 value = query,
@@ -54,11 +54,11 @@ fun StartWorkoutScreen(onBack: () -> Unit, onStarted: () -> Unit) {
             if (sports.isEmpty()) {
                 EmptyState(
                     Glyph.Search,
-                    "NO MATCHING SPORT",
+                    "No matching sport",
                     "Try a shorter word. Choose OTHER if your sport is not listed.",
                 )
             } else {
-                Card("CHOOSE A SPORT") {
+                Card("Choose a sport") {
                     sports.forEachIndexed { index, sport ->
                         if (index > 0) Divider()
                         SportRow(sport = sport, onStart = { vm.start(sport) })
@@ -81,6 +81,6 @@ private fun SportRow(sport: Sport, onStart: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         Icon(sport.glyph(), tint = Palette.Dim, size = 22.dp)
-        Text(name.uppercase(), style = label(13.sp, Palette.White))
+        Text(name, style = label(13.sp, Palette.White))
     }
 }

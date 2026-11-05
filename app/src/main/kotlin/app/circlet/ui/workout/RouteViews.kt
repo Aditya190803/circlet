@@ -26,7 +26,7 @@ data class RoutePace(val value: String, val unit: String) {
         fun of(kind: RouteKind, distanceM: Double, seconds: Long): RoutePace? = when (kind) {
             RouteKind.FOOT -> Route.paceMinPerKm(distanceM, seconds)?.let {
                 val total = (it * 60).roundToInt()
-                RoutePace("%d:%02d".format(Locale.US, total / 60, total % 60), "MIN/KM")
+                RoutePace("%d:%02d".format(Locale.US, total / 60, total % 60), "min/km")
             }
             RouteKind.CYCLING -> Route.speedKmh(distanceM, seconds)?.let {
                 RoutePace("%.1f".format(Locale.US, it), "KM/H")

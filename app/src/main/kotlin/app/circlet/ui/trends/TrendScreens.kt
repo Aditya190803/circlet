@@ -92,7 +92,7 @@ fun TrendsScreen(
     val vm = containerViewModel { c, _ -> TrendsViewModel(c.metrics, c.time) }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader("TRENDS", onBack = onBack)
+        DetailHeader("Trends", onBack = onBack)
         when (val calendar = state.calendar) {
             Loadable.Loading -> Card(title = monthTitle(state.month)) {
                 CalendarKindPicker(state.calendarKind, vm::showOnCalendar)
@@ -120,15 +120,15 @@ fun TrendsScreen(
             }
         }
         when (val rows = state.rows) {
-            Loadable.Loading -> Card(title = "LAST 30 DAYS") {
+            Loadable.Loading -> Card(title = "Last 30 days") {
                 Skeleton(Modifier.fillMaxWidth().height(160.dp))
             }
             is Loadable.Failed -> ErrorState(rows.message)
-            is Loadable.Ready -> Card(title = "LAST 30 DAYS") {
+            is Loadable.Ready -> Card(title = "Last 30 days") {
                 KindList(rows.value, onOpenMetric)
             }
         }
-        Card(title = "REPORTS") {
+        Card(title = "Reports") {
             ListRow(
                 title = "Weekly recap",
                 glyph = Glyph.Document,
@@ -154,7 +154,7 @@ fun MetricTrendScreen(kind: MetricKind, onBack: () -> Unit) {
     val rangeVm = containerViewModel { c, _ -> TodayRangeViewModel(c.metrics, c.time) }
     val today by rangeVm.day.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader(kind.label().uppercase(), onBack = onBack)
+        DetailHeader(kind.label(), onBack = onBack)
         Segmented(
             options = listOf("Week", "Month"),
             selected = if (state.range == TrendRange.WEEK) 0 else 1,
@@ -182,7 +182,7 @@ private class TodayRangeViewModel(metrics: MetricsRepository, time: TimeSource) 
 private fun YourRangeCard(kind: MetricKind, day: DaySummary?) {
     val ref = day?.references?.forKind(kind) ?: return
     val value = day.metricValue(kind).value
-    Card(title = "YOUR RANGE") {
+    Card(title = "Your range") {
         RangeBar(value, ref.personal, ref.ideal)
         RangeLegend(
             personal = ref.personal,
@@ -201,7 +201,7 @@ fun WeeklyRecapScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader("WEEKLY RECAP", subtitle = weekLabel(state.weekStart), onBack = onBack)
+        DetailHeader("Weekly recap", subtitle = weekLabel(state.weekStart), onBack = onBack)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(Glyph.ChevronLeft, "Previous week", onClick = { vm.shiftWeek(-1) })
             Text(
@@ -233,7 +233,7 @@ fun RecordsScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
     val state by vm.state.collectAsStateWithLifecycle()
     ScreenColumn {
-        DetailHeader("PERSONAL RECORDS", onBack = onBack)
+        DetailHeader("Personal records", onBack = onBack)
         when (val content = state.content) {
             Loadable.Loading -> Skeleton(Modifier.fillMaxWidth().height(200.dp))
             is Loadable.Failed -> ErrorState(content.message)
@@ -278,8 +278,8 @@ private fun MetricStatRow(row: KindRow, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(row.kind.label().uppercase(), style = label())
-            val note = row.average?.let { "30-DAY AVG ${row.kind.withUnit(it)}" } ?: "NO READINGS IN THE LAST 30 DAYS"
+            Text(row.kind.label(), style = label())
+            val note = row.average?.let { "30-day avg ${row.kind.withUnit(it)}" } ?: "No readings in the last 30 days"
             Text(note, style = label(10.sp, Palette.Faint), modifier = Modifier.padding(top = 2.dp))
         }
         Spacer(Modifier.width(12.dp))
@@ -291,7 +291,7 @@ private fun MetricStatRow(row: KindRow, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         val latest = row.latest
         if (latest == null) {
-            Text("NO READING", style = label(11.sp, Palette.Faint))
+            Text("No reading", style = label(11.sp, Palette.Faint))
         } else {
             Text(row.kind.format(latest) + if (row.kind.unit() == "%") "%" else "", style = number(22.sp, Palette.White))
             val unit = row.kind.unit()
@@ -443,17 +443,17 @@ private fun TrendBody(kind: MetricKind, trend: MetricTrend) {
         )
     }
     val unit = kind.unit().takeIf { it.isNotEmpty() && it != "%" && !kind.isDuration() }
-    Card(title = if (unit == null) "SUMMARY" else "SUMMARY · $unit") {
+    Card(title = if (unit == null) "Summary" else "Summary · $unit") {
         Row(Modifier.fillMaxWidth()) {
-            SummaryFigure(trend.stats.min, "LOW", kind, Alignment.Start, Modifier.weight(1f))
-            SummaryFigure(trend.stats.average, "AVERAGE", kind, Alignment.CenterHorizontally, Modifier.weight(1f))
-            SummaryFigure(trend.stats.max, "HIGH", kind, Alignment.End, Modifier.weight(1f))
+            SummaryFigure(trend.stats.min, "Low", kind, Alignment.Start, Modifier.weight(1f))
+            SummaryFigure(trend.stats.average, "Average", kind, Alignment.CenterHorizontally, Modifier.weight(1f))
+            SummaryFigure(trend.stats.max, "High", kind, Alignment.End, Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         ChangeLine(kind, trend)
     }
     val withValues = trend.points.filter { it.value != null }.asReversed()
-    Card(title = "DAYS") {
+    Card(title = "Days") {
         if (withValues.isEmpty()) {
             Text("No readings in this period.", style = body(14.sp))
         }
@@ -513,7 +513,7 @@ private fun RecapBody(recap: WeeklyRecap) {
         )
         return
     }
-    Card(title = "AVERAGES") {
+    Card(title = "Averages") {
         StatRow(
             name = "Recovery",
             value = recap.averageRecovery.value?.let { "${it.decimal(0)}%" },
@@ -541,7 +541,7 @@ private fun RecapBody(recap: WeeklyRecap) {
             absent = recap.sleepDebt.absentReason,
         )
     }
-    Card(title = "DAYS") {
+    Card(title = "Days") {
         StatRow(
             name = "Days with readings",
             value = recap.days.count { day -> MetricKind.values().any { day.metricValue(it).present } }.toString(),
@@ -560,7 +560,7 @@ private fun RecapBody(recap: WeeklyRecap) {
 
 @Composable
 private fun RecordCard(group: RecordGroup) {
-    Card(title = group.kind.label().uppercase()) {
+    Card(title = group.kind.label()) {
         group.records.forEach { record ->
             ListRow(
                 title = group.kind.withUnit(record.value),
@@ -584,13 +584,13 @@ private fun RecordKind.withUnit(value: Double): String = joinUnit(format(value),
 private fun signed(value: Double): String = (if (value > 0) "+" else "") + value.decimal(1)
 
 private fun monthTitle(month: YearMonth): String =
-    month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())).uppercase()
+    month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
 
 private fun weekLabel(weekStart: LocalDate): String =
     "${weekStart.shortDate("d MMM")} to ${weekStart.plusDays(6).shortDate("d MMM")}"
 
 private fun windowLabel(window: DayWindow): String =
-    "${window.from.shortDate("d MMM")} to ${window.to.shortDate("d MMM")}".uppercase()
+    "${window.from.shortDate("d MMM")} to ${window.to.shortDate("d MMM")}"
 
 private fun LocalDate.shortDate(pattern: String = "d MMM yyyy"): String =
     format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))

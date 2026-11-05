@@ -61,7 +61,7 @@ fun WorkoutsScreen(date: LocalDate, onBack: () -> Unit, onOpenActivity: (String)
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("WORKOUTS", subtitle = dateTitle(date, today), onBack = onBack)
+        DetailHeader("Workouts", subtitle = dateTitle(date, today), onBack = onBack)
         ScreenColumn {
             when (val current = state) {
                 Loadable.Loading -> Card {
@@ -78,7 +78,7 @@ fun WorkoutsScreen(date: LocalDate, onBack: () -> Unit, onOpenActivity: (String)
                     onOpen = onOpenActivity,
                 )
             }
-            PrimaryButton("START A WORKOUT") { onStartWorkout() }
+            PrimaryButton("Start a workout") { onStartWorkout() }
         }
     }
 }
@@ -94,12 +94,12 @@ private fun ColumnScope.DayWorkouts(
     if (page.activities.isEmpty()) {
         EmptyState(
             Glyph.Run,
-            "NO WORKOUTS",
+            "No workouts",
             "Workouts you start, and activity the strap detects while you move, are listed here once they are recorded.",
         )
         return
     }
-    Card("ACTIVITIES") {
+    Card("Activities") {
         page.activities.forEachIndexed { index, activity ->
             if (index > 0) Divider()
             ActivityRow(
@@ -116,7 +116,7 @@ private fun ColumnScope.DayWorkouts(
         style = body(13.sp, Palette.Faint),
         modifier = Modifier.padding(horizontal = 4.dp),
     )
-    SecondaryButton("MERGE SELECTED", enabled = page.mergeable, onClick = onMerge)
+    SecondaryButton("Merge selected", enabled = page.mergeable, onClick = onMerge)
 }
 
 @Composable
@@ -141,7 +141,7 @@ private fun ActivityRow(
                 .weight(1f)
                 .clickable(role = Role.Button, onClickLabel = "Open $name", onClick = onOpen),
         ) {
-            Text(name.uppercase(), style = label(13.sp, Palette.White))
+            Text(name, style = label(13.sp, Palette.White))
             Text(
                 "${timeRange(activity.start, activity.end, format)}, ${durationText(activity.start, activity.end)}",
                 style = body(12.sp, Palette.Faint),
@@ -149,7 +149,7 @@ private fun ActivityRow(
         }
         Figure(
             value = activity.strain.value?.decimal(),
-            caption = "STRAIN",
+            caption = "Strain",
             absent = activity.strain.absentReason,
             alignEnd = true,
         )

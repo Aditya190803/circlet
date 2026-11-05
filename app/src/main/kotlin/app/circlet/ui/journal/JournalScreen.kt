@@ -68,7 +68,7 @@ fun JournalScreen(date: LocalDate, onBack: () -> Unit, onOpenInsights: () -> Uni
     var managing by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("JOURNAL", onBack = onBack)
+        DetailHeader("Journal", onBack = onBack)
         ScreenColumn {
             Card {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -97,9 +97,9 @@ fun JournalScreen(date: LocalDate, onBack: () -> Unit, onOpenInsights: () -> Uni
                 Skeleton()
                 Skeleton()
             } else {
-                Card("TAGS") {
+                Card("Tags") {
                     if (tags.isEmpty()) {
-                        EmptyState(Glyph.Journal, "NO TAGS YET", "Add a tag to log what shaped the day.")
+                        EmptyState(Glyph.Journal, "No tags yet", "Add a tag to log what shaped the day.")
                     } else {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             tags.forEach { tag ->
@@ -112,10 +112,10 @@ fun JournalScreen(date: LocalDate, onBack: () -> Unit, onOpenInsights: () -> Uni
                         }
                     }
                     Spacer(Modifier.height(4.dp))
-                    QuietButton("MANAGE TAGS") { managing = true }
+                    QuietButton("Manage tags") { managing = true }
                 }
 
-                Card("NOTE") {
+                Card("Note") {
                     TextEntry(
                         value = noteDraft,
                         description = "Note for this day",
@@ -125,10 +125,10 @@ fun JournalScreen(date: LocalDate, onBack: () -> Unit, onOpenInsights: () -> Uni
                     )
                     Spacer(Modifier.height(12.dp))
                     val dirty = noteDraft.trim() != current.savedNote
-                    SecondaryButton("SAVE NOTE", enabled = dirty) { vm.saveNote() }
+                    SecondaryButton("Save note", enabled = dirty) { vm.saveNote() }
                 }
 
-                Card("INSIGHTS") {
+                Card("Insights") {
                     ListRow(
                         title = "What moves your numbers",
                         glyph = Glyph.Trends,
@@ -160,12 +160,12 @@ private fun TagManager(
     var newName by remember { mutableStateOf("") }
     var pendingRemoval by remember { mutableStateOf<JournalTag?>(null) }
 
-    Sheet(title = "TAGS", onDismiss = onDismiss) {
+    Sheet(title = "Tags", onDismiss = onDismiss) {
         tags.forEach { tag ->
             val removable = tag.canRemove()
             ListRow(
                 title = tag.name,
-                subtitle = if (tag.builtIn) "BUILT IN" else "CUSTOM",
+                subtitle = if (tag.builtIn) "Built in" else "Custom",
                 trailing = if (removable) {
                     @Composable { RemoveTagButton(tag) { pendingRemoval = tag } }
                 } else {
@@ -182,15 +182,15 @@ private fun TagManager(
                 style = body(14.sp, Palette.Dim),
             )
             Spacer(Modifier.height(10.dp))
-            PrimaryButton("REMOVE TAG", danger = true) {
+            PrimaryButton("Remove tag", danger = true) {
                 onRemove(removing)
                 pendingRemoval = null
             }
-            QuietButton("KEEP TAG") { pendingRemoval = null }
+            QuietButton("Keep tag") { pendingRemoval = null }
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("ADD A TAG", style = label(12.sp, Palette.Dim))
+        Text("Add a tag", style = label(12.sp, Palette.Dim))
         Spacer(Modifier.height(8.dp))
         TextEntry(
             value = newName,
@@ -204,7 +204,7 @@ private fun TagManager(
             Text(problem, style = body(12.sp, Palette.Warn), modifier = Modifier.padding(top = 6.dp))
         }
         Spacer(Modifier.height(10.dp))
-        PrimaryButton("ADD TAG", enabled = newName.isNotBlank() && problem == null) {
+        PrimaryButton("Add tag", enabled = newName.isNotBlank() && problem == null) {
             onAdd(newName)
             newName = ""
         }

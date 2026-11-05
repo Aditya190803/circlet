@@ -109,11 +109,11 @@ import java.time.ZoneId
 
 /** The five destinations on the bottom bar. */
 enum class Tab(val route: String, val title: String, val glyph: Glyph) {
-    HOME("home", "HOME", Glyph.Home),
-    SLEEP("sleep", "SLEEP", Glyph.Moon),
-    RECOVERY("recovery", "RECOVERY", Glyph.Pulse),
-    STRAIN("strain", "STRAIN", Glyph.Bolt),
-    MORE("more", "MORE", Glyph.More),
+    HOME("home", "Home", Glyph.Home),
+    SLEEP("sleep", "Sleep", Glyph.Moon),
+    RECOVERY("recovery", "Recovery", Glyph.Pulse),
+    STRAIN("strain", "Strain", Glyph.Bolt),
+    MORE("more", "More", Glyph.More),
 }
 
 /**

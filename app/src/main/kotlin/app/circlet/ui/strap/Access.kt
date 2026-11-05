@@ -128,7 +128,7 @@ fun AccessRow(glyph: Glyph, name: String, reason: String, done: Boolean, onAllow
                 contentAlignment = Alignment.Center,
             ) { Icon(Glyph.Check, Palette.BgBottom, 18.dp) }
         } else {
-            SmallButton("ALLOW", onClick = onAllow)
+            SmallButton("Allow", onClick = onAllow)
         }
     }
 }

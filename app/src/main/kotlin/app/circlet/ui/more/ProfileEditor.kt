@@ -91,20 +91,20 @@ fun rememberProfileDraft(profile: Profile, unit: MassUnit, today: LocalDate): Pr
 fun ProfileFields(draft: ProfileDraft, unit: MassUnit, showMaxHeartRate: Boolean, onEdit: () -> Unit = {}) {
     val pounds = unit == MassUnit.POUND
     val ageWrong = draft.age.isNotEmpty() && draft.parsedAge == null
-    Field("AGE", draft.age, "Enter an age from 10 to 100".takeIf { ageWrong }, isError = ageWrong) {
+    Field("Age", draft.age, "Enter an age from 10 to 100".takeIf { ageWrong }, isError = ageWrong) {
         draft.age = it
         onEdit()
     }
     Divider()
     val heightWrong = draft.height.isNotEmpty() && draft.parsedHeight == null
-    Field("HEIGHT (CM)", draft.height, "Enter a height from 100 to 230 cm".takeIf { heightWrong }, isError = heightWrong) {
+    Field("Height (cm)", draft.height, "Enter a height from 100 to 230 cm".takeIf { heightWrong }, isError = heightWrong) {
         draft.height = it
         onEdit()
     }
     Divider()
     val weightWrong = draft.weight.isNotEmpty() && draft.parsedWeightKg(unit) == null
     Field(
-        if (pounds) "WEIGHT (LB)" else "WEIGHT (KG)", draft.weight,
+        if (pounds) "Weight (lb)" else "Weight (kg)", draft.weight,
         (if (pounds) "Enter a weight from 66 to 550 lb" else "Enter a weight from 30 to 250 kg").takeIf { weightWrong },
         isError = weightWrong,
     ) {
@@ -115,7 +115,7 @@ fun ProfileFields(draft: ProfileDraft, unit: MassUnit, showMaxHeartRate: Boolean
         Divider()
         val wrong = draft.maxHeartRate.isNotBlank() && draft.parsedMax == null
         Field(
-            "MAX HEART RATE", draft.maxHeartRate,
+            "Max heart rate", draft.maxHeartRate,
             if (wrong) "Enter 120 to 230, or leave empty" else "Optional. Estimated from age when empty.",
             isError = wrong,
         ) {
@@ -125,10 +125,10 @@ fun ProfileFields(draft: ProfileDraft, unit: MassUnit, showMaxHeartRate: Boolean
     }
     Divider()
     Column(Modifier.padding(vertical = 12.dp)) {
-        Text("SEX", style = label())
+        Text("Sex", style = label())
         Spacer(Modifier.height(10.dp))
         val options = listOf(Sex.FEMALE, Sex.MALE, Sex.UNSPECIFIED)
-        Segmented(listOf("FEMALE", "MALE", "NOT SAID"), options.indexOf(draft.sex)) {
+        Segmented(listOf("Female", "Male", "Not said"), options.indexOf(draft.sex)) {
             draft.sex = options[it]
             onEdit()
         }

@@ -41,7 +41,7 @@ fun JournalInsightsScreen(onBack: () -> Unit) {
     val state by vm.uiState.collectAsState()
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("WHAT MOVES YOUR NUMBERS", onBack = onBack)
+        DetailHeader("What moves your numbers", onBack = onBack)
         ScreenColumn {
             val metrics = CorrelationMetric.entries
             Segmented(
@@ -69,18 +69,18 @@ private fun InsightsBody(ready: InsightsState.Ready, metric: CorrelationMetric) 
     if (split.measured.isEmpty()) {
         EmptyState(
             Glyph.Trends,
-            "NOT ENOUGH DAYS YET",
+            "Not enough days yet",
             "Keep logging for a couple of weeks. A tag shows its effect on ${metric.label().lowercase()} once it has " +
                 "at least $MIN_DAYS_PER_SIDE days with it and $MIN_DAYS_PER_SIDE days without it.",
         )
     } else {
-        Card("EFFECT ON ${metric.label()}") {
+        Card("Effect on ${metric.label()}") {
             split.measured.forEachIndexed { index, row ->
                 if (index > 0) Spacer(Modifier.height(16.dp))
                 val correlation = row.correlation
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        (names[correlation.tagId] ?: correlation.tagId).uppercase(),
+                        names[correlation.tagId] ?: correlation.tagId,
                         style = label(13.sp, Palette.White),
                         modifier = Modifier.weight(1f),
                     )
@@ -112,7 +112,7 @@ private fun InsightsBody(ready: InsightsState.Ready, metric: CorrelationMetric) 
     }
 
     if (split.notEnough.isNotEmpty()) {
-        Card("NOT ENOUGH DATA YET") {
+        Card("Not enough data yet") {
             Text(
                 "These tags need at least $MIN_DAYS_PER_SIDE days with and $MIN_DAYS_PER_SIDE days without before an effect is shown.",
                 style = body(13.sp, Palette.Faint),

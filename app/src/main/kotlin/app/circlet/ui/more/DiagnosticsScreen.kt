@@ -94,32 +94,32 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("SYNC DIAGNOSTICS", onBack = onBack)
+        DetailHeader("Sync diagnostics", onBack = onBack)
         ScreenColumn {
-            Card("LAST SYNC") {
+            Card("Last sync") {
                 val outcome = strap.sync.lastOutcome
                 val at = strap.sync.lastOutcomeAt
                 StatRow(
-                    "OUTCOME",
-                    outcome?.words() ?: "NONE YET",
+                    "Outcome",
+                    outcome?.words() ?: "None yet",
                     color = if (outcome == null || outcome == SyncOutcome.COMPLETED) Palette.White else Palette.Warn,
                     note = at?.let { agoWords(it, Instant.now()) },
                 )
             }
-            Card("COUNTS") {
-                StatRow("COMPLETED", counters.completed.toString())
+            Card("Counts") {
+                StatRow("Completed", counters.completed.toString())
                 Divider()
-                StatRow("STALLED", counters.stalled.toString())
+                StatRow("Stalled", counters.stalled.toString())
                 Divider()
-                StatRow("DISCONNECTED", counters.disconnected.toString())
+                StatRow("Disconnected", counters.disconnected.toString())
                 Divider()
-                StatRow("ACK FAILED", counters.ackFailed.toString())
+                StatRow("Ack failed", counters.ackFailed.toString())
                 Divider()
-                StatRow("DECODE FAILED", counters.decodeFailed.toString())
+                StatRow("Decode failed", counters.decodeFailed.toString())
                 Divider()
-                StatRow("SAMPLES RECEIVED", counters.samplesReceived.toString())
+                StatRow("Samples received", counters.samplesReceived.toString())
             }
-            Card("LOG") {
+            Card("Log") {
                 if (lines.isEmpty()) {
                     Text("Nothing logged yet.", style = body(14.sp, Palette.Dim))
                 } else {
@@ -129,16 +129,16 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(Space.sm))
-                SecondaryButton("SAVE LOG", enabled = lines.isNotEmpty()) { save.launch("circlet-sync-log.txt") }
+                SecondaryButton("Save log", enabled = lines.isNotEmpty()) { save.launch("circlet-sync-log.txt") }
             }
         }
     }
 }
 
 private fun SyncOutcome.words(): String = when (this) {
-    SyncOutcome.COMPLETED -> "COMPLETED"
-    SyncOutcome.STALLED -> "STALLED"
-    SyncOutcome.DISCONNECTED -> "DISCONNECTED"
-    SyncOutcome.ACK_FAILED -> "ACK FAILED"
-    SyncOutcome.DECODE_FAILED -> "DECODE FAILED"
+    SyncOutcome.COMPLETED -> "Completed"
+    SyncOutcome.STALLED -> "Stalled"
+    SyncOutcome.DISCONNECTED -> "Disconnected"
+    SyncOutcome.ACK_FAILED -> "Ack failed"
+    SyncOutcome.DECODE_FAILED -> "Decode failed"
 }

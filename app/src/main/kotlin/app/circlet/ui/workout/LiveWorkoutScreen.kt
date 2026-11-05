@@ -65,17 +65,17 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
     LaunchedEffect(vm) { vm.finished.collect { onFinished(it) } }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("LIVE WORKOUT", onBack = onBack)
+        DetailHeader("Live workout", onBack = onBack)
         ScreenColumn {
             when (val current = state) {
-                LiveUi.Loading -> Card("RECORDING") {
+                LiveUi.Loading -> Card("Recording") {
                     Skeleton(Modifier.fillMaxWidth().height(40.dp))
                     Spacer(Modifier.height(Space.sm))
                     Skeleton(Modifier.fillMaxWidth(0.6f).height(14.dp))
                 }
                 LiveUi.Idle -> EmptyState(
                     Glyph.Run,
-                    "NO WORKOUT RUNNING",
+                    "No workout running",
                     "Start a workout from the workouts page. Its time, heart rate, strain and calories appear here while you record it.",
                 )
                 is LiveUi.Recording -> {
@@ -86,20 +86,20 @@ fun LiveWorkoutScreen(onBack: () -> Unit, onFinished: (String) -> Unit) {
                             if (!on || vm.hasLocationPermission()) vm.setRecordRoute(on) else askLocation.launch(LOCATION_PERMISSIONS)
                         })
                     }
-                    SecondaryButton(if (current.live.paused) "RESUME" else "PAUSE") {
+                    SecondaryButton(if (current.live.paused) "Resume" else "Pause") {
                         if (current.live.paused) vm.resume() else vm.pause()
                     }
-                    PrimaryButton("STOP WORKOUT") { confirmingFinish = true }
+                    PrimaryButton("Stop workout") { confirmingFinish = true }
                     if (confirmingFinish) {
-                        Sheet("FINISH THIS WORKOUT?", onDismiss = { confirmingFinish = false }) {
+                        Sheet("Finish this workout?", onDismiss = { confirmingFinish = false }) {
                             Text("$elapsed recorded. It is saved to today's activities.", style = body(14.sp, Palette.Dim))
                             Spacer(Modifier.height(Space.lg))
-                            PrimaryButton("FINISH") {
+                            PrimaryButton("Finish") {
                                 confirmingFinish = false
                                 vm.stop()
                             }
                             Spacer(Modifier.height(Space.sm))
-                            SecondaryButton("KEEP GOING") { confirmingFinish = false }
+                            SecondaryButton("Keep going") { confirmingFinish = false }
                         }
                     }
                 }
@@ -112,15 +112,15 @@ private val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCAT
 
 @Composable
 private fun RouteCard(route: LiveRoute, onToggle: (Boolean) -> Unit) {
-    Card("ROUTE") {
+    Card("Route") {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("RECORD ROUTE", style = label(12.sp, Palette.Dim), modifier = Modifier.weight(1f))
+            Text("Record route", style = label(12.sp, Palette.Dim), modifier = Modifier.weight(1f))
             Toggle(route.recording, "Record route", onChange = onToggle)
         }
         if (route.recording) {
             Spacer(Modifier.height(Space.sm))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Figure(value = if (route.distanceM > 0.0) distanceKm(route.distanceM) else null, caption = "DISTANCE KM")
+                Figure(value = if (route.distanceM > 0.0) distanceKm(route.distanceM) else null, caption = "Distance km")
                 Figure(value = route.pace?.value, caption = "PACE ${route.pace?.unit ?: ""}".trim())
             }
         }
@@ -129,7 +129,7 @@ private fun RouteCard(route: LiveRoute, onToggle: (Boolean) -> Unit) {
 
 @Composable
 private fun Recording(live: LiveWorkout, elapsedText: String) {
-    Card(live.sport.label().uppercase()) {
+    Card(live.sport.label()) {
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -139,26 +139,26 @@ private fun Recording(live: LiveWorkout, elapsedText: String) {
             Text(elapsedText, style = number(48.sp, Palette.White))
         }
         if (live.paused) {
-            Text("PAUSED", style = label(12.sp, Palette.Warn))
+            Text("Paused", style = label(12.sp, Palette.Warn))
         } else {
-            Text("RECORDING", style = label(12.sp, Palette.Faint))
+            Text("Recording", style = label(12.sp, Palette.Faint))
         }
     }
-    Card("NOW") {
+    Card("Now") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             // A zero strain or calorie count is not yet meaningful, so it is held back until above zero.
-            Figure(value = if (live.strain > 0.0) live.strain.decimal() else null, caption = "STRAIN")
-            Figure(value = if (live.caloriesKcal > 0) live.caloriesKcal.toString() else null, caption = "KCAL")
-            Figure(value = live.heartRateBpm?.toString(), caption = "BPM")
+            Figure(value = if (live.strain > 0.0) live.strain.decimal() else null, caption = "Strain")
+            Figure(value = if (live.caloriesKcal > 0) live.caloriesKcal.toString() else null, caption = "kcal")
+            Figure(value = live.heartRateBpm?.toString(), caption = "bpm")
         }
     }
-    Card("AVERAGE AND MAX") {
+    Card("Average and max") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Figure(value = live.averageHeartRateBpm?.toString(), caption = "AVERAGE BPM")
-            Figure(value = live.maxHeartRateBpm?.toString(), caption = "MAX BPM")
+            Figure(value = live.averageHeartRateBpm?.toString(), caption = "Average bpm")
+            Figure(value = live.maxHeartRateBpm?.toString(), caption = "Max bpm")
         }
     }
-    Card("TIME IN ZONES") {
+    Card("Time in zones") {
         ZoneBars(live.zoneMinutes)
     }
 }

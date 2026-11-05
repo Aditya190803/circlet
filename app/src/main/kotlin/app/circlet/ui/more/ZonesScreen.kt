@@ -130,10 +130,10 @@ fun ZonesScreen(onBack: () -> Unit) {
     val basis by vm.basis.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("HEART RATE ZONES", onBack = onBack)
+        DetailHeader("Heart rate zones", onBack = onBack)
         ScreenColumn {
             ZonesEditor(profile, basis, error, vm::save)
-            Card("ZONE CHANGES") {
+            Card("Zone changes") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Buzz when I change zone during a workout",
@@ -168,7 +168,7 @@ private fun ZonesEditor(profile: Profile, basis: ZoneBasis?, error: String?, onS
     val candidate = profile.copy(customZones = if (own && edited.size == 6) edited.asZones() else emptyList())
     val problems = candidate.problems()
 
-    Card("YOUR ZONES") {
+    Card("Your zones") {
         if (shown.size != 6) {
             Text(
                 "Add your age or max heart rate in your profile and the zones appear here.",
@@ -201,7 +201,7 @@ private fun ZonesEditor(profile: Profile, basis: ZoneBasis?, error: String?, onS
             Text(error, style = body(13.sp, Palette.Warn))
             Spacer(Modifier.height(Space.sm))
         }
-        SecondaryButton("RESET TO DEFAULT", enabled = own || profile.customZones.isNotEmpty()) {
+        SecondaryButton("Reset to default", enabled = own || profile.customZones.isNotEmpty()) {
             own = false
             edited.clear()
             edited.addAll(defaults.orEmpty())
@@ -209,7 +209,7 @@ private fun ZonesEditor(profile: Profile, basis: ZoneBasis?, error: String?, onS
         }
         Spacer(Modifier.height(Space.sm))
         PrimaryButton(
-            if (saved) "SAVED" else "SAVE ZONES",
+            if (saved) "Saved" else "Save zones",
             enabled = !saved && problems.isEmpty() && candidate.customZones != profile.customZones,
         ) {
             onSave(candidate) { saved = true }

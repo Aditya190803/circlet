@@ -80,12 +80,12 @@ fun PrimaryButton(
                 },
             )
             .clickable(enabled = active, role = Role.Button, onClick = onClick)
-            .padding(vertical = 14.dp, horizontal = 12.dp),
+            .padding(vertical = 12.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text,
-            style = label(13.sp, if (enabled) Palette.BgBottom else Palette.Faint),
+            style = label(15.sp, if (enabled) Palette.BgBottom else Palette.Faint),
             textAlign = TextAlign.Center,
             modifier = Modifier.alpha(if (loading) breath else 1f),
         )
@@ -108,13 +108,13 @@ fun SecondaryButton(
             .clip(Shapes.control)
             .background(Palette.CardLine)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(vertical = 14.dp, horizontal = 12.dp),
+            .padding(vertical = 12.dp, horizontal = 12.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val tint = if (enabled) Palette.White else Palette.Faint
         if (glyph != null) Icon(glyph, tint, 18.dp, Modifier.padding(end = 8.dp))
-        Text(text, style = label(13.sp, tint), textAlign = TextAlign.Center)
+        Text(text, style = label(15.sp, tint), textAlign = TextAlign.Center)
     }
 }
 
@@ -134,7 +134,7 @@ fun QuietButton(
             .clip(Shapes.control)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(text, style = label(12.sp, if (enabled) color else Palette.Faint), textAlign = TextAlign.Center) }
+    ) { Text(text, style = label(14.sp, if (enabled) color else Palette.Faint), textAlign = TextAlign.Center) }
 }
 
 /** The compact filled button at the end of a row, such as ALLOW. */
@@ -148,11 +148,11 @@ fun SmallButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     ) {
         Text(
             text,
-            style = label(12.sp, if (enabled) Palette.BgBottom else Palette.Faint),
+            style = label(14.sp, if (enabled) Palette.BgBottom else Palette.Faint),
             modifier = Modifier
                 .clip(Shapes.chip)
                 .background(if (enabled) Palette.White else Palette.CardLine)
-                .padding(horizontal = 14.dp, vertical = 11.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }
 }
@@ -173,7 +173,7 @@ fun Segmented(
             .alpha(if (enabled) 1f else 0.5f)
             .clip(Shapes.control)
             .background(Palette.CardLine)
-            .padding(3.dp),
+            .padding(4.dp),
     ) {
         options.forEachIndexed { index, option ->
             val on = index == selected
@@ -182,11 +182,11 @@ fun Segmented(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(Shapes.chip)
+                    .clip(Shapes.tile)
                     .background(fill)
                     .selectable(selected = on, enabled = enabled, role = Role.RadioButton) { onSelect(index) },
                 contentAlignment = Alignment.Center,
-            ) { Text(option, style = label(12.sp, if (on) Palette.BgBottom else Palette.Dim), maxLines = 1) }
+            ) { Text(option, style = label(13.sp, if (on) Palette.BgBottom else Palette.Dim), maxLines = 1) }
         }
     }
 }
@@ -211,12 +211,12 @@ fun Chip(
             Modifier
                 .clip(Shapes.pill)
                 .then(if (selected) Modifier.background(Palette.White) else Modifier.border(1.dp, Palette.Ghost, Shapes.pill))
-                .padding(horizontal = 14.dp, vertical = 9.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val tint = if (selected) Palette.BgBottom else Palette.Dim
-            if (glyph != null) Icon(glyph, tint, 16.dp, Modifier.padding(end = 6.dp))
-            Text(text, style = label(12.sp, tint))
+            if (glyph != null) Icon(glyph, tint, 16.dp, Modifier.padding(end = 8.dp))
+            Text(text, style = label(13.sp, tint))
         }
     }
 }
@@ -353,7 +353,7 @@ fun Sheet(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope
     ) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp)) {
             Text(title, style = title(22.sp))
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             content()
         }
     }
@@ -415,7 +415,7 @@ fun MessageBar(text: String, modifier: Modifier = Modifier) {
             .clip(Shapes.control)
             .background(Palette.CardRaised)
             .border(1.dp, Palette.CardLine, Shapes.control)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
     ) { Text(text, style = body(14.sp, Palette.White)) }
 }

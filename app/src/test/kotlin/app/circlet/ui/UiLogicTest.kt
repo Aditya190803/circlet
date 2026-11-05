@@ -66,9 +66,9 @@ class UiLogicTest {
         assertEquals(true, SyncProgress(0, draining = false, lastOutcome = app.circlet.core.SyncOutcome.DISCONNECTED).stalled())
         assertEquals(false, SyncProgress(0, draining = true, lastOutcome = app.circlet.core.SyncOutcome.STALLED).stalled())
         assertEquals(false, SyncProgress(0, draining = false, lastOutcome = app.circlet.core.SyncOutcome.ACK_FAILED).stalled())
-        assertEquals("SYNCING · STARTING", syncProgressLabel(SyncProgress(0, draining = true)))
-        assertEquals("SYNCING · 30 SEC RECEIVED", syncProgressLabel(SyncProgress(0, draining = true, samplesBuffered = 30)))
-        assertEquals("SYNCING · 1 MIN RECEIVED", syncProgressLabel(SyncProgress(60, draining = true)))
+        assertEquals("Syncing · starting", syncProgressLabel(SyncProgress(0, draining = true)))
+        assertEquals("Syncing · 30 sec received", syncProgressLabel(SyncProgress(0, draining = true, samplesBuffered = 30)))
+        assertEquals("Syncing · 1 min received", syncProgressLabel(SyncProgress(60, draining = true)))
     }
 
     @Test

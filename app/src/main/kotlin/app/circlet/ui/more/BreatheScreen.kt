@@ -45,14 +45,14 @@ fun BreatheScreen(onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("BREATHE", onBack = onBack)
+        DetailHeader("Breathe", onBack = onBack)
         ScreenColumn {
             if (ui.running) {
                 Session(ui)
-                PrimaryButton("STOP", danger = true, onClick = vm::stop)
+                PrimaryButton("Stop", danger = true, onClick = vm::stop)
             } else {
                 if (ui.finished) Summary(ui)
-                Card("PACE") {
+                Card("Pace") {
                     Segmented(
                         options = BREATHE_PACES.map { "%.1f".format(it).removeSuffix(".0") },
                         selected = ui.paceIndex,
@@ -61,19 +61,19 @@ fun BreatheScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(Space.sm))
                     Text("Breaths per minute", style = body(12.sp, Palette.Faint))
                 }
-                Card("LENGTH") {
+                Card("Length") {
                     Segmented(
-                        options = BREATHE_MINUTES.map { "$it MIN" },
+                        options = BREATHE_MINUTES.map { "$it min" },
                         selected = ui.lengthIndex,
                         onSelect = vm::setLength,
                     )
                 }
-                Card("STRAP") {
+                Card("Strap") {
                     Toggle(ui.buzz, "Buzz the strap when the breath changes", onChange = vm::setBuzz)
                     Spacer(Modifier.height(Space.sm))
                     Text("Buzz on each change between in and out.", style = body(12.sp, Palette.Faint))
                 }
-                PrimaryButton("START", onClick = vm::start)
+                PrimaryButton("Start", onClick = vm::start)
             }
         }
     }
@@ -90,17 +90,17 @@ private fun Session(ui: BreatheUi) {
                 drawCircle(Palette.Teal.copy(alpha = 0.55f), radius = full * (0.3f + 0.7f * phase.fill))
             }
             Text(
-                if (phase.inhaling) "BREATHE IN" else "BREATHE OUT",
+                if (phase.inhaling) "Breathe in" else "Breathe out",
                 style = label(18.sp, Palette.White),
                 textAlign = TextAlign.Center,
             )
         }
         Spacer(Modifier.height(Space.sm))
         Text(formatRemaining(ui.remainingMs), style = number(40.sp), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-        Text("REMAINING", style = label(12.sp), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+        Text("Remaining", style = label(12.sp), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         Spacer(Modifier.height(Space.sm))
         Text(
-            ui.bpm?.let { "$it BPM" } ?: "-- BPM",
+            ui.bpm?.let { "$it bpm" } ?: "-- bpm",
             style = number(24.sp, Palette.Teal),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
@@ -110,7 +110,7 @@ private fun Session(ui: BreatheUi) {
 
 @Composable
 private fun Summary(ui: BreatheUi) {
-    Card("DONE") {
+    Card("Done") {
         Text(
             if (ui.startBpm != null && ui.bpm != null) {
                 "Heart rate went from ${ui.startBpm} to ${ui.bpm} BPM."

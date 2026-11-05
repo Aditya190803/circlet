@@ -94,29 +94,29 @@ fun SleepEditSheets(editor: SleepEditor, day: DaySummary, date: LocalDate) {
         var bed by remember { mutableStateOf(initial.first) }
         var wake by remember { mutableStateOf(initial.second) }
         val problem = rejectedSleepWindow(bed, wake, now)
-        Sheet(title = if (sleep != null) "EDIT SLEEP" else "ADD SLEEP", onDismiss = { editor.editing = false }) {
-            TimeStepper("BED", bed, null, format) { bed = it }
+        Sheet(title = if (sleep != null) "Edit sleep" else "Add sleep", onDismiss = { editor.editing = false }) {
+            TimeStepper("Bed", bed, null, format) { bed = it }
             Spacer(Modifier.height(Space.md))
-            TimeStepper("WAKE", wake, bed, format) { wake = it }
+            TimeStepper("Wake", wake, bed, format) { wake = it }
             Spacer(Modifier.height(Space.md))
             if (problem == null) {
-                Text("IN BED  ${minutesWords(Duration.between(bed, wake).toMinutes())}", style = label(12.sp, Palette.Dim))
+                Text("In bed  ${minutesWords(Duration.between(bed, wake).toMinutes())}", style = label(12.sp, Palette.Dim))
             } else {
                 Text(problem, style = body(14.sp, Palette.Warn))
             }
             Spacer(Modifier.height(Space.md))
-            PrimaryButton("SAVE", enabled = problem == null) {
+            PrimaryButton("Save", enabled = problem == null) {
                 editor.editing = false
                 save(edit.withWindow(bed, wake))
             }
             if (edit.changesMain) {
-                QuietButton("USE DETECTED SLEEP") {
+                QuietButton("Use detected sleep") {
                     editor.editing = false
                     save(edit.withDetectedMain())
                 }
             }
             if (sleep != null) {
-                QuietButton("REMOVE SLEEP", Palette.Danger) {
+                QuietButton("Remove sleep", Palette.Danger) {
                     editor.editing = false
                     editor.removing = true
                 }
@@ -125,18 +125,18 @@ fun SleepEditSheets(editor: SleepEditor, day: DaySummary, date: LocalDate) {
     }
 
     if (editor.removing) {
-        Sheet(title = "REMOVE THIS SLEEP?", onDismiss = { editor.removing = false }) {
+        Sheet(title = "Remove this sleep?", onDismiss = { editor.removing = false }) {
             Text(
                 "This night will count as no sleep. Recovery and the other figures worked out from it are scored again without it. You can bring the detected sleep back later.",
                 style = body(14.sp, Palette.Dim),
             )
             Spacer(Modifier.height(Space.md))
-            PrimaryButton("REMOVE SLEEP", danger = true) {
+            PrimaryButton("Remove sleep", danger = true) {
                 editor.removing = false
                 save(edit.withMainRemoved())
             }
             Spacer(Modifier.height(Space.xs))
-            SecondaryButton("KEEP SLEEP") { editor.removing = false }
+            SecondaryButton("Keep sleep") { editor.removing = false }
         }
     }
 }
@@ -146,7 +146,7 @@ fun SleepEditSheets(editor: SleepEditor, day: DaySummary, date: LocalDate) {
 fun RestoreSleepButton(date: LocalDate) {
     val edit = rememberSleepEdit(date)
     val save = rememberSleepEditSaver(date)
-    if (edit.changesMain) QuietButton("USE DETECTED SLEEP") { save(edit.withDetectedMain()) }
+    if (edit.changesMain) QuietButton("Use detected sleep") { save(edit.withDetectedMain()) }
 }
 
 /** Detected naps, each with a REJECT button, and the rejected ones with KEEP. Draws nothing on a day with neither. */
@@ -157,19 +157,19 @@ fun NapsCard(day: DaySummary, date: LocalDate) {
     val save = rememberSleepEditSaver(date)
     val rejected = edit?.rejectedNaps.orEmpty().sorted()
     if (day.naps.isEmpty() && rejected.isEmpty()) return
-    Card("NAPS") {
+    Card("Naps") {
         day.naps.forEachIndexed { i, nap ->
             if (i > 0) Divider()
             NapRow(
-                content = { TileRow(nap.timeAsleep.hoursMinutes(), Palette.Sleep, "NAP", format.range(nap.start, nap.end)) },
-                action = "REJECT",
+                content = { TileRow(nap.timeAsleep.hoursMinutes(), Palette.Sleep, "Nap", format.range(nap.start, nap.end)) },
+                action = "Reject",
             ) { save(edit.withNap(nap.start, counted = false)) }
         }
         rejected.forEachIndexed { i, start ->
             if (i > 0 || day.naps.isNotEmpty()) Divider()
             NapRow(
-                content = { TileRow(null, Palette.Sleep, "NAP", "${format.time(start)} · NOT COUNTED") },
-                action = "KEEP",
+                content = { TileRow(null, Palette.Sleep, "Nap", "${format.time(start)} · not counted") },
+                action = "Keep",
             ) { save(edit.withNap(start, counted = true)) }
         }
         if (rejected.isNotEmpty()) {

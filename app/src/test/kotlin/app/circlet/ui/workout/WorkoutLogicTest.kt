@@ -106,17 +106,17 @@ class WorkoutLogicTest {
 
     @Test
     fun durationUnderAnHourShowsMinutes() {
-        assertEquals("42 MIN", durationText(at(0), at(42)))
+        assertEquals("42 min", durationText(at(0), at(42)))
     }
 
     @Test
     fun durationFromAnHourPadsMinutes() {
-        assertEquals("1 H 05 MIN", durationText(at(0), at(65)))
+        assertEquals("1 h 05 min", durationText(at(0), at(65)))
     }
 
     @Test
     fun reversedDurationReadsAsZero() {
-        assertEquals("0 MIN", durationText(at(30), at(0)))
+        assertEquals("0 min", durationText(at(30), at(0)))
     }
 
     @Test

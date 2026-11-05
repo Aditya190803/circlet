@@ -59,7 +59,7 @@ fun ProfileScreen(
     var saved by remember { mutableStateOf(false) }
     val parsed = draft.toProfile(profile, unit, today)
     Column(Modifier.fillMaxSize().imePadding()) {
-        DetailHeader("PROFILE", onBack = onBack)
+        DetailHeader("Profile", onBack = onBack)
         ScreenColumn {
             Card {
                 ProfileFields(draft, unit, showMaxHeartRate = true) { saved = false }
@@ -70,10 +70,10 @@ fun ProfileScreen(
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
             if (error != null) Text(error, style = body(13.sp, Palette.Warn), modifier = Modifier.padding(horizontal = 4.dp))
-            PrimaryButton(if (saved) "SAVED" else "SAVE PROFILE", enabled = !saved && parsed != null) {
+            PrimaryButton(if (saved) "Saved" else "Save profile", enabled = !saved && parsed != null) {
                 parsed?.let { onSave(it) { saved = true } }
             }
-            SecondaryButton("HEART RATE ZONES", onClick = onZones)
+            SecondaryButton("Heart rate zones", onClick = onZones)
         }
     }
 }
@@ -81,15 +81,15 @@ fun ProfileScreen(
 @Composable
 fun UnitsScreen(settings: UserSettings, onChange: (UserSettings) -> Unit, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("UNITS", onBack = onBack)
+        DetailHeader("Units", onBack = onBack)
         ScreenColumn {
-            Card("WEIGHT") {
+            Card("Weight") {
                 val units = listOf(MassUnit.KILOGRAM, MassUnit.POUND)
-                Segmented(listOf("KILOGRAMS", "POUNDS"), units.indexOf(settings.mass)) { onChange(settings.copy(mass = units[it])) }
+                Segmented(listOf("Kilograms", "Pounds"), units.indexOf(settings.mass)) { onChange(settings.copy(mass = units[it])) }
             }
-            Card("CLOCK") {
+            Card("Clock") {
                 val styles = listOf(ClockStyle.MATCH_SYSTEM, ClockStyle.H12, ClockStyle.H24)
-                Segmented(listOf("MATCH PHONE", "12-HOUR", "24-HOUR"), styles.indexOf(settings.clock)) { onChange(settings.copy(clock = styles[it])) }
+                Segmented(listOf("Match phone", "12-hour", "24-hour"), styles.indexOf(settings.clock)) { onChange(settings.copy(clock = styles[it])) }
                 Spacer(Modifier.height(10.dp))
                 Text("Times across the app follow this, including charts.", style = body(13.sp, Palette.Faint))
             }
@@ -108,7 +108,7 @@ fun PairScreen(
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("PAIR A STRAP", onBack = onBack)
+        DetailHeader("Pair a strap", onBack = onBack)
         ScreenColumn {
             Text(
                 "Remove the strap from the official app and from Android Bluetooth settings first. Then keep it within arm's reach and pick it below.",
@@ -164,17 +164,17 @@ fun parseNotice(markdown: String): List<NoticeSection> {
 @Composable
 fun AboutScreen(version: String, notice: String?, noticeMissing: Boolean, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("ABOUT", onBack = onBack)
+        DetailHeader("About", onBack = onBack)
         ScreenColumn {
-            Card("CIRCLET") {
-                StatRow("VERSION", version)
+            Card("Circlet") {
+                StatRow("Version", version)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "A local companion for WHOOP 4.0 and WHOOP 5.0 / MG straps. It is not made by, or affiliated with, WHOOP.",
                     style = body(14.sp),
                 )
             }
-            Card("HOW SCORES ARE MADE") {
+            Card("How scores are made") {
                 Text(
                     "Sleep, recovery and strain are calculated on this phone from the heart rate, beat-to-beat and movement data your strap records. " +
                         "A number that cannot be supported is left empty with the reason. " +
@@ -182,7 +182,7 @@ fun AboutScreen(version: String, notice: String?, noticeMissing: Boolean, onBack
                     style = body(14.sp),
                 )
             }
-            Card("PRIVACY") {
+            Card("Privacy") {
                 Text(
                     "Your history is stored on this phone. If you connect your personal Firebase account, Circlet backs it up there over HTTPS, and your database rules restrict access to your signed-in account. Nothing else leaves the phone.",
                     style = body(14.sp),
@@ -190,13 +190,13 @@ fun AboutScreen(version: String, notice: String?, noticeMissing: Boolean, onBack
             }
             when {
                 noticeMissing -> ErrorState("The licence text is missing from this build.")
-                notice == null -> Card("LICENCES") {
+                notice == null -> Card("Licences") {
                     Skeleton(Modifier.fillMaxWidth().height(14.dp))
                     Spacer(Modifier.height(10.dp))
                     Skeleton(Modifier.fillMaxWidth(0.7f).height(14.dp))
                 }
                 else -> for (section in remember(notice) { parseNotice(notice) }) {
-                    Card(section.heading?.uppercase() ?: "LICENCES") {
+                    Card(section.heading ?: "Licences") {
                         section.blocks.forEachIndexed { i, block ->
                             if (i > 0) Spacer(Modifier.height(10.dp))
                             if (block.fenced) {

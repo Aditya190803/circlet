@@ -112,7 +112,7 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
             val saved = withContext(Dispatchers.IO) {
                 runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(gpx.toByteArray()) } }.isSuccess
             }
-            messenger.show(if (saved) "GPX SAVED" else "The GPX file could not be saved.")
+            messenger.show(if (saved) "GPX saved" else "The GPX file could not be saved.")
         }
     }
     LaunchedEffect(activityId, date) { vm.open(activityId, date) }
@@ -120,10 +120,10 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
     LaunchedEffect(vm) { vm.deleted.collect { onBack() } }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("WORKOUT", subtitle = dateTitle(date, today), onBack = onBack)
+        DetailHeader("Workout", subtitle = dateTitle(date, today), onBack = onBack)
         ScreenColumn {
             when (val current = state) {
-                Loadable.Loading -> Card("ACTIVITY") {
+                Loadable.Loading -> Card("Activity") {
                     Skeleton(Modifier.fillMaxWidth().height(14.dp))
                     Spacer(Modifier.height(10.dp))
                     Skeleton(Modifier.fillMaxWidth(0.6f).height(14.dp))
@@ -142,16 +142,16 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
                 }
             }
             if (ready != null) {
-                SecondaryButton("CHANGE SPORT") { changingSport = true }
-                SecondaryButton("EDIT TIME") { editingTime = true }
-                SecondaryButton("DELETE ACTIVITY") { confirming = true }
+                SecondaryButton("Change sport") { changingSport = true }
+                SecondaryButton("Edit time") { editingTime = true }
+                SecondaryButton("Delete activity") { confirming = true }
             }
         }
     }
 
     if (changingSport && ready != null) {
         var query by remember { mutableStateOf("") }
-        Sheet(title = "CHANGE SPORT", onDismiss = { changingSport = false }) {
+        Sheet(title = "Change sport", onDismiss = { changingSport = false }) {
             TextEntry(query, "Sport", placeholder = "Search sports") { query = it }
             Spacer(Modifier.height(Space.xs))
             filterSports(query).forEach { pick ->
@@ -173,18 +173,18 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
         var startAt by remember { mutableStateOf(ready.start.truncatedTo(ChronoUnit.MINUTES)) }
         var endAt by remember { mutableStateOf(ready.end.truncatedTo(ChronoUnit.MINUTES)) }
         val problem = timeProblem(startAt, endAt, now)
-        Sheet(title = "EDIT TIME", onDismiss = { editingTime = false }) {
-            TimeStepper("START", startAt, null, format) { startAt = it }
+        Sheet(title = "Edit time", onDismiss = { editingTime = false }) {
+            TimeStepper("Start", startAt, null, format) { startAt = it }
             Spacer(Modifier.height(Space.md))
-            TimeStepper("END", endAt, startAt, format) { endAt = it }
+            TimeStepper("End", endAt, startAt, format) { endAt = it }
             Spacer(Modifier.height(Space.md))
             if (problem == null) {
-                Text("DURATION  ${minutesWords(Duration.between(startAt, endAt).toMinutes())}", style = label(12.sp, Palette.Dim))
+                Text("Duration  ${minutesWords(Duration.between(startAt, endAt).toMinutes())}", style = label(12.sp, Palette.Dim))
             } else {
                 Text(problem.sentence(), style = body(14.sp, Palette.Warn))
             }
             Spacer(Modifier.height(Space.md))
-            PrimaryButton("SAVE", enabled = problem == null) {
+            PrimaryButton("Save", enabled = problem == null) {
                 editingTime = false
                 scope.launch {
                     when (val result = AppContainer.get(context).workouts.edit(ready.copy(start = startAt, end = endAt))) {
@@ -197,18 +197,18 @@ fun ActivityDetailScreen(activityId: String, date: LocalDate, onBack: () -> Unit
     }
 
     if (confirming) {
-        Sheet(title = "DELETE THIS ACTIVITY?", onDismiss = { confirming = false }) {
+        Sheet(title = "Delete this activity?", onDismiss = { confirming = false }) {
             Text(
                 "The activity and its recorded heart rate and strain will be removed. This cannot be undone.",
                 style = body(14.sp, Palette.Dim),
             )
             Spacer(Modifier.height(Space.md))
-            PrimaryButton("DELETE", danger = true) {
+            PrimaryButton("Delete", danger = true) {
                 confirming = false
                 vm.delete()
             }
             Spacer(Modifier.height(Space.xs))
-            SecondaryButton("KEEP ACTIVITY") { confirming = false }
+            SecondaryButton("Keep activity") { confirming = false }
         }
     }
 }
@@ -219,12 +219,12 @@ private fun RouteCard(activity: Activity, points: List<RoutePoint>, onExport: ()
     val kind = activity.sport.routeKind()
     val moving = Duration.between(activity.start, activity.end).seconds - activity.pausedSeconds
     val pace = kind?.let { RoutePace.of(it, metres, moving) }
-    Card("ROUTE") {
+    Card("Route") {
         Row(Modifier.fillMaxWidth()) {
-            Figure(value = distanceKm(metres), caption = "DISTANCE KM", modifier = Modifier.weight(1f))
+            Figure(value = distanceKm(metres), caption = "Distance km", modifier = Modifier.weight(1f))
             Figure(
                 value = pace?.value,
-                caption = if (kind == RouteKind.CYCLING) "AVG KM/H" else "AVG MIN/KM",
+                caption = if (kind == RouteKind.CYCLING) "Avg km/h" else "Avg min/km",
                 alignEnd = true,
                 modifier = Modifier.weight(1f),
             )
@@ -232,14 +232,14 @@ private fun RouteCard(activity: Activity, points: List<RoutePoint>, onExport: ()
         Spacer(Modifier.height(Space.sm))
         RouteTrack(points)
         Spacer(Modifier.height(Space.sm))
-        SecondaryButton("EXPORT GPX", onClick = onExport)
+        SecondaryButton("Export GPX", onClick = onExport)
     }
 }
 
 @Composable
 private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: TimeFormat) {
     HeroDial(
-        caption = "${activity.sport.label().uppercase()} STRAIN",
+        caption = "${activity.sport.label()} strain",
         glyph = activity.sport.glyph(),
         color = Palette.Strain,
         value = activity.strain.value?.decimal(),
@@ -251,19 +251,19 @@ private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: Time
         Row(Modifier.fillMaxWidth()) {
             Figure(
                 value = Duration.between(activity.start, activity.end).hoursMinutes(),
-                caption = "DURATION", modifier = Modifier.weight(1f),
+                caption = "Duration", modifier = Modifier.weight(1f),
             )
             Figure(
-                value = activity.calories.value?.grouped(), caption = "KCAL",
+                value = activity.calories.value?.grouped(), caption = "kcal",
                 absent = activity.calories.absentReason, modifier = Modifier.weight(1f),
             )
             Figure(
-                value = activity.averageHeartRateBpm.value?.toString(), caption = "AVG BPM",
+                value = activity.averageHeartRateBpm.value?.toString(), caption = "Avg bpm",
                 absent = activity.averageHeartRateBpm.absentReason, alignEnd = true, modifier = Modifier.weight(1f),
             )
         }
     }
-    Card("HEART RATE") {
+    Card("Heart rate") {
         if (heartRate.count { it != null } >= 2) {
             WorkoutHeartChart(heartRate)
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -272,16 +272,16 @@ private fun ActivityBody(activity: Activity, heartRate: List<Int?>, format: Time
             }
             Spacer(Modifier.height(8.dp))
         }
-        StatRow("AVERAGE", activity.averageHeartRateBpm.value?.toString(), "BPM", absent = activity.averageHeartRateBpm.absentReason)
+        StatRow("Average", activity.averageHeartRateBpm.value?.toString(), "bpm", absent = activity.averageHeartRateBpm.absentReason)
         Divider()
-        StatRow("MAX", activity.maxHeartRateBpm.value?.toString(), "BPM", absent = activity.maxHeartRateBpm.absentReason)
+        StatRow("Max", activity.maxHeartRateBpm.value?.toString(), "bpm", absent = activity.maxHeartRateBpm.absentReason)
         // A null recovery means the minute after the activity was not sampled.
         activity.heartRateRecovery?.dropBpm?.value?.let { drop ->
             Divider()
-            StatRow("DROP IN THE MINUTE AFTER", drop.toString(), "BPM")
+            StatRow("Drop in the minute after", drop.toString(), "bpm")
         }
     }
-    Card("TIME IN ZONES") {
+    Card("Time in zones") {
         ZoneBars(activity.zoneMinutes)
     }
 }
@@ -318,7 +318,7 @@ private fun WorkoutHeartChart(minutes: List<Int?>) {
 }
 
 private fun source(activity: Activity): String =
-    if (activity.source == ActivitySource.AUTO) "DETECTED" else "LOGGED"
+    if (activity.source == ActivitySource.AUTO) "Detected" else "Logged"
 
 /**
  * One clock time with buttons that move it by one or ten minutes.
@@ -345,4 +345,4 @@ internal fun TimeStepper(title: String, at: Instant, dayOf: Instant?, format: Ti
     }
 }
 
-private fun dayLabel(day: LocalDate): String = day.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US)).uppercase()
+private fun dayLabel(day: LocalDate): String = day.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US))

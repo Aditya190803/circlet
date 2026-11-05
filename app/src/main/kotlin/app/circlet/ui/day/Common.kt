@@ -126,7 +126,7 @@ fun TopBar(
         ) {
             BatteryGlyph(if (connected) percent else null, tint)
             Text(
-                if (connected) percent?.let { "$it%" } ?: "" else "OFF",
+                if (connected) percent?.let { "$it%" } ?: "" else "Off",
                 style = label(10.sp, tint),
                 modifier = Modifier.padding(top = 3.dp),
             )

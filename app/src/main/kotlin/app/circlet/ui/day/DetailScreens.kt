@@ -130,7 +130,7 @@ private fun <T : Any> DayUiState.typical(pick: (DaySummary) -> T?, format: (Doub
 fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
     val editor = remember(state.date) { SleepEditor() }
     DetailFrame(
-        "SLEEP", state, onBack, onRetry, "SLEEP PERFORMANCE",
+        "Sleep", state, onBack, onRetry, "Sleep performance",
         action = { day ->
             if (day.sleep.value != null) IconButton(Glyph.Edit, "Edit sleep", Palette.Dim) { editor.editing = true }
         },
@@ -140,7 +140,7 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
         val performance = day.sleepPerformance.percent
         val percent = performance.value
         HeroDial(
-            "SLEEP PERFORMANCE", Glyph.Moon, Palette.Sleep, percent?.toString(), "%", percent?.div(100f),
+            "Sleep performance", Glyph.Moon, Palette.Sleep, percent?.toString(), "%", percent?.div(100f),
             when {
                 percent == null && (day.sleep.absentReason ?: performance.absentReason) == AbsentReason.NO_SLEEP ->
                     "No sleep found for this day. Wear the strap overnight and it shows here after the morning sync."
@@ -154,21 +154,21 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
         if (sleep != null) {
             NightCard(sleep)
         } else {
-            Card("SLEEP STAGES") {
-                EmptyState(Glyph.Moon, "NO SLEEP RECORDED", "Stages draw here after a night with the strap on, or add the night yourself.")
+            Card("Sleep stages") {
+                EmptyState(Glyph.Moon, "No sleep recorded", "Stages draw here after a night with the strap on, or add the night yourself.")
                 Spacer(Modifier.height(Space.sm))
-                SecondaryButton("ADD SLEEP", glyph = Glyph.Plus) { editor.editing = true }
+                SecondaryButton("Add sleep", glyph = Glyph.Plus) { editor.editing = true }
                 RestoreSleepButton(state.date)
             }
         }
-        Card("HOURS VS. NEEDED") {
+        Card("Hours vs. needed") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Figure(
-                    sleep?.timeAsleep?.hoursMinutes(), "ASLEEP",
+                    sleep?.timeAsleep?.hoursMinutes(), "Asleep",
                     absent = day.sleep.absentReason, modifier = Modifier.weight(1f),
                 )
                 Figure(
-                    day.sleepNeed.duration.value?.hoursMinutes(), if (sleep != null) "NEEDED" else "NEEDED TONIGHT", Palette.Sleep,
+                    day.sleepNeed.duration.value?.hoursMinutes(), if (sleep != null) "Needed" else "Needed tonight", Palette.Sleep,
                     absent = day.sleepNeed.duration.absentReason, alignEnd = true,
                     modifier = Modifier.weight(1f),
                 )
@@ -180,41 +180,41 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             val bedtime = day.sleepNeed.recommendedBedtime?.takeIf { state.isToday }
             if (debt != null || bedtime != null) {
                 Divider()
-                if (bedtime != null) StatRow("BED BY", format.time(bedtime), note = "To meet tonight's need")
-                if (debt != null) StatRow("SLEEP DEBT", debt.hoursMinutes())
+                if (bedtime != null) StatRow("Bed by", format.time(bedtime), note = "To meet tonight's need")
+                if (debt != null) StatRow("Sleep debt", debt.hoursMinutes())
             }
         }
         if (sleep != null) {
-            Card("SLEEP STATISTICS") {
+            Card("Sleep statistics") {
                 Row(Modifier.fillMaxWidth()) {
-                    StatCell("TIME IN BED", sleep.timeInBed.hoursMinutes(), modifier = Modifier.weight(1f))
+                    StatCell("Time in bed", sleep.timeInBed.hoursMinutes(), modifier = Modifier.weight(1f))
                     StatCell(
-                        "EFFICIENCY", sleep.efficiency.value?.toString(), "%",
+                        "Efficiency", sleep.efficiency.value?.toString(), "%",
                         absent = sleep.efficiency.absentReason, modifier = Modifier.weight(1f),
                     )
                 }
                 Row(Modifier.fillMaxWidth()) {
-                    StatCell("FELL ASLEEP IN", sleep.latency.toMinutes().toString(), "MIN", modifier = Modifier.weight(1f))
+                    StatCell("Fell asleep in", sleep.latency.toMinutes().toString(), "min", modifier = Modifier.weight(1f))
                     val awake = sleep.wakeEvents.sumOf { it.duration.toMinutes() }
                     StatCell(
-                        "WAKE EVENTS", sleep.wakeEvents.size.toString(), if (awake > 0) "· $awake MIN" else "",
+                        "Wake events", sleep.wakeEvents.size.toString(), if (awake > 0) "· $awake min" else "",
                         modifier = Modifier.weight(1f),
                     )
                 }
                 Row(Modifier.fillMaxWidth()) {
                     StatCell(
-                        "CONSISTENCY", day.sleepConsistency.index.value?.decimal(0), "%",
+                        "Consistency", day.sleepConsistency.index.value?.decimal(0), "%",
                         absent = day.sleepConsistency.index.absentReason, modifier = Modifier.weight(1f),
                     )
                     StatCell(
-                        "RESPIRATORY RATE", day.heart.respiratoryRate.breathsPerMinute.value?.decimal(), "RPM",
+                        "Respiratory rate", day.heart.respiratoryRate.breathsPerMinute.value?.decimal(), "rpm",
                         absent = day.heart.respiratoryRate.breathsPerMinute.absentReason, modifier = Modifier.weight(1f),
                     )
                 }
             }
         }
         NapsCard(day, state.date)
-        Card("LAST 7 DAYS") {
+        Card("Last 7 days") {
             val week = state.week
             WeekBars(
                 week.map { it.sleep.value?.timeAsleep?.toMinutes()?.toFloat() }, week.dayLabels(), 600f,
@@ -228,7 +228,7 @@ fun SleepScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
 /** The night itself: the scrubbable hypnogram over how its time split across the stages. */
 @Composable
 private fun NightCard(sleep: SleepSession) {
-    Card("SLEEP STAGES") {
+    Card("Sleep stages") {
         Hypnogram(sleep)
         Spacer(Modifier.height(18.dp))
         StageBreakdown(sleep)
@@ -237,12 +237,12 @@ private fun NightCard(sleep: SleepSession) {
 
 @Composable
 fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
-    DetailFrame("RECOVERY", state, onBack, onRetry, "RECOVERY") { day ->
+    DetailFrame("Recovery", state, onBack, onRetry, "Recovery") { day ->
         val recovery = day.recovery
         val score = recovery.score.value
         val calibrating = state.recoveryCalibrating
         HeroDial(
-            "RECOVERY", Glyph.Pulse, Palette.recovery(score), score?.toString(), "%", score?.div(100f),
+            "Recovery", Glyph.Pulse, Palette.recovery(score), score?.toString(), "%", score?.div(100f),
             when {
                 score == null && calibrating ->
                     "Circlet is still learning your baseline. Recovery is scored from your heart rate variability, resting heart rate and sleep once it has a few nights to compare against."
@@ -254,9 +254,9 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             },
         )
         if (calibrating) {
-            Card("BASELINE") {
+            Card("Baseline") {
                 StatRow(
-                    "NIGHTS", "${state.baselineNights} OF $BASELINE_NIGHTS",
+                    "Nights", "${state.baselineNights} of $BASELINE_NIGHTS",
                     note = if (state.baselineNightsLeft == 1) "1 more night" else "${state.baselineNightsLeft} more nights",
                 )
                 ProgressSteps(state.baselineNights, BASELINE_NIGHTS, Palette.Teal)
@@ -268,21 +268,21 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             }
         }
         DriversCard(recovery.drivers)
-        Card("RECOVERY STATISTICS") {
+        Card("Recovery statistics") {
             MetricRow(
-                "HRV", day.heart.hrv.rmssdMs, "MS",
+                "HRV", day.heart.hrv.rmssdMs, "ms",
                 note = state.typical({ it.heart.hrv.rmssdMs.value }, { it.decimal(0) }) { it },
             ) { it.decimal(0) }
             RangeBlock(day.references.forKind(MetricKind.HRV), day.heart.hrv.rmssdMs.value) { it.decimal(0) }
             Divider()
             MetricRow(
-                "RESTING HEART RATE", day.heart.resting.bpm, "BPM",
+                "Resting heart rate", day.heart.resting.bpm, "bpm",
                 note = state.typical({ it.heart.resting.bpm.value }, { it.decimal(0) }) { it.toDouble() },
             ) { it.toString() }
             RangeBlock(day.references.forKind(MetricKind.RESTING_HEART_RATE), day.heart.resting.bpm.value?.toDouble()) { it.decimal(0) }
             Divider()
             MetricRow(
-                "RESPIRATORY RATE", day.heart.respiratoryRate.breathsPerMinute, "RPM",
+                "Respiratory rate", day.heart.respiratoryRate.breathsPerMinute, "rpm",
                 note = state.typical({ it.heart.respiratoryRate.breathsPerMinute.value }, { it.decimal() }) { it },
             ) { it.decimal() }
             RangeBlock(
@@ -290,10 +290,10 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
                 day.heart.respiratoryRate.breathsPerMinute.value?.toDouble(),
             ) { it.decimal() }
             Divider()
-            MetricRow("SLEEP PERFORMANCE", day.sleepPerformance.percent, "%") { it.toString() }
+            MetricRow("Sleep performance", day.sleepPerformance.percent, "%") { it.toString() }
         }
-        Card("HRV IN DETAIL") {
-            MetricRow("SDNN", day.heart.hrv.sdnnMs, "MS") { it.decimal(0) }
+        Card("HRV in detail") {
+            MetricRow("SDNN", day.heart.hrv.sdnnMs, "ms") { it.decimal(0) }
             Divider()
             StatRow(
                 "LF / HF", day.heart.hrv.frequency?.lfHfRatio?.decimal(2),
@@ -301,7 +301,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
             )
         }
         SkinTemperatureCard(day.skinTemperature)
-        Card("LAST 7 DAYS") {
+        Card("Last 7 days") {
             val week = state.week
             WeekBars(
                 week.map { it.recovery.score.value?.toFloat() }, week.dayLabels(), 100f,
@@ -317,7 +317,7 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
  */
 @Composable
 private fun SkinTemperatureCard(skin: SkinTemperature?) {
-    Card("SKIN TEMPERATURE") {
+    Card("Skin temperature") {
         when {
             skin == null -> Text(
                 "Current body temperature is unavailable: the strap does not provide a verified reading in °C or °F through this connection. " +
@@ -325,7 +325,7 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
                 style = body(13.sp, Palette.Faint),
             )
             skin.importedCelsius != null -> {
-                StatRow("SKIN TEMPERATURE", skin.importedCelsius?.decimal(1), "°C")
+                StatRow("Skin temperature", skin.importedCelsius?.decimal(1), "°C")
                 Spacer(Modifier.height(6.dp))
                 Text("As scored by WHOOP, from your imported history.", style = body(12.sp, Palette.Faint))
             }
@@ -337,7 +337,7 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
             else -> {
                 val deviation = skin.deviation.value
                 StatRow(
-                    "DEVIATION", deviation?.signedDeviation(), "SD",
+                    "Deviation", deviation?.signedDeviation(), "SD",
                     color = if (skin.flag == SkinTempFlag.ELEVATED) Palette.Warn else Palette.White,
                     absent = if (deviation == null) skin.deviation.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
                 )
@@ -359,15 +359,15 @@ private fun SkinTemperatureCard(skin: SkinTemperature?) {
 
 private fun RecoveryDriverKind.label() = when (this) {
     RecoveryDriverKind.HRV -> "HRV"
-    RecoveryDriverKind.RESTING_HEART_RATE -> "RESTING HEART RATE"
-    RecoveryDriverKind.SLEEP -> "SLEEP"
-    RecoveryDriverKind.RESPIRATORY_RATE -> "RESPIRATORY RATE"
+    RecoveryDriverKind.RESTING_HEART_RATE -> "Resting heart rate"
+    RecoveryDriverKind.SLEEP -> "Sleep"
+    RecoveryDriverKind.RESPIRATORY_RATE -> "Respiratory rate"
 }
 
 /** The inputs behind the score, largest effect first, each as points added or taken. */
 @Composable
 fun DriversCard(drivers: List<RecoveryDriver>) {
-    Card("WHAT MOVED YOUR RECOVERY") {
+    Card("What moved your recovery") {
         val scale = drivers.mapNotNull { it.contribution }.maxOfOrNull { abs(it) }?.coerceAtLeast(5.0) ?: 5.0
         drivers.sortedByDescending { abs(it.contribution ?: -1.0) }.forEachIndexed { i, driver ->
             if (i > 0) Divider()
@@ -405,12 +405,12 @@ fun StrainScreen(
     onRetry: () -> Unit,
     onOpenActivity: (String) -> Unit = {},
 ) {
-    DetailFrame("STRAIN", state, onBack, onRetry, "DAY STRAIN") { day ->
+    DetailFrame("Strain", state, onBack, onRetry, "Day strain") { day ->
         val format = LocalTimeFormat.current
         val strain = day.strain.score.value
         val target = day.targetStrain.score
         HeroDial(
-            "DAY STRAIN", Glyph.Bolt, Palette.Strain, strain?.decimal(), "", strain?.div(21.0)?.toFloat(),
+            "Day strain", Glyph.Bolt, Palette.Strain, strain?.decimal(), "", strain?.div(21.0)?.toFloat(),
             when {
                 strain == null ->
                     "${(day.strain.score.absentReason ?: AbsentReason.NOT_ENOUGH_DATA).words()}. Strain runs from 0 to 21 and climbs as your heart works harder through the day."
@@ -421,11 +421,11 @@ fun StrainScreen(
             },
             marker = target.value?.div(21.0)?.toFloat(),
         )
-        Card(if (state.isToday) "TODAY'S TARGET" else "TARGET") {
+        Card(if (state.isToday) "Today's target" else "Target") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                Figure(strain?.decimal(), "DAY STRAIN", absent = day.strain.score.absentReason, modifier = Modifier.weight(1f))
+                Figure(strain?.decimal(), "Day strain", absent = day.strain.score.absentReason, modifier = Modifier.weight(1f))
                 Figure(
-                    target.value?.decimal(), "TARGET", Palette.Strain,
+                    target.value?.decimal(), "Target", Palette.Strain,
                     absent = target.absentReason, alignEnd = true, modifier = Modifier.weight(1f),
                 )
             }
@@ -440,30 +440,30 @@ fun StrainScreen(
                 )
             }
         }
-        Card("STRAIN STATISTICS") {
-            MetricRow("AVERAGE HEART RATE", day.heart.averageBpm, "BPM") { it.toString() }
+        Card("Strain statistics") {
+            MetricRow("Average heart rate", day.heart.averageBpm, "bpm") { it.toString() }
             Divider()
-            MetricRow("MAX HEART RATE", day.heart.maxBpm, "BPM") { it.toString() }
+            MetricRow("Max heart rate", day.heart.maxBpm, "bpm") { it.toString() }
             Divider()
-            MetricRow("CALORIES", day.calories, "KCAL") { it.grouped() }
+            MetricRow("Calories", day.calories, "kcal") { it.grouped() }
             Divider()
-            MetricRow("STEPS", day.steps.count, note = "Counted by this phone") { it.grouped() }
+            MetricRow("Steps", day.steps.count, note = "Counted by this phone") { it.grouped() }
         }
-        Card("FITNESS") {
-            MetricRow("VO2 MAX", day.vo2Max.mlPerKgMin, "ML/KG/MIN") { it.decimal() }
+        Card("Fitness") {
+            MetricRow("VO2 max", day.vo2Max.mlPerKgMin, "ml/kg/min") { it.decimal() }
             RangeBlock(day.references.forKind(MetricKind.VO2_MAX), day.vo2Max.mlPerKgMin.value, Palette.Strain) { it.decimal() }
         }
-        Card("HEART RATE ZONES") {
+        Card("Heart rate zones") {
             ZoneBars(day.strain.zoneMinutes.takeIf { strain != null })
         }
-        Card("ACTIVITIES") {
-            if (day.activities.isEmpty()) GhostRow(Glyph.Bolt, "ACTIVITY", "Logged after ten minutes of raised heart rate")
+        Card("Activities") {
+            if (day.activities.isEmpty()) GhostRow(Glyph.Bolt, "Activity", "Logged after ten minutes of raised heart rate")
             day.activities.forEachIndexed { i, activity ->
                 if (i > 0) Divider()
                 val heart = listOfNotNull(
-                    activity.averageHeartRateBpm.value?.let { "AVG $it" },
-                    activity.maxHeartRateBpm.value?.let { "MAX $it BPM" },
-                    activity.calories.value?.let { "${it.grouped()} KCAL" },
+                    activity.averageHeartRateBpm.value?.let { "Avg $it" },
+                    activity.maxHeartRateBpm.value?.let { "Max $it bpm" },
+                    activity.calories.value?.let { "${it.grouped()} kcal" },
                 )
                 TileRow(
                     activity.strain.value?.decimal(), Palette.Strain, activity.sport.label(),
@@ -473,7 +473,7 @@ fun StrainScreen(
                 )
             }
         }
-        Card("LAST 7 DAYS") {
+        Card("Last 7 days") {
             val week = state.week
             WeekBars(
                 week.map { it.strain.score.value?.toFloat() }, week.dayLabels(), 21f,

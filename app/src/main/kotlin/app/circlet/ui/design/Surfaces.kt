@@ -41,11 +41,11 @@ fun Card(
             .fillMaxWidth()
             .clip(Shapes.card)
             .background(Palette.Card)
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .padding(20.dp),
     ) {
         if (title != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = label(13.sp, Palette.White), modifier = Modifier.weight(1f))
+                Text(title, style = label(15.sp, Palette.White), modifier = Modifier.weight(1f))
                 trailing?.invoke()
             }
             Spacer(Modifier.height(12.dp))
@@ -95,7 +95,7 @@ fun Tag(text: String, color: Color = Palette.Faint) {
         style = label(9.sp, color),
         modifier = Modifier
             .border(1.dp, Palette.Ghost, Shapes.tile)
-            .padding(horizontal = 5.dp, vertical = 2.dp),
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
 
@@ -135,7 +135,7 @@ fun StatRow(
             if (under != null) {
                 val reason = value == null && absent != null && !loading
                 Text(
-                    if (reason) under else under.uppercase(),
+                    under,
                     style = if (reason) body(12.sp, Palette.Faint) else label(10.sp, Palette.Faint),
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -247,9 +247,9 @@ fun GhostRow(glyph: Glyph, title: String, text: String) {
                 .border(1.dp, Palette.Ghost, Shapes.tile),
             contentAlignment = Alignment.Center,
         ) { Icon(glyph, Palette.Faint, 18.dp) }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = label(13.sp, Palette.Dim))
+            Text(title, style = label(14.sp, Palette.Dim))
             Text(text, style = body(13.sp, Palette.Faint))
         }
     }
@@ -284,11 +284,11 @@ fun TileRow(
         ) {
             if (tile != null) Text(tile, style = number(17.sp, Palette.BgBottom)) else AbsentDash()
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (glyph != null) Icon(glyph, Palette.White, 16.dp, Modifier.padding(end = 6.dp))
-                Text(title, style = label(13.sp, Palette.White))
+                if (glyph != null) Icon(glyph, Palette.White, 16.dp, Modifier.padding(end = 8.dp))
+                Text(title, style = label(14.sp, Palette.White))
             }
             Text(subtitle, style = label(11.sp, Palette.Faint))
             if (detail != null) Text(detail, style = label(10.sp, Palette.Faint), modifier = Modifier.padding(top = 2.dp))
@@ -313,23 +313,23 @@ fun ListRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 60.dp)
+            .heightIn(min = 56.dp)
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
             .alpha(if (enabled) 1f else 0.5f)
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (glyph != null) {
-            Icon(glyph, Palette.White, 22.dp)
-            Spacer(Modifier.width(14.dp))
+            Icon(glyph, Palette.Dim, 20.dp)
+            Spacer(Modifier.width(16.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = title(17.sp))
+            Text(title, style = title(16.sp))
             if (subtitle != null) Text(subtitle, style = body(13.sp, Palette.Faint))
         }
-        if (value != null) Text(value, style = label(12.sp, valueColor), modifier = Modifier.padding(start = 10.dp))
+        if (value != null) Text(value, style = label(13.sp, valueColor), modifier = Modifier.padding(start = 12.dp))
         if (trailing != null) {
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(12.dp))
             trailing()
         } else if (onClick != null) {
             Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 6.dp))
@@ -353,7 +353,7 @@ fun NoticeCard(
 ) {
     Card {
         Row {
-            Icon(glyph, tint, 22.dp, Modifier.padding(top = 1.dp))
+            Icon(glyph, tint, 20.dp, Modifier.padding(top = 2.dp))
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(heading, style = title(18.sp))
@@ -362,11 +362,11 @@ fun NoticeCard(
             }
         }
         if (footer != null) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(16.dp))
             footer()
         }
         if (action != null) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(16.dp))
             PrimaryButton(action, onClick = onAction)
         }
     }
@@ -378,7 +378,7 @@ fun EmptyState(glyph: Glyph, heading: String, text: String, modifier: Modifier =
     Column(
         modifier
             .fillMaxWidth()
-            .padding(vertical = 14.dp),
+            .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -388,7 +388,7 @@ fun EmptyState(glyph: Glyph, heading: String, text: String, modifier: Modifier =
             contentAlignment = Alignment.Center,
         ) { Icon(glyph, Palette.Faint, 24.dp) }
         Spacer(Modifier.height(12.dp))
-        Text(heading, style = label(13.sp, Palette.Dim))
+        Text(heading, style = label(14.sp, Palette.Dim))
         Spacer(Modifier.height(4.dp))
         Text(text, style = body(13.sp, Palette.Faint), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
@@ -402,7 +402,7 @@ fun ErrorState(text: String, onRetry: (() -> Unit)? = null) {
         "Something went wrong",
         text,
         tint = Palette.Warn,
-        action = if (onRetry != null) "TRY AGAIN" else null,
+        action = if (onRetry != null) "Try again" else null,
         onAction = onRetry ?: {},
     )
 }

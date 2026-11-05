@@ -33,7 +33,7 @@ SOFTWARE.
 
 ## Barlow
 
-The Barlow typeface (medium, semibold, and bold) is included under the SIL Open
+The Barlow typeface (medium and semibold) is included under the SIL Open
 Font License, Version 1.1.
 
 ```

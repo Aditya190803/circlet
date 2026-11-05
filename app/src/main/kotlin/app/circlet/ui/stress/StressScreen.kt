@@ -43,15 +43,15 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         DetailHeader(
-            title = "STRESS",
-            subtitle = date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())).uppercase(),
+            title = "Stress",
+            subtitle = date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())),
             onBack = onBack,
         )
         ScreenColumn {
             when (val s = state) {
                 StressUiState.Loading -> {
-                    Card(title = "STRESS") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
-                    Card(title = "TIME IN BAND") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
+                    Card(title = "Stress") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
+                    Card(title = "Time in band") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
                 }
                 is StressUiState.Ready -> {
                     val score = s.score
@@ -59,9 +59,9 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
                     val bands = s.bands
                     val bandReason = if (bands == null) absentReason(score) else null
 
-                    Card(title = "STRESS") {
+                    Card(title = "Stress") {
                         HeroDial(
-                            caption = "DAY STRESS",
+                            caption = "Day stress",
                             glyph = Glyph.Stress,
                             color = if (value == null) Palette.Faint else Palette.stress(value),
                             value = value?.toInt()?.toString(),
@@ -75,25 +75,25 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
                         )
                     }
 
-                    Card(title = "TIME IN BAND") {
+                    Card(title = "Time in band") {
                         StatRow(
-                            name = "LOW",
+                            name = "Low",
                             value = bands?.low?.toString(),
-                            unit = "MIN",
+                            unit = "min",
                             color = Palette.StressLow,
                             absent = bandReason,
                         )
                         StatRow(
-                            name = "MEDIUM",
+                            name = "Medium",
                             value = bands?.medium?.toString(),
-                            unit = "MIN",
+                            unit = "min",
                             color = Palette.StressMid,
                             absent = bandReason,
                         )
                         StatRow(
-                            name = "HIGH",
+                            name = "High",
                             value = bands?.high?.toString(),
-                            unit = "MIN",
+                            unit = "min",
                             color = Palette.StressHigh,
                             absent = bandReason,
                         )
@@ -105,7 +105,7 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
                         }
                     }
 
-                    Card(title = "TIMELINE") {
+                    Card(title = "Timeline") {
                         StressTimeline(
                             points = s.timeline,
                             dayStart = s.dayStart,
@@ -113,7 +113,7 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
                         )
                     }
 
-                    Card(title = "THIS WEEK") {
+                    Card(title = "This week") {
                         WeekBars(
                             values = s.week.map { day -> day.stress.score.value?.toFloat() },
                             labels = s.week.dayLabels(),

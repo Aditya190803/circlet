@@ -35,22 +35,22 @@ fun earliestNext(alarms: List<StrapAlarm>, after: Instant, zone: ZoneId): Schedu
         .mapNotNull { alarm -> alarm.nextFire(after, zone)?.let { ScheduledAlarm(alarm, it) } }
         .minByOrNull { it.at }
 
-/** Three-letter weekday for a chip, such as "MON". */
+/** Three-letter weekday for a chip, such as "Mon". */
 fun shortDay(day: DayOfWeek, locale: Locale = Locale.getDefault()): String =
-    day.getDisplayName(TextStyle.SHORT, locale).uppercase()
+    day.getDisplayName(TextStyle.SHORT, locale)
 
-/** What the days of an alarm say: "NO DAYS", "EVERY DAY", "WEEKDAYS", "WEEKENDS", or the short names. */
+/** What the days of an alarm say: "No days", "Every day", "Weekdays", "Weekends", or the short names. */
 fun describeDays(days: Set<DayOfWeek>, locale: Locale = Locale.getDefault()): String = when {
-    days.isEmpty() -> "NO DAYS"
-    days.size == 7 -> "EVERY DAY"
-    days == WEEKDAYS -> "WEEKDAYS"
-    days == WEEKEND -> "WEEKENDS"
+    days.isEmpty() -> "No days"
+    days.size == 7 -> "Every day"
+    days == WEEKDAYS -> "Weekdays"
+    days == WEEKEND -> "Weekends"
     else -> WEEK_ORDER.filter { it in days }.joinToString(", ") { shortDay(it, locale) }
 }
 
 /** "06:30" in 24-hour mode, "6:30 AM" otherwise. Matches the clock used across the app. */
 fun formatAlarmTime(time: LocalTime, twentyFourHour: Boolean, locale: Locale = Locale.getDefault()): String =
-    time.format(DateTimeFormatter.ofPattern(if (twentyFourHour) "HH:mm" else "h:mm a", locale)).uppercase()
+    time.format(DateTimeFormatter.ofPattern(if (twentyFourHour) "HH:mm" else "h:mm a", locale))
 
 /** The hour as the stepper shows it: 0-23 in 24-hour mode, 1-12 otherwise. */
 fun displayHour(hour24: Int, twentyFourHour: Boolean): Int = when {
@@ -84,6 +84,6 @@ fun smartWakeLine(option: Int): String = when (option) {
 /** Short caption for a list row, empty when smart wake is off. */
 fun smartWakeCaption(window: Duration): String = when (smartWakeOption(window)) {
     0 -> ""
-    1 -> "SMART WAKE 15 MIN"
-    else -> "SMART WAKE 30 MIN"
+    1 -> "Smart wake 15 min"
+    else -> "Smart wake 30 min"
 }

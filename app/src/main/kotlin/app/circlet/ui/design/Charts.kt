@@ -158,17 +158,17 @@ fun HeartRateChart(
         Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
             if (bucket != null) {
                 val readings = bucket.mapNotNull { minutes[it] }
-                Text("${readings.average().roundToInt()} BPM", style = number(14.sp, Palette.White))
+                Text("${readings.average().roundToInt()} bpm", style = number(14.sp, Palette.White))
                 Text(
                     "  ${minuteLabel(bucket.first, twentyFourHour)}",
                     style = label(11.sp, Palette.Dim),
                 )
                 Spacer(Modifier.weight(1f))
-                Text("RANGE ${readings.min()}–${readings.max()}", style = label(10.sp, Palette.Faint))
+                Text("Range ${readings.min()}–${readings.max()}", style = label(10.sp, Palette.Faint))
             } else if (valid.isNotEmpty() && !loading) {
-                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Ghost))
+                Text("Hold and drag to read", style = label(10.sp, Palette.Ghost))
                 Spacer(Modifier.weight(1f))
-                Text("DAY RANGE ${valid.min()}–${valid.max()}", style = label(10.sp, Palette.Faint))
+                Text("Day range ${valid.min()}–${valid.max()}", style = label(10.sp, Palette.Faint))
             }
         }
         Box(contentAlignment = Alignment.Center) {
@@ -266,7 +266,7 @@ fun Hypnogram(session: SleepSession, modifier: Modifier = Modifier) {
                 Spacer(Modifier.weight(1f))
                 Text(minutesWords(Duration.between(held.start, held.end).toMinutes()), style = label(10.sp, Palette.Faint))
             } else {
-                Text("HOLD AND DRAG TO READ", style = label(10.sp, Palette.Ghost))
+                Text("Hold and drag to read", style = label(10.sp, Palette.Ghost))
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -365,16 +365,16 @@ fun StageBreakdown(session: SleepSession, modifier: Modifier = Modifier) {
 }
 
 private fun stageWords(stage: SleepStage): String = when (stage) {
-    SleepStage.AWAKE -> "AWAKE"
-    SleepStage.LIGHT -> "LIGHT"
-    SleepStage.DEEP -> "SWS (DEEP)"
+    SleepStage.AWAKE -> "Awake"
+    SleepStage.LIGHT -> "Light"
+    SleepStage.DEEP -> "SWS (deep)"
     SleepStage.REM -> "REM"
 }
 
 private fun stageShort(stage: SleepStage): String = when (stage) {
-    SleepStage.AWAKE -> "AWAKE"
-    SleepStage.LIGHT -> "LIGHT"
-    SleepStage.DEEP -> "DEEP"
+    SleepStage.AWAKE -> "Awake"
+    SleepStage.LIGHT -> "Light"
+    SleepStage.DEEP -> "Deep"
     SleepStage.REM -> "REM"
 }
 
@@ -439,7 +439,7 @@ fun ZoneBars(zones: ZoneMinutes?) {
     for (zone in ZoneMinutes.ZONE_COUNT - 1 downTo 0) {
         val minutes = zones?.minutes?.get(zone)
         Row(Modifier.padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("ZONE $zone", style = label(11.sp), modifier = Modifier.width(60.dp))
+            Text("Zone $zone", style = label(11.sp), modifier = Modifier.width(60.dp))
             Box(
                 Modifier
                     .weight(1f)

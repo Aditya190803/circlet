@@ -102,7 +102,7 @@ class WorkoutsViewModel(
             when (val result = workouts.merge(ids)) {
                 is Outcome.Ok -> {
                     selected.value = emptySet()
-                    messageChannel.send("MERGED")
+                    messageChannel.send("Merged")
                 }
                 is Outcome.Err -> messageChannel.send(result.error.words())
             }

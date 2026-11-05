@@ -84,21 +84,21 @@ fun MoreScreen(
     actions: MoreActions,
 ) {
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("MORE")
+        DetailHeader("More")
         ScreenColumn {
             if (strap.link == LinkState.UNPAIRED) {
-                Card("STRAP") {
+                Card("Strap") {
                     Text(
                         "No strap is paired. Remove it from the official app and from Android Bluetooth settings first, because it only talks to one app at a time.",
                         style = body(14.sp),
                     )
                     Spacer(Modifier.height(14.dp))
-                    PrimaryButton("PAIR A STRAP", onClick = actions.pair)
+                    PrimaryButton("Pair a strap", onClick = actions.pair)
                 }
             } else {
                 StrapCard(strap, settings, busy, actions)
             }
-            Card("BACKGROUND SYNC") {
+            Card("Background sync") {
                 val healthy = access.nearby && access.notifications && access.battery
                 Text(
                     if (healthy) "Circlet stays connected with the app closed and checks in every 15 minutes."
@@ -109,7 +109,7 @@ fun MoreScreen(
                 AccessRows(access)
                 Divider()
                 StatRow(
-                    "STRAP ASSOCIATION", if (checks.companionDeviceAssociated) "ON" else "OFF",
+                    "Strap association", if (checks.companionDeviceAssociated) "On" else "Off",
                     color = if (checks.companionDeviceAssociated) Palette.Teal else Palette.Dim,
                     note = "Wakes Circlet when the strap is near",
                 )
@@ -137,7 +137,7 @@ fun MoreScreen(
                 Divider()
                 ListRow("Units", Glyph.Ruler, "Weight and clock", onClick = actions.units)
                 Divider()
-                ListRow("Notifications", Glyph.Alarm, "Off-wrist and low-battery alerts, quiet hours", onClick = actions.notifications)
+                ListRow("Notifications", Glyph.Alarm, "Call buzz, off-wrist and low-battery alerts, quiet hours", onClick = actions.notifications)
                 Divider()
                 ListRow("About and licences", Glyph.Info, "How scores are made, and the open-source notices", onClick = actions.about)
                 actions.gallery?.let { open ->
@@ -155,25 +155,25 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
     var forgetting by rememberSaveable { mutableStateOf(false) }
     val connected = strap.link == LinkState.CONNECTED
     val idle = connected && busy == null
-    Card("STRAP") {
+    Card("Strap") {
         StatRow(
-            "NAME",
-            strap.name ?: "STRAP",
+            "Name",
+            strap.name ?: "Strap",
             note = when (strap.link) {
-                LinkState.CONNECTED -> if (strap.onWrist == false) "CONNECTED · OFF WRIST" else "CONNECTED"
-                LinkState.CONNECTING, LinkState.RECONNECTING -> "SEARCHING"
-                LinkState.DISCONNECTED, LinkState.UNPAIRED -> "OFFLINE"
+                LinkState.CONNECTED -> if (strap.onWrist == false) "Connected · off wrist" else "Connected"
+                LinkState.CONNECTING, LinkState.RECONNECTING -> "Searching"
+                LinkState.DISCONNECTED, LinkState.UNPAIRED -> "Offline"
             },
             onClick = if (idle) ({ renaming = true }) else null,
         )
         Divider()
         strap.generation?.let {
-            StatRow("MODEL", it.model)
+            StatRow("Model", it.model)
             Divider()
         }
-        StatRow("BATTERY", strap.batteryPercent?.roundToInt()?.toString(), if (strap.charging == true) "% · CHARGING" else "%")
+        StatRow("Battery", strap.batteryPercent?.roundToInt()?.toString(), if (strap.charging == true) "% · charging" else "%")
         Divider()
-        StatRow("LAST SYNC", strap.lastSync?.let { agoWords(it, Instant.now()) } ?: "NOT YET")
+        StatRow("Last sync", strap.lastSync?.let { agoWords(it, Instant.now()) } ?: "Not yet")
         strap.error?.let {
             Spacer(Modifier.height(8.dp))
             Text(it.words(), style = body(13.sp, Palette.Warn))
@@ -182,10 +182,10 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         val syncing = strap.sync.draining || busy == StrapAction.SYNC
         val syncLabel = when {
             strap.sync.draining -> syncProgressLabel(strap.sync)
-            syncing -> "SYNCING"
-            !connected -> "RECONNECT AND SYNC"
-            strap.sync.stalled() -> "RETRY SYNC"
-            else -> "SYNC NOW"
+            syncing -> "Syncing"
+            !connected -> "Reconnect and sync"
+            strap.sync.stalled() -> "Retry sync"
+            else -> "Sync now"
         }
         PrimaryButton(
             syncLabel,
@@ -195,8 +195,8 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SecondaryButton("BUZZ", enabled = idle, glyph = Glyph.Vibrate, modifier = Modifier.weight(1f), onClick = actions.buzz)
-            SecondaryButton("FIND STRAP", enabled = idle, glyph = Glyph.Search, modifier = Modifier.weight(1f), onClick = actions.find)
+            SecondaryButton("Buzz", enabled = idle, glyph = Glyph.Vibrate, modifier = Modifier.weight(1f), onClick = actions.buzz)
+            SecondaryButton("Find strap", enabled = idle, glyph = Glyph.Search, modifier = Modifier.weight(1f), onClick = actions.find)
         }
         Spacer(Modifier.height(8.dp))
         ListRow(
@@ -207,12 +207,12 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
         }
         Divider()
         Column(Modifier.padding(vertical = 12.dp)) {
-            Text("DOUBLE TAP ON THE STRAP", style = label())
+            Text("Double tap on the strap", style = label())
             Spacer(Modifier.height(10.dp))
             val options = listOf(DoubleTapAction.STOP_ALARM, DoubleTapAction.MARK_MOMENT)
-            Segmented(listOf("STOPS THE ALARM", "MARKS A MOMENT"), options.indexOf(settings.doubleTap)) { actions.setDoubleTap(options[it]) }
+            Segmented(listOf("Stops the alarm", "Marks a moment"), options.indexOf(settings.doubleTap)) { actions.setDoubleTap(options[it]) }
         }
-        QuietButton("FORGET THIS STRAP", Palette.Danger, enabled = busy == null) { forgetting = true }
+        QuietButton("Forget this strap", Palette.Danger, enabled = busy == null) { forgetting = true }
     }
     if (renaming) {
         var name by rememberSaveable { mutableStateOf(strap.name.orEmpty()) }
@@ -221,7 +221,7 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
             Spacer(Modifier.height(14.dp))
             TextEntry(name, "Strap name", placeholder = "Strap name") { name = it }
             Spacer(Modifier.height(14.dp))
-            PrimaryButton("SAVE NAME", enabled = name.isNotBlank() && name.trim() != strap.name) {
+            PrimaryButton("Save name", enabled = name.isNotBlank() && name.trim() != strap.name) {
                 actions.rename(name.trim())
                 renaming = false
             }
@@ -234,11 +234,11 @@ private fun StrapCard(strap: StrapState, settings: UserSettings, busy: StrapActi
                 style = body(14.sp),
             )
             Spacer(Modifier.height(16.dp))
-            PrimaryButton("FORGET STRAP", danger = true) {
+            PrimaryButton("Forget strap", danger = true) {
                 actions.forget()
                 forgetting = false
             }
-            QuietButton("KEEP IT") { forgetting = false }
+            QuietButton("Keep it") { forgetting = false }
         }
     }
 }

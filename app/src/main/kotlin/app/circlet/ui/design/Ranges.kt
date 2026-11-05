@@ -57,9 +57,9 @@ fun rangeAxis(value: Double?, vararg bands: ReferenceRange?): RangeAxis {
 fun positionTag(value: Double?, band: ReferenceRange?): String? {
     if (value == null || band == null) return null
     return when {
-        value < band.low -> "BELOW RANGE"
-        value > band.high -> "ABOVE RANGE"
-        else -> "IN RANGE"
+        value < band.low -> "Below range"
+        value > band.high -> "Above range"
+        else -> "In range"
     }
 }
 
@@ -144,16 +144,16 @@ fun RangeLegend(
     Row(modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 12.dp, height = 6.dp).clip(CircleShape).background(accent))
         Spacer(Modifier.width(6.dp))
-        Text("USUAL ", style = label(10.sp, Palette.Faint))
+        Text("Usual ", style = label(10.sp, Palette.Faint))
         Text(
-            if (personal != null) "${format(personal.low)}–${format(personal.high)}" else "BUILDING · $personalDays DAYS",
+            if (personal != null) "${format(personal.low)}–${format(personal.high)}" else "Building · $personalDays days",
             style = if (personal != null) number(12.sp, Palette.Dim) else label(10.sp, Palette.Faint),
         )
         if (ideal != null) {
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(width = 14.dp, height = 10.dp).border(1.dp, IdealLine, CircleShape))
             Spacer(Modifier.width(6.dp))
-            Text("IDEAL ", style = label(10.sp, Palette.Faint))
+            Text("Ideal ", style = label(10.sp, Palette.Faint))
             Text("${format(ideal.low)}–${format(ideal.high)}", style = number(12.sp, Palette.Dim))
         }
     }

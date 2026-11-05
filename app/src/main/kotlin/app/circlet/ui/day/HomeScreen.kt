@@ -147,17 +147,17 @@ private fun Dials(summary: DaySummary?, loading: Boolean, onOpen: (DayScreen) ->
     ) {
         val sleep = summary?.sleepPerformance?.percent
         MetricDial(
-            "SLEEP", Glyph.Moon, Palette.Sleep, sleep?.value?.toString(), "%", sleep?.value?.div(100f),
+            "Sleep", Glyph.Moon, Palette.Sleep, sleep?.value?.toString(), "%", sleep?.value?.div(100f),
             loading,
         ) { onOpen(DayScreen.SLEEP) }
         val recovery = summary?.recovery?.score
         MetricDial(
-            "RECOVERY", Glyph.Pulse, Palette.recovery(recovery?.value), recovery?.value?.toString(), "%", recovery?.value?.div(100f),
+            "Recovery", Glyph.Pulse, Palette.recovery(recovery?.value), recovery?.value?.toString(), "%", recovery?.value?.div(100f),
             loading,
         ) { onOpen(DayScreen.RECOVERY) }
         val strain = summary?.strain?.score
         MetricDial(
-            "STRAIN", Glyph.Bolt, Palette.Strain, strain?.value?.decimal(), "", strain?.value?.div(21.0)?.toFloat(),
+            "Strain", Glyph.Bolt, Palette.Strain, strain?.value?.decimal(), "", strain?.value?.div(21.0)?.toFloat(),
             loading,
         ) { onOpen(DayScreen.STRAIN) }
     }
@@ -169,11 +169,11 @@ fun DayNotice(notice: Notice, onAction: () -> Unit) {
     when (notice) {
         Notice.NeedsPermission -> NoticeCard(
             Glyph.Bluetooth, "Bluetooth access is off", "Circlet needs the Nearby devices permission to reach your strap.",
-            action = "ALLOW ACCESS", onAction = onAction,
+            action = "Allow access", onAction = onAction,
         )
         Notice.Unpaired -> NoticeCard(
             Glyph.Strap, "No strap paired", "Pair your strap and Circlet starts reading your heart rate straight away.",
-            action = "PAIR STRAP", onAction = onAction,
+            action = "Pair strap", onAction = onAction,
         )
         Notice.BluetoothOff -> NoticeCard(Glyph.Bluetooth, "Bluetooth is turned off", "Turn it on and your strap reconnects on its own.")
         Notice.Searching -> NoticeCard(
@@ -182,7 +182,7 @@ fun DayNotice(notice: Notice, onAction: () -> Unit) {
         ) { Sweep(Palette.Sleep) }
         is Notice.StrapTrouble -> NoticeCard(
             Glyph.Warning, "The strap needs attention", notice.error.words(),
-            tint = Palette.Warn, action = "OPEN STRAP", onAction = onAction,
+            tint = Palette.Warn, action = "Open strap", onAction = onAction,
         )
         is Notice.CatchingUp -> NoticeCard(
             Glyph.Pulse, "Catching up on history",
@@ -217,16 +217,16 @@ fun DayNotice(notice: Notice, onAction: () -> Unit) {
 
 private fun StrapState.status(): String = when {
     sync.draining -> syncProgressLabel(sync)
-    link == LinkState.CONNECTED && sync.stalled() -> "SYNC STALLED"
-    link == LinkState.CONNECTED && onWrist == false -> "OFF WRIST"
-    link == LinkState.CONNECTED -> "LIVE"
-    link == LinkState.CONNECTING || link == LinkState.RECONNECTING -> "SEARCHING"
-    else -> "OFFLINE"
+    link == LinkState.CONNECTED && sync.stalled() -> "Sync stalled"
+    link == LinkState.CONNECTED && onWrist == false -> "Off wrist"
+    link == LinkState.CONNECTED -> "Live"
+    link == LinkState.CONNECTING || link == LinkState.RECONNECTING -> "Searching"
+    else -> "Offline"
 }
 
 @Composable
 private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
-    Card("HEART RATE") {
+    Card("Heart rate") {
         val strap = state.strap
         val connected = strap.link == LinkState.CONNECTED
         // Today shows the live reading; an earlier day shows that day's average instead.
@@ -238,7 +238,7 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
                 shown != null -> Text(shown.toString(), style = number(40.sp))
                 else -> AbsentDash(Modifier.padding(vertical = 22.dp).size(width = 34.dp, height = 4.dp))
             }
-            Text(if (state.isToday) "  BPM" else "  AVG BPM", style = label(12.sp), modifier = Modifier.padding(top = 10.dp))
+            Text(if (state.isToday) "  bpm" else "  Avg bpm", style = label(12.sp), modifier = Modifier.padding(top = 10.dp))
             Spacer(Modifier.weight(1f))
             if (state.isToday) {
                 LiveDot(if (connected) Palette.Teal else Palette.Faint, connected && live != null)
@@ -257,17 +257,17 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
 
 @Composable
 private fun PlanCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
-    Card(if (state.isToday) "TODAY'S PLAN" else "PLAN FOR THE DAY") {
+    Card(if (state.isToday) "Today's plan" else "Plan for the day") {
         val target = summary?.targetStrain?.score
         val need = summary?.sleepNeed
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Figure(
-                target?.value?.decimal(), "STRAIN TARGET", Palette.Strain,
+                target?.value?.decimal(), "Strain target", Palette.Strain,
                 absent = target?.absentReason, loading = loading,
                 modifier = Modifier.weight(1f),
             )
             Figure(
-                need?.duration?.value?.hoursMinutes(), if (state.isToday) "SLEEP NEED TONIGHT" else "SLEEP NEED", Palette.Sleep,
+                need?.duration?.value?.hoursMinutes(), if (state.isToday) "Sleep need tonight" else "Sleep need", Palette.Sleep,
                 absent = need?.duration?.absentReason, alignEnd = true, loading = loading,
                 modifier = Modifier.weight(1f),
             )
@@ -290,7 +290,7 @@ private fun MyDayCard(
     onStartWorkout: (() -> Unit)?,
 ) {
     val format = LocalTimeFormat.current
-    Card("MY DAY") {
+    Card("My day") {
         if (loading) {
             repeat(2) {
                 if (it > 0) Divider()
@@ -300,18 +300,18 @@ private fun MyDayCard(
         }
         val sleep = summary?.sleep?.value
         if (sleep != null) {
-            TileRow(sleep.timeAsleep.hoursMinutes(), Palette.Sleep, "SLEEP", format.range(sleep.start, sleep.end)) { onOpen(DayScreen.SLEEP) }
+            TileRow(sleep.timeAsleep.hoursMinutes(), Palette.Sleep, "Sleep", format.range(sleep.start, sleep.end)) { onOpen(DayScreen.SLEEP) }
         } else {
             val reason = summary?.sleep?.absentReason?.takeIf { summary.hasData }
-            GhostRow(Glyph.Moon, "SLEEP", reason?.words() ?: "Picked up on its own overnight")
+            GhostRow(Glyph.Moon, "Sleep", reason?.words() ?: "Picked up on its own overnight")
         }
         summary?.naps?.forEach { nap ->
             Divider()
-            TileRow(nap.timeAsleep.hoursMinutes(), Palette.Sleep, "NAP", format.range(nap.start, nap.end)) { onOpen(DayScreen.SLEEP) }
+            TileRow(nap.timeAsleep.hoursMinutes(), Palette.Sleep, "Nap", format.range(nap.start, nap.end)) { onOpen(DayScreen.SLEEP) }
         }
         Divider()
         val activities = summary?.activities.orEmpty()
-        if (activities.isEmpty()) GhostRow(Glyph.Bolt, "ACTIVITY", "Logged after ten minutes of raised heart rate")
+        if (activities.isEmpty()) GhostRow(Glyph.Bolt, "Activity", "Logged after ten minutes of raised heart rate")
         activities.forEachIndexed { i, activity ->
             if (i > 0) Divider()
             TileRow(
@@ -322,9 +322,9 @@ private fun MyDayCard(
         Divider()
         if (onStartWorkout != null) {
             Spacer(Modifier.height(10.dp))
-            SecondaryButton("START A WORKOUT") { onStartWorkout() }
+            SecondaryButton("Start a workout") { onStartWorkout() }
         }
-        QuietButton("ALL ACTIVITIES") { onOpenAllActivities() }
+        QuietButton("All activities") { onOpenAllActivities() }
     }
 }
 
@@ -350,9 +350,9 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     LiveDot(color = if (live.paused) Palette.Warn else Palette.Teal, active = !live.paused)
                     Spacer(Modifier.width(8.dp))
-                    val state = if (live.paused) "PAUSED" else "IN PROGRESS"
+                    val state = if (live.paused) "Paused" else "In progress"
                     Text(
-                        "${live.sport.label().uppercase()} $state",
+                        "${live.sport.label()} $state",
                         style = label(12.sp, if (live.paused) Palette.Warn else Palette.Teal),
                     )
                 }
@@ -363,7 +363,7 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(live.heartRateBpm?.toString() ?: "–", style = number(26.sp, Palette.White))
-                Text("BPM", style = label(10.sp, Palette.Faint))
+                Text("bpm", style = label(10.sp, Palette.Faint))
             }
             Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 8.dp))
         }
@@ -372,9 +372,9 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
 
 @Composable
 private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Boolean, onOpenMetric: (MetricKind) -> Unit) {
-    Card("KEY STATISTICS") {
+    Card("Key statistics") {
         if (summary == null) {
-            for ((i, name) in listOf("HRV", "RESTING HEART RATE", "RESPIRATORY RATE", "HOURS OF SLEEP", "CALORIES", "STEPS").withIndex()) {
+            for ((i, name) in listOf("HRV", "Resting heart rate", "Respiratory rate", "Hours of sleep", "Calories", "Steps").withIndex()) {
                 if (i > 0) Divider()
                 StatRow(name, null, loading = loading)
             }
@@ -387,19 +387,19 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         val asleep = average(week.mapNotNull { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() })
         val refs = summary.references
         MetricRow(
-            "HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" },
+            "HRV", summary.heart.hrv.rmssdMs, "ms", note = hrv?.let { "7-day avg ${it.decimal(0)}" },
             tag = positionTag(summary.heart.hrv.rmssdMs.value, refs.forKind(MetricKind.HRV)?.personal),
             onClick = { onOpenMetric(MetricKind.HRV) },
         ) { it.decimal(0) }
         Divider()
         MetricRow(
-            "RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" },
+            "Resting heart rate", summary.heart.resting.bpm, "bpm", note = resting?.let { "7-day avg ${it.decimal(0)}" },
             tag = positionTag(summary.heart.resting.bpm.value?.toDouble(), refs.forKind(MetricKind.RESTING_HEART_RATE)?.personal),
             onClick = { onOpenMetric(MetricKind.RESTING_HEART_RATE) },
         ) { it.toString() }
         Divider()
         MetricRow(
-            "RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" },
+            "Respiratory rate", summary.heart.respiratoryRate.breathsPerMinute, "rpm", note = breaths?.let { "7-day avg ${it.decimal()}" },
             tag = positionTag(summary.heart.respiratoryRate.breathsPerMinute.value?.toDouble(), refs.forKind(MetricKind.RESPIRATORY_RATE)?.personal),
             onClick = { onOpenMetric(MetricKind.RESPIRATORY_RATE) },
         ) { it.decimal() }
@@ -408,7 +408,7 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         val scored = skin != null && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
         val deviation = if (scored) skin?.deviation?.value else null
         StatRow(
-            "SKIN TEMPERATURE", deviation?.signedDeviation(), "SD",
+            "Skin temperature", deviation?.signedDeviation(), "SD",
             note = when {
                 skin == null -> "Current temperature unavailable from this strap"
                 !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
@@ -418,10 +418,10 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
             onClick = { onOpenMetric(MetricKind.SKIN_TEMPERATURE) },
         )
         Divider()
-        MetricRow("HOURS OF SLEEP", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }, onClick = { onOpenMetric(MetricKind.SLEEP_DURATION) }) { it.timeAsleep.hoursMinutes() }
+        MetricRow("Hours of sleep", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }, onClick = { onOpenMetric(MetricKind.SLEEP_DURATION) }) { it.timeAsleep.hoursMinutes() }
         Divider()
-        MetricRow("CALORIES", summary.calories, "KCAL", onClick = { onOpenMetric(MetricKind.CALORIES) }) { it.grouped() }
+        MetricRow("Calories", summary.calories, "kcal", onClick = { onOpenMetric(MetricKind.CALORIES) }) { it.grouped() }
         Divider()
-        MetricRow("STEPS", summary.steps.count, onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
+        MetricRow("Steps", summary.steps.count, onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
     }
 }

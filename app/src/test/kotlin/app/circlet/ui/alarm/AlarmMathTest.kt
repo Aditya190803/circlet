@@ -33,22 +33,22 @@ class AlarmMathTest {
 
     @Test
     fun shortDayIsUppercaseThreeLetters() {
-        assertEquals("MON", shortDay(DayOfWeek.MONDAY, english))
-        assertEquals("SAT", shortDay(DayOfWeek.SATURDAY, english))
+        assertEquals("Mon", shortDay(DayOfWeek.MONDAY, english))
+        assertEquals("Sat", shortDay(DayOfWeek.SATURDAY, english))
     }
 
     @Test
     fun describeDaysNamesTheCommonSets() {
-        assertEquals("NO DAYS", describeDays(emptySet(), english))
-        assertEquals("EVERY DAY", describeDays(WEEK_ORDER.toSet(), english))
-        assertEquals("WEEKDAYS", describeDays(WEEK_ORDER.take(5).toSet(), english))
-        assertEquals("WEEKENDS", describeDays(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), english))
+        assertEquals("No days", describeDays(emptySet(), english))
+        assertEquals("Every day", describeDays(WEEK_ORDER.toSet(), english))
+        assertEquals("Weekdays", describeDays(WEEK_ORDER.take(5).toSet(), english))
+        assertEquals("Weekends", describeDays(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), english))
     }
 
     @Test
     fun describeDaysListsOtherSetsInWeekOrder() {
         val days = setOf(DayOfWeek.FRIDAY, DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY)
-        assertEquals("MON, WED, FRI", describeDays(days, english))
+        assertEquals("Mon, Wed, Fri", describeDays(days, english))
     }
 
     @Test
@@ -109,8 +109,8 @@ class AlarmMathTest {
     @Test
     fun smartWakeCaptionIsEmptyWhenOff() {
         assertEquals("", smartWakeCaption(Duration.ZERO))
-        assertEquals("SMART WAKE 15 MIN", smartWakeCaption(Duration.ofMinutes(15)))
-        assertEquals("SMART WAKE 30 MIN", smartWakeCaption(Duration.ofMinutes(30)))
+        assertEquals("Smart wake 15 min", smartWakeCaption(Duration.ofMinutes(15)))
+        assertEquals("Smart wake 30 min", smartWakeCaption(Duration.ofMinutes(30)))
     }
 
     @Test

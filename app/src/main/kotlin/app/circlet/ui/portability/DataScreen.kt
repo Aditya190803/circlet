@@ -108,10 +108,10 @@ fun DataScreen(onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("DATA", onBack = onBack)
+        DetailHeader("Data", onBack = onBack)
         ScreenColumn {
             if (cloudState.supported) CloudAccountPanel(vm.cloud)
-            Card("STEPS") {
+            Card("Steps") {
                 Text(
                     "Steps come from this phone's step counter, only while the phone is with you. " +
                         "Without it the step count stays empty.",
@@ -124,7 +124,7 @@ fun DataScreen(onBack: () -> Unit) {
                 ) { on -> if (on) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION) else vm.setCountPhoneSteps(false) }
             }
 
-            Card("HEALTH CONNECT") {
+            Card("Health Connect") {
                 Text(
                     when {
                         !health.available -> "Health Connect is not installed on this phone."
@@ -140,10 +140,10 @@ fun DataScreen(onBack: () -> Unit) {
                     enabled = health.available,
                 ) { on -> if (on) askHealth.launch(HEALTH_WRITE_PERMISSIONS) else vm.setHealthConnect(false) }
                 Spacer(Modifier.height(Space.sm))
-                Text("WRITTEN", style = label(12.sp, Palette.Dim))
+                Text("Written", style = label(12.sp, Palette.Dim))
                 Text(
                     if (health.granted.isEmpty()) {
-                        "NOTHING YET"
+                        "Nothing yet"
                     } else {
                         health.granted.sortedBy { it.ordinal }.joinToString(", ") { it.words() }
                     },
@@ -156,7 +156,7 @@ fun DataScreen(onBack: () -> Unit) {
                 )
             }
 
-            Card("EXPORT") {
+            Card("Export") {
                 Text(
                     "Makes one file with everything in Circlet. The file is made on this phone and " +
                         "leaves it only when you save a copy.",
@@ -170,20 +170,20 @@ fun DataScreen(onBack: () -> Unit) {
                         subtitle = "${"%,d".format(maxOf(1L, made.byteCount / 1024))} KB",
                     )
                     Spacer(Modifier.height(Space.sm))
-                    SecondaryButton("SAVE A COPY") { saveCopy.launch(made.displayName) }
+                    SecondaryButton("Save a copy") { saveCopy.launch(made.displayName) }
                     Spacer(Modifier.height(Space.sm))
                 }
-                SecondaryButton("CREATE EXPORT", enabled = !exporting) { vm.export() }
+                SecondaryButton("Create export", enabled = !exporting) { vm.export() }
                 Spacer(Modifier.height(Space.sm))
                 Text(
                     "Days, workouts and the last 30 days of heart rate as spreadsheet files in one zip.",
                     style = body(14.sp, Palette.Dim),
                 )
                 Spacer(Modifier.height(Space.sm))
-                SecondaryButton("EXPORT CSV") { saveCsv.launch("circlet-csv.zip") }
+                SecondaryButton("Export CSV") { saveCsv.launch("circlet-csv.zip") }
             }
 
-            Card("BACKUP") {
+            Card("Backup") {
                 Toggle(
                     checked = backup.enabled,
                     description = "Scheduled backup to a folder",
@@ -191,11 +191,11 @@ fun DataScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(Space.sm))
                 ListRow(
                     title = "Folder",
-                    value = if (backup.folderUri == null) "NOT CHOSEN" else "CHOSEN",
+                    value = if (backup.folderUri == null) "Not chosen" else "Chosen",
                     onClick = { pickFolder.launch(null) },
                 )
                 Spacer(Modifier.height(Space.sm))
-                Text("HOW OFTEN", style = label(12.sp, Palette.Dim))
+                Text("How often", style = label(12.sp, Palette.Dim))
                 Spacer(Modifier.height(Space.sm))
                 Segmented(
                     options = BACKUP_INTERVAL_LABELS,
@@ -209,7 +209,7 @@ fun DataScreen(onBack: () -> Unit) {
                 )
             }
 
-            Card("RESTORE") {
+            Card("Restore") {
                 val pending = pendingRestore
                 if (pending == null) {
                     Text(
@@ -217,7 +217,7 @@ fun DataScreen(onBack: () -> Unit) {
                         style = body(14.sp, Palette.Dim),
                     )
                     Spacer(Modifier.height(Space.sm))
-                    SecondaryButton("CHOOSE A FILE") { pickRestore.launch(arrayOf("*/*")) }
+                    SecondaryButton("Choose a file") { pickRestore.launch(arrayOf("*/*")) }
                 } else {
                     Text(
                         "Restoring replaces your current history with the data in this file. " +
@@ -225,16 +225,16 @@ fun DataScreen(onBack: () -> Unit) {
                         style = body(14.sp, Palette.Dim),
                     )
                     Spacer(Modifier.height(Space.sm))
-                    PrimaryButton("REPLACE DATA ON THIS PHONE", danger = true) {
+                    PrimaryButton("Replace data on this phone", danger = true) {
                         vm.restore(pending)
                         pendingRestore = null
                     }
                     Spacer(Modifier.height(Space.xs))
-                    QuietButton("CANCEL") { pendingRestore = null }
+                    QuietButton("Cancel") { pendingRestore = null }
                 }
             }
 
-            Card("PRIVACY") {
+            Card("Privacy") {
                 Text(
                     "Your history is kept on this phone. When you connect Firebase, a compressed copy is backed up over HTTPS to your personal account. Export files are created only when you ask for them.",
                     style = body(13.sp, Palette.Faint),
@@ -258,9 +258,9 @@ private val HEALTH_WRITE_PERMISSIONS = setOf(
 private fun HealthKind.words(): String = name.replace('_', ' ')
 
 private fun lastBackupText(instant: Instant?, format: TimeFormat): String {
-    if (instant == null) return "NEVER"
+    if (instant == null) return "Never"
     val day = instant.atZone(format.zone).toLocalDate()
-    return dateTitle(day, LocalDate.now(format.zone)).uppercase() + " " + format.time(instant)
+    return dateTitle(day, LocalDate.now(format.zone)) + " " + format.time(instant)
 }
 
 /** Copies the exported file to a location the user chose. Returns false when either side cannot be opened. */

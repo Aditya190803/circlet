@@ -67,23 +67,23 @@ fun AlarmsScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("ALARMS", onBack = onBack)
+        DetailHeader("Alarms", onBack = onBack)
         ScreenColumn {
             when (val s = state) {
                 AlarmUiState.Loading -> {
-                    Card(title = "NEXT ALARM") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
-                    Card(title = "ALARMS") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
+                    Card(title = "Next alarm") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
+                    Card(title = "Alarms") { Skeleton(Modifier.fillMaxWidth().height(14.dp)) }
                 }
                 is AlarmUiState.Ready -> {
                     val next = s.next
-                    if (next != null || s.alarms.isNotEmpty()) Card(title = "NEXT ALARM") {
+                    if (next != null || s.alarms.isNotEmpty()) Card(title = "Next alarm") {
                         if (next != null) {
                             Text(formatAlarmTime(next.alarm.time, twentyFourHour), style = number(34.sp, Palette.Teal))
                             Text(describeDays(next.alarm.weekdays), style = body(13.sp, Palette.Dim))
                         } else {
                             EmptyState(
                                 glyph = Glyph.Alarm,
-                                heading = "NO ALARM SET",
+                                heading = "No alarm set",
                                 text = "Alarms are stored on the strap, which buzzes at the set time. The next one you turn on shows here.",
                             )
                         }
@@ -92,19 +92,19 @@ fun AlarmsScreen(onBack: () -> Unit) {
                     if (s.link != LinkState.CONNECTED) {
                         NoticeCard(
                             glyph = Glyph.Strap,
-                            heading = "STRAP NOT CONNECTED",
+                            heading = "Strap not connected",
                             text = "Alarms are kept on the strap. Connect it to send a test buzz.",
                         )
                     }
 
                     Card(
-                        title = "ALARMS",
-                        trailing = { SmallButton(text = "ADD", onClick = { editing = Editing(newAlarm(), true) }) },
+                        title = "Alarms",
+                        trailing = { SmallButton(text = "Add", onClick = { editing = Editing(newAlarm(), true) }) },
                     ) {
                         if (s.alarms.isEmpty()) {
                             EmptyState(
                                 glyph = Glyph.Alarm,
-                                heading = "NO ALARMS",
+                                heading = "No alarms",
                                 text = "Add one and it is stored on the strap, so it still rings if the phone is off.",
                             )
                         } else {
@@ -121,7 +121,7 @@ fun AlarmsScreen(onBack: () -> Unit) {
                     }
 
                     QuietButton(
-                        text = "TEST BUZZ",
+                        text = "Test buzz",
                         color = Palette.Teal,
                         enabled = s.link == LinkState.CONNECTED,
                         onClick = { vm.buzz() },
@@ -132,7 +132,7 @@ fun AlarmsScreen(onBack: () -> Unit) {
     }
 
     editing?.let { e ->
-        Sheet(title = if (e.isNew) "NEW ALARM" else "EDIT ALARM", onDismiss = { editing = null }) {
+        Sheet(title = if (e.isNew) "New alarm" else "Edit alarm", onDismiss = { editing = null }) {
             AlarmEditor(
                 existing = e.alarm,
                 twentyFourHour = twentyFourHour,
@@ -142,9 +142,9 @@ fun AlarmsScreen(onBack: () -> Unit) {
                 // Deleting takes two taps: the first arms the button, the second removes the alarm.
                 var armed by remember(e.alarm.id) { mutableStateOf(false) }
                 if (armed) {
-                    PrimaryButton(text = "DELETE THIS ALARM", danger = true, onClick = { vm.remove(e.alarm.id) { editing = null } })
+                    PrimaryButton(text = "Delete this alarm", danger = true, onClick = { vm.remove(e.alarm.id) { editing = null } })
                 } else {
-                    QuietButton(text = "DELETE ALARM", color = Palette.Danger, onClick = { armed = true })
+                    QuietButton(text = "Delete alarm", color = Palette.Danger, onClick = { armed = true })
                 }
             }
         }
@@ -220,7 +220,7 @@ private fun AlarmEditor(
         }
 
     Field(
-        name = "HOUR",
+        name = "Hour",
         value = hourText,
         hint = if (twentyFourHour) "0 to 23" else "1 to 12",
         isError = hourText.isNotEmpty() && !hourOk,
@@ -228,7 +228,7 @@ private fun AlarmEditor(
         onChange = { if (it.length <= 2 && it.all(Char::isDigit)) hourText = it },
     )
     Field(
-        name = "MINUTE",
+        name = "Minute",
         value = minuteText,
         hint = "0 to 59",
         isError = minuteText.isNotEmpty() && !minuteOk,
@@ -243,7 +243,7 @@ private fun AlarmEditor(
         )
     }
 
-    Text("REPEAT", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(horizontal = 4.dp))
+    Text("Repeat", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(horizontal = 4.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
         WEEK_ORDER.forEach { day ->
             Chip(
@@ -263,16 +263,16 @@ private fun AlarmEditor(
         modifier = Modifier.padding(horizontal = 4.dp),
     )
 
-    Text("SMART WAKE", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(horizontal = 4.dp))
+    Text("Smart wake", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(horizontal = 4.dp))
     Segmented(
-        options = listOf("OFF", "15 MIN", "30 MIN"),
+        options = listOf("Off", "15 min", "30 min"),
         selected = option,
         onSelect = { option = it },
     )
     Text(smartWakeLine(option), style = body(13.sp, Palette.Faint), modifier = Modifier.padding(horizontal = 4.dp))
 
     PrimaryButton(
-        text = "SAVE ALARM",
+        text = "Save alarm",
         enabled = parsed != null,
         onClick = {
             parsed?.let { time ->

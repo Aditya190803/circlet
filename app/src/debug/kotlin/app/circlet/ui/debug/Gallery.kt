@@ -150,80 +150,80 @@ private fun DayUiState.failed() = copy(day = Loadable.Failed("Circlet could not 
 private fun DayUiState.yesterday() = copy(date = today.minusDays(1), history = history.dropLast(1), day = Loadable.Ready(history[history.size - 2]))
 
 private val entries = listOf(
-    Entry("HOME", "Populated") { Home(demoDay(FakeScenario.PAIRED)) },
-    Entry("HOME", "Earlier day") { Home(demoDay(FakeScenario.PAIRED).let { if (it.history.size > 1) it.yesterday() else it }) },
-    Entry("HOME", "Calibrating") { Home(demoDay(FakeScenario.CALIBRATING)) },
-    Entry("HOME", "No data today") { Home(demoDay(FakeScenario.NO_DATA_TODAY)) },
-    Entry("HOME", "Unpaired, empty") { Home(demoDay(FakeScenario.UNPAIRED)) },
-    Entry("HOME", "Strap out of range") {
+    Entry("Home", "Populated") { Home(demoDay(FakeScenario.PAIRED)) },
+    Entry("Home", "Earlier day") { Home(demoDay(FakeScenario.PAIRED).let { if (it.history.size > 1) it.yesterday() else it }) },
+    Entry("Home", "Calibrating") { Home(demoDay(FakeScenario.CALIBRATING)) },
+    Entry("Home", "No data today") { Home(demoDay(FakeScenario.NO_DATA_TODAY)) },
+    Entry("Home", "Unpaired, empty") { Home(demoDay(FakeScenario.UNPAIRED)) },
+    Entry("Home", "Strap out of range") {
         Home(demoDay(FakeScenario.PAIRED).let { it.copy(strap = it.strap.copy(link = LinkState.RECONNECTING, liveHeartRateBpm = null)) })
     },
-    Entry("HOME", "Catching up on history") {
+    Entry("Home", "Catching up on history") {
         Home(demoDay(FakeScenario.PAIRED).let { it.copy(strap = it.strap.copy(sync = SyncProgress(5_400, draining = true))) }, refreshing = true)
     },
-    Entry("HOME", "Strap error") {
+    Entry("Home", "Strap error") {
         Home(demoDay(FakeScenario.PAIRED).let { it.copy(strap = it.strap.copy(error = StrapError.TimedOut)) })
     },
-    Entry("HOME", "Loading") { Home(demoDay(FakeScenario.PAIRED).loading()) },
-    Entry("HOME", "Error") { Home(demoDay(FakeScenario.PAIRED).failed()) },
+    Entry("Home", "Loading") { Home(demoDay(FakeScenario.PAIRED).loading()) },
+    Entry("Home", "Error") { Home(demoDay(FakeScenario.PAIRED).failed()) },
 
-    Entry("SLEEP", "Populated") { SleepScreen(demoDay(FakeScenario.PAIRED), {}, {}) },
-    Entry("SLEEP", "Empty") { SleepScreen(demoDay(FakeScenario.NO_DATA_TODAY), {}, {}) },
-    Entry("SLEEP", "Never synced") { SleepScreen(demoDay(FakeScenario.UNPAIRED), {}, {}) },
-    Entry("SLEEP", "Loading") { SleepScreen(demoDay(FakeScenario.PAIRED).loading(), {}, {}) },
-    Entry("SLEEP", "Error") { SleepScreen(demoDay(FakeScenario.PAIRED).failed(), {}, {}) },
+    Entry("Sleep", "Populated") { SleepScreen(demoDay(FakeScenario.PAIRED), {}, {}) },
+    Entry("Sleep", "Empty") { SleepScreen(demoDay(FakeScenario.NO_DATA_TODAY), {}, {}) },
+    Entry("Sleep", "Never synced") { SleepScreen(demoDay(FakeScenario.UNPAIRED), {}, {}) },
+    Entry("Sleep", "Loading") { SleepScreen(demoDay(FakeScenario.PAIRED).loading(), {}, {}) },
+    Entry("Sleep", "Error") { SleepScreen(demoDay(FakeScenario.PAIRED).failed(), {}, {}) },
 
-    Entry("RECOVERY", "Populated") { RecoveryScreen(demoDay(FakeScenario.PAIRED), {}, {}) },
-    Entry("RECOVERY", "Calibrating") { RecoveryScreen(demoDay(FakeScenario.CALIBRATING), {}, {}) },
-    Entry("RECOVERY", "Empty") { RecoveryScreen(demoDay(FakeScenario.NO_DATA_TODAY), {}, {}) },
-    Entry("RECOVERY", "Loading") { RecoveryScreen(demoDay(FakeScenario.PAIRED).loading(), {}, {}) },
-    Entry("RECOVERY", "Error") { RecoveryScreen(demoDay(FakeScenario.PAIRED).failed(), {}, {}) },
+    Entry("Recovery", "Populated") { RecoveryScreen(demoDay(FakeScenario.PAIRED), {}, {}) },
+    Entry("Recovery", "Calibrating") { RecoveryScreen(demoDay(FakeScenario.CALIBRATING), {}, {}) },
+    Entry("Recovery", "Empty") { RecoveryScreen(demoDay(FakeScenario.NO_DATA_TODAY), {}, {}) },
+    Entry("Recovery", "Loading") { RecoveryScreen(demoDay(FakeScenario.PAIRED).loading(), {}, {}) },
+    Entry("Recovery", "Error") { RecoveryScreen(demoDay(FakeScenario.PAIRED).failed(), {}, {}) },
 
-    Entry("STRAIN", "Populated") { StrainScreen(demoDay(FakeScenario.PAIRED), {}, {}) },
-    Entry("STRAIN", "Empty") { StrainScreen(demoDay(FakeScenario.NO_DATA_TODAY), {}, {}) },
-    Entry("STRAIN", "Loading") { StrainScreen(demoDay(FakeScenario.PAIRED).loading(), {}, {}) },
-    Entry("STRAIN", "Error") { StrainScreen(demoDay(FakeScenario.PAIRED).failed(), {}, {}) },
+    Entry("Strain", "Populated") { StrainScreen(demoDay(FakeScenario.PAIRED), {}, {}) },
+    Entry("Strain", "Empty") { StrainScreen(demoDay(FakeScenario.NO_DATA_TODAY), {}, {}) },
+    Entry("Strain", "Loading") { StrainScreen(demoDay(FakeScenario.PAIRED).loading(), {}, {}) },
+    Entry("Strain", "Error") { StrainScreen(demoDay(FakeScenario.PAIRED).failed(), {}, {}) },
 
-    Entry("ONBOARDING", "Welcome") { WelcomePage {} },
-    Entry("ONBOARDING", "Profile") { ProfilePage(remember { ProfileDraft("31", "168", "64", "", app.circlet.core.Sex.FEMALE) }, MassUnit.KILOGRAM, null) {} },
-    Entry("ONBOARDING", "Profile, invalid") {
+    Entry("Onboarding", "Welcome") { WelcomePage {} },
+    Entry("Onboarding", "Profile") { ProfilePage(remember { ProfileDraft("31", "168", "64", "", app.circlet.core.Sex.FEMALE) }, MassUnit.KILOGRAM, null) {} },
+    Entry("Onboarding", "Profile, invalid") {
         ProfilePage(remember { ProfileDraft("7", "168", "", "", app.circlet.core.Sex.UNSPECIFIED) }, MassUnit.KILOGRAM, "Age must be between 1 and 120.") {}
     },
-    Entry("ONBOARDING", "Permissions, none") { AccessPage(noAccess, {}, {}) },
-    Entry("ONBOARDING", "Permissions, partly") { AccessPage(someAccess, {}, {}) },
-    Entry("ONBOARDING", "Permissions, all") { AccessPage(fullAccess, {}, {}) },
-    Entry("ONBOARDING", "Pairing, searching") { PairingPage(PairingPhase(), true, emptyList(), {}, {}, {}, {}) },
-    Entry("ONBOARDING", "Pairing, straps found") { PairingPage(PairingPhase(), true, straps, {}, {}, {}, {}) },
-    Entry("ONBOARDING", "Pairing, none found") { PairingPage(PairingPhase(), false, emptyList(), {}, {}, {}, {}) },
-    Entry("ONBOARDING", "Pairing, connecting") { PairingPage(PairingPhase(connecting = straps[0]), false, straps, {}, {}, {}, {}) },
-    Entry("ONBOARDING", "Pairing, bond refused") {
+    Entry("Onboarding", "Permissions, none") { AccessPage(noAccess, {}, {}) },
+    Entry("Onboarding", "Permissions, partly") { AccessPage(someAccess, {}, {}) },
+    Entry("Onboarding", "Permissions, all") { AccessPage(fullAccess, {}, {}) },
+    Entry("Onboarding", "Pairing, searching") { PairingPage(PairingPhase(), true, emptyList(), {}, {}, {}, {}) },
+    Entry("Onboarding", "Pairing, straps found") { PairingPage(PairingPhase(), true, straps, {}, {}, {}, {}) },
+    Entry("Onboarding", "Pairing, none found") { PairingPage(PairingPhase(), false, emptyList(), {}, {}, {}, {}) },
+    Entry("Onboarding", "Pairing, connecting") { PairingPage(PairingPhase(connecting = straps[0]), false, straps, {}, {}, {}, {}) },
+    Entry("Onboarding", "Pairing, bond refused") {
         PairingPage(PairingPhase(error = CoreError.Strap(StrapError.BondFailed)), false, straps, {}, {}, {}, {})
     },
-    Entry("ONBOARDING", "Pairing, no permission") {
+    Entry("Onboarding", "Pairing, no permission") {
         PairingPage(PairingPhase(error = CoreError.Strap(StrapError.PermissionMissing)), false, emptyList(), {}, {}, {}, {})
     },
-    Entry("ONBOARDING", "Pairing, timed out") {
+    Entry("Onboarding", "Pairing, timed out") {
         PairingPage(PairingPhase(error = CoreError.Strap(StrapError.TimedOut)), false, straps, {}, {}, {}, {})
     },
-    Entry("ONBOARDING", "Connected, first sync") {
+    Entry("Onboarding", "Connected, first sync") {
         ReadyPage(StrapState(LinkState.CONNECTED, "WHOOP 4A0934182", sync = SyncProgress(9_000, draining = true))) {}
     },
-    Entry("ONBOARDING", "Connected, synced") { ReadyPage(demoDay(FakeScenario.PAIRED).strap) {} },
+    Entry("Onboarding", "Connected, synced") { ReadyPage(demoDay(FakeScenario.PAIRED).strap) {} },
 
-    Entry("MORE", "Connected") { MoreScreen(demoDay(FakeScenario.PAIRED).strap, settings, checks, someAccess, null, MoreActions(gallery = {})) },
-    Entry("MORE", "Syncing") {
+    Entry("More", "Connected") { MoreScreen(demoDay(FakeScenario.PAIRED).strap, settings, checks, someAccess, null, MoreActions(gallery = {})) },
+    Entry("More", "Syncing") {
         MoreScreen(
             demoDay(FakeScenario.PAIRED).strap.copy(sync = SyncProgress(5_400, draining = true), charging = true),
             settings, checks, fullAccess, StrapAction.SYNC, MoreActions(),
         )
     },
-    Entry("MORE", "Out of range, with error") {
+    Entry("More", "Out of range, with error") {
         MoreScreen(
             demoDay(FakeScenario.PAIRED).strap.copy(link = LinkState.RECONNECTING, error = StrapError.LinkLost),
             settings, checks, fullAccess, null, MoreActions(),
         )
     },
-    Entry("MORE", "Unpaired") { MoreScreen(StrapState(), settings, checks.copy(companionDeviceAssociated = false), noAccess, null, MoreActions()) },
+    Entry("More", "Unpaired") { MoreScreen(StrapState(), settings, checks.copy(companionDeviceAssociated = false), noAccess, null, MoreActions()) },
 )
 
 /** Every component and every screen state, drawn from the fakes. Debug builds only. */
@@ -238,8 +238,8 @@ fun Gallery(onBack: () -> Unit) {
         return
     }
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("SCREEN GALLERY", onBack = onBack)
-        Segmented(listOf("SCREENS", "COMPONENTS", "CHARTS", "TOKENS"), section, Modifier.padding(horizontal = 16.dp)) { section = it }
+        DetailHeader("Screen gallery", onBack = onBack)
+        Segmented(listOf("Screens", "Components", "Charts", "Tokens"), section, Modifier.padding(horizontal = 16.dp)) { section = it }
         Spacer(Modifier.height(12.dp))
         ScreenColumn {
             when (section) {
@@ -262,7 +262,7 @@ fun Gallery(onBack: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Tokens() {
-    Card("COLOUR") {
+    Card("Colour") {
         val swatches = listOf(
             "BgTop" to Palette.BgTop, "BgBottom" to Palette.BgBottom, "Card" to Palette.Card, "CardRaised" to Palette.CardRaised,
             "CardLine" to Palette.CardLine, "White" to Palette.White, "Dim" to Palette.Dim, "Faint" to Palette.Faint, "Ghost" to Palette.Ghost,
@@ -274,20 +274,20 @@ private fun Tokens() {
             for ((name, colour) in swatches) Swatch(name, colour)
         }
     }
-    Card("TYPE") {
+    Card("Type") {
         Text("Title 30", style = title())
         Text("Title 18", style = title(18.sp))
         Spacer(Modifier.height(8.dp))
         Text("Body 15. Circlet reads your strap on your own phone.", style = body())
         Text("Body 13 faint. Stored on this phone only.", style = body(13.sp, Palette.Faint))
         Spacer(Modifier.height(8.dp))
-        Text("LABEL 12", style = label())
-        Text("LABEL 10 FAINT", style = label(10.sp, Palette.Faint))
+        Text("Label 12", style = label())
+        Text("Label 10 faint", style = label(10.sp, Palette.Faint))
         Spacer(Modifier.height(8.dp))
         Text("0123456789", style = number(34.sp))
         Text("1111111111", style = number(34.sp))
     }
-    Card("ICONS") {
+    Card("Icons") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             for (glyph in Glyph.entries) {
                 Column(Modifier.width(74.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -316,95 +316,95 @@ private fun Swatch(name: String, colour: Color) {
 @Composable
 private fun Components() {
     var sheet by remember { mutableStateOf(false) }
-    Card("DIALS") {
+    Card("Dials") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MetricDial("SLEEP", Glyph.Moon, Palette.Sleep, "81", "%", 0.81f) {}
-            MetricDial("RECOVERY", Glyph.Pulse, Palette.RecoveryMid, "52", "%", 0.52f) {}
-            MetricDial("STRAIN", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f) {}
+            MetricDial("Sleep", Glyph.Moon, Palette.Sleep, "81", "%", 0.81f) {}
+            MetricDial("Recovery", Glyph.Pulse, Palette.RecoveryMid, "52", "%", 0.52f) {}
+            MetricDial("Strain", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f) {}
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MetricDial("ABSENT", Glyph.Moon, Palette.Sleep, null, "%", null) {}
-            MetricDial("LOADING", Glyph.Pulse, Palette.Sleep, null, "%", null, loading = true) {}
-            MetricDial("LOW", Glyph.Pulse, Palette.RecoveryLow, "21", "%", 0.21f) {}
+            MetricDial("Absent", Glyph.Moon, Palette.Sleep, null, "%", null) {}
+            MetricDial("Loading", Glyph.Pulse, Palette.Sleep, null, "%", null, loading = true) {}
+            MetricDial("Low", Glyph.Pulse, Palette.RecoveryLow, "21", "%", 0.21f) {}
         }
-        HeroDial("DAY STRAIN", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f, "Hero dial with a target notch.", marker = 0.72f)
+        HeroDial("Day strain", Glyph.Bolt, Palette.Strain, "12.4", "", 0.59f, "Hero dial with a target notch.", marker = 0.72f)
     }
-    Card("STAT ROWS") {
+    Card("Stat rows") {
         StatRow("HRV", "52", "MS", note = "7-day avg 49")
         Divider()
-        StatRow("STEPS", "8,412", tag = "ESTIMATE")
+        StatRow("Steps", "8,412", tag = "Estimate")
         Divider()
-        StatRow("LOADING", null, loading = true)
+        StatRow("Loading", null, loading = true)
         for (reason in AbsentReason.entries) {
             Divider()
             StatRow(reason.name.replace('_', ' '), null, "MS", absent = reason)
         }
         Divider()
-        Tag("ESTIMATE")
+        Tag("Estimate")
     }
-    Card("FIGURES") {
+    Card("Figures") {
         Row(Modifier.fillMaxWidth()) {
-            Figure("6:16", "HOURS OF SLEEP", modifier = Modifier.weight(1f))
-            Figure(null, "SLEEP NEEDED", Palette.Sleep, absent = AbsentReason.CALIBRATING, alignEnd = true, modifier = Modifier.weight(1f))
+            Figure("6:16", "Hours of sleep", modifier = Modifier.weight(1f))
+            Figure(null, "Sleep needed", Palette.Sleep, absent = AbsentReason.CALIBRATING, alignEnd = true, modifier = Modifier.weight(1f))
         }
     }
-    Card("BUTTONS") {
-        PrimaryButton("PRIMARY") { sheet = true }
+    Card("Buttons") {
+        PrimaryButton("Primary") { sheet = true }
         Spacer(Modifier.height(8.dp))
-        PrimaryButton("LOADING", loading = true) {}
+        PrimaryButton("Loading", loading = true) {}
         Spacer(Modifier.height(8.dp))
-        PrimaryButton("DISABLED", enabled = false) {}
+        PrimaryButton("Disabled", enabled = false) {}
         Spacer(Modifier.height(8.dp))
-        PrimaryButton("DANGER", danger = true) {}
+        PrimaryButton("Danger", danger = true) {}
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SecondaryButton("SECONDARY", glyph = Glyph.Vibrate, modifier = Modifier.weight(1f)) {}
-            SecondaryButton("DISABLED", enabled = false, modifier = Modifier.weight(1f)) {}
+            SecondaryButton("Secondary", glyph = Glyph.Vibrate, modifier = Modifier.weight(1f)) {}
+            SecondaryButton("Disabled", enabled = false, modifier = Modifier.weight(1f)) {}
         }
-        QuietButton("QUIET") {}
-        QuietButton("QUIET DANGER", Palette.Danger) {}
+        QuietButton("Quiet") {}
+        QuietButton("Quiet danger", Palette.Danger) {}
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SmallButton("ALLOW") {}
-            SmallButton("DISABLED", enabled = false) {}
+            SmallButton("Allow") {}
+            SmallButton("Disabled", enabled = false) {}
         }
     }
-    Card("CONTROLS") {
+    Card("Controls") {
         var segment by remember { mutableIntStateOf(0) }
         var chip by remember { mutableStateOf(true) }
         var toggle by remember { mutableStateOf(true) }
         var text by remember { mutableStateOf("72") }
         var name by remember { mutableStateOf("") }
-        Segmented(listOf("WEEK", "MONTH", "YEAR"), segment) { segment = it }
+        Segmented(listOf("Week", "Month", "Year"), segment) { segment = it }
         Spacer(Modifier.height(8.dp))
-        Segmented(listOf("DISABLED", "CONTROL"), 0, enabled = false) {}
+        Segmented(listOf("Disabled", "Control"), 0, enabled = false) {}
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("CAFFEINE", chip) { chip = !chip }
-            Chip("ALCOHOL", false) {}
-            Chip("RUN", true, glyph = Glyph.Run) {}
-            Chip("OFF", false, enabled = false) {}
+            Chip("Caffeine", chip) { chip = !chip }
+            Chip("Alcohol", false) {}
+            Chip("Run", true, glyph = Glyph.Run) {}
+            Chip("Off", false, enabled = false) {}
         }
         ListRow("Toggle", Glyph.Broadcast, "A row with a switch") { Toggle(toggle, "Toggle") { toggle = it } }
         ListRow("Disabled toggle", enabled = false) { Toggle(false, "Disabled toggle", enabled = false) {} }
         Divider()
-        Field("FIELD", text, "Hint under the name") { text = it }
-        Field("FIELD IN ERROR", "9", "Enter 120 to 230", isError = true) {}
-        Field("FIELD DISABLED", "64", enabled = false) {}
+        Field("Field", text, "Hint under the name") { text = it }
+        Field("Field in error", "9", "Enter 120 to 230", isError = true) {}
+        Field("Field disabled", "64", enabled = false) {}
         TextEntry(name, "Name", placeholder = "Text entry") { name = it }
     }
-    Card("ROWS") {
-        TileRow("6:16", Palette.Sleep, "SLEEP", "11:45 PM – 6:24 AM") {}
+    Card("Rows") {
+        TileRow("6:16", Palette.Sleep, "Sleep", "11:45 PM – 6:24 AM") {}
         Divider()
-        TileRow("9.8", Palette.Strain, "RUNNING", "6:05 PM – 6:39 PM", glyph = Glyph.Run, detail = "AVG 152 · MAX 171 BPM · 310 KCAL")
+        TileRow("9.8", Palette.Strain, "Running", "6:05 PM – 6:39 PM", glyph = Glyph.Run, detail = "Avg 152 · max 171 bpm · 310 kcal")
         Divider()
-        TileRow(null, Palette.Strain, "CYCLING", "7:10 AM – 7:40 AM", glyph = Glyph.Cycle)
+        TileRow(null, Palette.Strain, "Cycling", "7:10 AM – 7:40 AM", glyph = Glyph.Cycle)
         Divider()
-        GhostRow(Glyph.Bolt, "ACTIVITY", "Logged after ten minutes of raised heart rate")
+        GhostRow(Glyph.Bolt, "Activity", "Logged after ten minutes of raised heart rate")
         Divider()
         ListRow("List row", Glyph.Person, "With a line of detail", onClick = {})
         Divider()
         ListRow("List row with a value", Glyph.Ruler, value = "KG", onClick = {})
     }
-    Card("PROGRESS") {
+    Card("Progress") {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             LiveDot(Palette.Teal, true)
             LiveDot(Palette.Faint, false)
@@ -423,14 +423,14 @@ private fun Components() {
         Notice.EmptyDay(today = true, AbsentReason.STRAP_NOT_SYNCED), Notice.EmptyDay(today = false, AbsentReason.NOT_WORN),
     )
     for (notice in notices) DayNotice(notice) {}
-    Card("EMPTY STATE") { EmptyState(Glyph.Moon, "NO STAGES YET", "Awake, light, deep and REM draw here after a night with the strap on.") }
+    Card("Empty state") { EmptyState(Glyph.Moon, "No stages yet", "Awake, light, deep and REM draw here after a night with the strap on.") }
     ErrorState("Circlet could not read this day from its storage.") {}
     MessageBar("A message bar, shown above the navigation bar.")
     if (sheet) {
         Sheet("A sheet", onDismiss = { sheet = false }) {
             Text("One short task or a confirmation.", style = body(14.sp))
             Spacer(Modifier.height(16.dp))
-            PrimaryButton("DONE") { sheet = false }
+            PrimaryButton("Done") { sheet = false }
         }
     }
 }
@@ -440,15 +440,15 @@ private fun Charts() {
     val state = demoDay(FakeScenario.PAIRED)
     val day = state.day.valueOrNull
     val week = state.week
-    Card("HEART RATE") {
+    Card("Heart rate") {
         HeartRateChart(day?.heartRateByMinute.orEmpty(), Palette.Strain, "")
         Spacer(Modifier.height(16.dp))
         HeartRateChart(emptyList(), Palette.Strain, "Your day's heart rate draws here as the strap syncs")
         Spacer(Modifier.height(16.dp))
         HeartRateChart(emptyList(), Palette.Strain, "", loading = true)
     }
-    day?.sleep?.value?.let { Card("HYPNOGRAM") { Hypnogram(it) } }
-    Card("WEEK BARS") {
+    day?.sleep?.value?.let { Card("Hypnogram") { Hypnogram(it) } }
+    Card("Week bars") {
         WeekBars(
             week.map { it.recovery.score.value?.toFloat() }, week.map { it.date.narrowDay() }, 100f,
             week.map { Palette.recovery(it.recovery.score.value) }, week.map { it.recovery.score.value?.let { v -> "$v%" } ?: "" },
@@ -456,18 +456,18 @@ private fun Charts() {
         Spacer(Modifier.height(16.dp))
         WeekBars(List(7) { null }, week.map { it.date.narrowDay() }.ifEmpty { List(7) { "" } }.take(7), 100f, List(7) { Palette.Sleep }, List(7) { "" })
     }
-    Card("ZONE BARS") {
+    Card("Zone bars") {
         ZoneBars(day?.strain?.zoneMinutes)
         Divider()
         ZoneBars(null)
     }
-    Card("STRESS TIMELINE") {
+    Card("Stress timeline") {
         val start = state.date.atStartOfDay(SystemTimeSource.zone()).toInstant()
         StressTimeline(day?.stress?.timeline.orEmpty(), start, "")
         Spacer(Modifier.height(16.dp))
         StressTimeline(emptyList(), start, "Stress draws here once the strap has synced")
     }
-    Card("MONTH CELLS") {
+    Card("Month cells") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             MonthCell(6, 0.82f, Palette.RecoveryHigh) {}
             MonthCell(7, 0.48f, Palette.RecoveryMid) {}
@@ -477,7 +477,7 @@ private fun Charts() {
             MonthCell(11, null, Palette.Sleep, enabled = false) {}
         }
     }
-    Card("SPARKLINES AND BARS") {
+    Card("Sparklines and bars") {
         val hrv = state.history.map { it.heart.hrv.rmssdMs.value?.toFloat() }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Sparkline(hrv, Palette.Teal, Modifier.size(width = 96.dp, height = 36.dp))

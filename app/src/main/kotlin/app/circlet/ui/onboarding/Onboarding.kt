@@ -230,7 +230,7 @@ fun WelcomePage(onStart: () -> Unit) {
             style = body(16.sp),
         )
         Spacer(Modifier.height(28.dp))
-        PrimaryButton("GET STARTED", onClick = onStart)
+        PrimaryButton("Get started", onClick = onStart)
         Spacer(Modifier.height(12.dp))
         Text("Setup takes about two minutes", style = body(13.sp, Palette.Faint), modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(20.dp))
@@ -243,7 +243,7 @@ fun ProfilePage(draft: ProfileDraft, unit: MassUnit, error: String?, onNext: () 
     Page(
         "A little about you",
         "These set your heart rate zones and calorie estimates. They stay on this phone, are backed up if you connect Firebase, and you can change them later.",
-        footer = { PrimaryButton("CONTINUE", enabled = complete, onClick = onNext) },
+        footer = { PrimaryButton("Continue", enabled = complete, onClick = onNext) },
     ) {
         Card { ProfileFields(draft, unit, showMaxHeartRate = false) }
         if (error != null) {
@@ -259,8 +259,8 @@ fun AccessPage(access: Access, onNext: () -> Unit, onSkip: () -> Unit) {
         "Let Circlet reach your strap",
         "Three settings keep your data flowing, including overnight while the app is closed.",
         footer = {
-            PrimaryButton(if (access.nearby) "CONTINUE" else "ALLOW NEARBY DEVICES TO CONTINUE", enabled = access.nearby, onClick = onNext)
-            if (!access.nearby) QuietButton("SET UP WITHOUT A STRAP", onClick = onSkip)
+            PrimaryButton(if (access.nearby) "Continue" else "Allow nearby devices to continue", enabled = access.nearby, onClick = onNext)
+            if (!access.nearby) QuietButton("Set up without a strap", onClick = onSkip)
         },
     ) {
         Card { AccessRows(access) }
@@ -280,7 +280,7 @@ fun PairingPage(
     Page(
         "Pair your strap",
         "A strap only talks to one app at a time, so free it up first.",
-        footer = { QuietButton("SKIP FOR NOW", onClick = onSkip) },
+        footer = { QuietButton("Skip for now", onClick = onSkip) },
     ) {
         for ((n, line) in listOf(
             "1" to "In the official app, remove the strap from your account's devices.",
@@ -322,7 +322,7 @@ fun ReadyPage(strap: StrapState, onFinish: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         if (strap.sync.draining) Sweep(Palette.Teal)
         Spacer(Modifier.height(24.dp))
-        PrimaryButton("OPEN CIRCLET", onClick = onFinish)
+        PrimaryButton("Open Circlet", onClick = onFinish)
         Spacer(Modifier.height(20.dp))
     }
 }

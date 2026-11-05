@@ -25,4 +25,4 @@ fun BackupProblem.words(): String = when (this) {
 val BACKUP_INTERVALS: List<Duration> = listOf(Duration.ofDays(1), Duration.ofDays(7))
 
 /** Labels for [BACKUP_INTERVALS], index for index. */
-val BACKUP_INTERVAL_LABELS: List<String> = listOf("DAILY", "WEEKLY")
+val BACKUP_INTERVAL_LABELS: List<String> = listOf("Daily", "Weekly")

@@ -21,7 +21,7 @@ import java.util.Locale
 data class TimeFormat(val zone: ZoneId, val twentyFourHour: Boolean) {
     private val clock = DateTimeFormatter.ofPattern(if (twentyFourHour) "HH:mm" else "h:mm a")
 
-    fun time(instant: Instant): String = clock.format(instant.atZone(zone)).uppercase()
+    fun time(instant: Instant): String = clock.format(instant.atZone(zone))
 
     fun range(start: Instant, end: Instant): String = "${time(start)} – ${time(end)}"
 
@@ -36,21 +36,21 @@ fun hoursMinutes(minutes: Int): String = "%d:%02d".format(minutes / 60, minutes 
 
 fun Duration.hoursMinutes(): String = hoursMinutes(toMinutes().toInt())
 
-/** Sync progress in words: "42 MIN" or "1 H 20 MIN". */
+/** Sync progress in words: "42 min" or "1 h 20 min". */
 fun minutesWords(minutes: Long): String {
     val hours = minutes / 60
     val rest = minutes % 60
-    return if (hours > 0) "%d H %02d MIN".format(hours, rest) else "$rest MIN"
+    return if (hours > 0) "%d h %02d min".format(hours, rest) else "$rest min"
 }
 
 /** Shows committed and in-flight one-hertz samples so a live drain doesn't look idle before its first flush. */
 fun syncProgressLabel(progress: SyncProgress): String {
     val received = (progress.samplesPulled + progress.samplesBuffered).coerceAtLeast(0)
-    if (!progress.draining) return "SYNC NOW"
+    if (!progress.draining) return "Sync now"
     return when {
-        received == 0L -> "SYNCING · STARTING"
-        received < 60L -> "SYNCING · $received SEC RECEIVED"
-        else -> "SYNCING · ${minutesWords(received / 60)} RECEIVED"
+        received == 0L -> "Syncing · starting"
+        received < 60L -> "Syncing · $received sec received"
+        else -> "Syncing · ${minutesWords(received / 60)} received"
     }
 }
 
@@ -58,14 +58,14 @@ fun syncProgressLabel(progress: SyncProgress): String {
 fun SyncProgress.stalled(): Boolean =
     !draining && (lastOutcome == SyncOutcome.STALLED || lastOutcome == SyncOutcome.DISCONNECTED)
 
-/** How long ago [since] was, in words: "JUST NOW", "12 MIN AGO", "3 H AGO", "2 D AGO". */
+/** How long ago [since] was, in words: "Just now", "12 min ago", "3 h ago", "2 d ago". */
 fun agoWords(since: Instant, now: Instant): String {
     val minutes = Duration.between(since, now).toMinutes().coerceAtLeast(0)
     return when {
-        minutes < 1 -> "JUST NOW"
-        minutes < 60 -> "$minutes MIN AGO"
-        minutes < 24 * 60 -> "${minutes / 60} H AGO"
-        else -> "${minutes / (24 * 60)} D AGO"
+        minutes < 1 -> "Just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 24 * 60 -> "${minutes / 60} h ago"
+        else -> "${minutes / (24 * 60)} d ago"
     }
 }
 
@@ -74,9 +74,9 @@ fun Double.decimal(digits: Int = 1): String = "%.${digits}f".format(this)
 fun Int.grouped(): String = "%,d".format(this)
 
 fun dateTitle(date: LocalDate, today: LocalDate): String = when (date) {
-    today -> "TODAY"
-    today.minusDays(1) -> "YESTERDAY"
-    else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d")).uppercase()
+    today -> "Today"
+    today.minusDays(1) -> "Yesterday"
+    else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d"))
 }
 
 fun LocalDate.narrowDay(): String = dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault())

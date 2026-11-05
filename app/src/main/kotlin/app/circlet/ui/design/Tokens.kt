@@ -40,11 +40,11 @@ object Palette {
     val Ghost = Color(0x40FFFFFF)
     val Strain = Color(0xFF0093E7)
     val Sleep = Color(0xFF7BA1BB)
-    val RecoveryHigh = Color(0xFF16EC06)
-    val RecoveryMid = Color(0xFFFFDE00)
-    val RecoveryLow = Color(0xFFFF0026)
+    val RecoveryHigh = Color(0xFF3FD26B)
+    val RecoveryMid = Color(0xFFF2CB3A)
+    val RecoveryLow = Color(0xFFF0475B)
     val RecoveryNone = Color(0xFF597483)
-    val Teal = Color(0xFF00F19F)
+    val Teal = Color(0xFF3CCB9C)
 
     /** [RecoveryLow] lifted until small text passes 4.5:1 on [Card]. */
     val Danger = Color(0xFFFF5C73)
@@ -55,11 +55,11 @@ object Palette {
     val Rem = Color(0xFF9E7BFF)
     val Zones = listOf(
         Color(0xFF597483), Color(0xFFADC2CD), Color(0xFF479AC2),
-        Color(0xFFFFDE00), Color(0xFFFCAC5D), Color(0xFFFF6422),
+        Color(0xFFF2CB3A), Color(0xFFF2A65E), Color(0xFFEE6B3B),
     )
     val StressLow = Sleep
-    val StressMid = Color(0xFFFFDE00)
-    val StressHigh = Color(0xFFFF6422)
+    val StressMid = RecoveryMid
+    val StressHigh = Color(0xFFEE6B3B)
 
     val Background = Brush.verticalGradient(listOf(BgTop, BgBottom))
 
@@ -104,7 +104,7 @@ object Space {
 }
 
 object Shapes {
-    val card = RoundedCornerShape(14.dp)
+    val card = RoundedCornerShape(16.dp)
     val control = RoundedCornerShape(10.dp)
     val chip = RoundedCornerShape(8.dp)
     val tile = RoundedCornerShape(6.dp)
@@ -125,22 +125,29 @@ object Motion {
 val Barlow = FontFamily(
     Font(R.font.barlow_medium, FontWeight.Medium),
     Font(R.font.barlow_semibold, FontWeight.SemiBold),
-    Font(R.font.barlow_bold, FontWeight.Bold),
 )
 
-/** Bold, wide-tracked, written in capitals by the caller. Row names, captions, buttons. */
-fun label(size: TextUnit = 12.sp, color: Color = Palette.Dim) =
-    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Bold, fontSize = size, letterSpacing = 1.4.sp, color = color)
+/** Sentence-case names for rows, captions and buttons, never under 11 sp. Hierarchy comes from size and colour, not weight or capitals. */
+fun label(size: TextUnit = 13.sp, color: Color = Palette.Dim) =
+    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Medium, fontSize = maxOf(size.value, 11f).sp, letterSpacing = 0.2.sp, color = color)
 
 /** Tabular numerals so values do not shift as they change. */
 fun number(size: TextUnit, color: Color = Palette.White) =
-    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Bold, fontSize = size, color = color, fontFeatureSettings = "tnum")
+    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.SemiBold, fontSize = size, color = color, fontFeatureSettings = "tnum")
 
 fun body(size: TextUnit = 15.sp, color: Color = Palette.Dim) =
     TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Medium, fontSize = size, color = color, lineHeight = size * 1.4)
 
+/** Only display sizes tighten their tracking; small titles keep the face's own spacing. */
 fun title(size: TextUnit = 30.sp, color: Color = Palette.White) =
-    TextStyle(fontFamily = Barlow, fontWeight = FontWeight.Bold, fontSize = size, color = color, lineHeight = size * 1.12, letterSpacing = (-0.2).sp)
+    TextStyle(
+        fontFamily = Barlow,
+        fontWeight = if (size.value >= 22f) FontWeight.SemiBold else FontWeight.Medium,
+        fontSize = size,
+        color = color,
+        lineHeight = size * 1.12,
+        letterSpacing = if (size.value >= 24f) (-0.2).sp else 0.sp,
+    )
 
 @Composable
 fun CircletTheme(timeFormat: TimeFormat, content: @Composable () -> Unit) {

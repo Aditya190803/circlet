@@ -95,7 +95,7 @@ fun CloudSetupScreen(cloud: CloudSyncController, onSkip: () -> Unit) {
         Spacer(Modifier.height(28.dp))
         SignInForm(cloud)
         Spacer(Modifier.height(20.dp))
-        QuietButton("NOT NOW", onClick = onSkip)
+        QuietButton("Not now", onClick = onSkip)
         Text(
             "You can connect later in More › Data.",
             style = body(13.sp, Palette.Faint),
@@ -111,17 +111,17 @@ fun CloudAccountPanel(cloud: CloudSyncController) {
     val state by cloud.state.collectAsState()
     val scope = rememberCoroutineScope()
     var renewSignIn by remember { mutableStateOf(false) }
-    Card("CLOUD BACKUP") {
+    Card("Cloud backup") {
         when {
             !state.configured -> ProjectForm(cloud)
             !state.signedIn || renewSignIn -> SignInForm(cloud, renewing = renewSignIn) { renewSignIn = false }
             else -> {
-                Text("SIGNED IN AS", style = label(11.sp, Palette.Faint))
+                Text("Signed in as", style = label(11.sp, Palette.Faint))
                 Spacer(Modifier.height(4.dp))
                 Text(state.email.orEmpty(), style = body(16.sp, Palette.White))
                 Spacer(Modifier.height(6.dp))
-                StatRow("STATUS", if (state.pending == 0) "UP TO DATE" else "${state.pending} WAITING")
-                StatRow("LAST BACKUP", state.lastUpload?.let { agoWords(it, Instant.now()) } ?: "NOT YET")
+                StatRow("Status", if (state.pending == 0) "Up to date" else "${state.pending} waiting")
+                StatRow("Last backup", state.lastUpload?.let { agoWords(it, Instant.now()) } ?: "Not yet")
                 Spacer(Modifier.height(10.dp))
                 Text(
                     "Your history stays on this phone. New readings back up on their own in the background.",
@@ -129,8 +129,8 @@ fun CloudAccountPanel(cloud: CloudSyncController) {
                 )
                 state.message?.let { Problem(it) }
                 Spacer(Modifier.height(14.dp))
-                SecondaryButton("BACK UP NOW", enabled = !state.busy) { scope.launch { cloud.syncNow() } }
-                QuietButton("SIGN IN AGAIN", enabled = !state.busy) { renewSignIn = true }
+                SecondaryButton("Back up now", enabled = !state.busy) { scope.launch { cloud.syncNow() } }
+                QuietButton("Sign in again", enabled = !state.busy) { renewSignIn = true }
             }
         }
     }
@@ -148,19 +148,19 @@ private fun SignInForm(cloud: CloudSyncController, renewing: Boolean = false, on
     val valid = email.trim().contains('@') && if (creating) password.length >= 6 else password.isNotEmpty()
 
     if (!renewing) {
-        Segmented(listOf("SIGN IN", "CREATE ACCOUNT"), mode, enabled = !state.busy) { mode = it }
+        Segmented(listOf("Sign in", "Create account"), mode, enabled = !state.busy) { mode = it }
         Spacer(Modifier.height(18.dp))
     }
-    CloudInput("EMAIL", email, "you@example.com", enabled = !state.busy, keyboard = KeyboardType.Email, ime = ImeAction.Next) { email = it }
+    CloudInput("Email", email, "you@example.com", enabled = !state.busy, keyboard = KeyboardType.Email, ime = ImeAction.Next) { email = it }
     Spacer(Modifier.height(14.dp))
     CloudInput(
-        "PASSWORD", password, if (creating) "At least 6 characters" else "Your password",
+        "Password", password, if (creating) "At least 6 characters" else "Your password",
         enabled = !state.busy, secret = true, ime = ImeAction.Done,
     ) { password = it }
     state.message?.let { Problem(it) }
     Spacer(Modifier.height(20.dp))
     PrimaryButton(
-        if (creating) "CREATE ACCOUNT" else "SIGN IN",
+        if (creating) "Create account" else "Sign in",
         enabled = valid,
         loading = state.busy,
     ) {
@@ -172,7 +172,7 @@ private fun SignInForm(cloud: CloudSyncController, renewing: Boolean = false, on
         }
     }
     if (!creating) {
-        QuietButton("FORGOT PASSWORD?", enabled = !state.busy && email.contains('@')) {
+        QuietButton("Forgot password?", enabled = !state.busy && email.contains('@')) {
             scope.launch { cloud.resetPassword(email) }
         }
     }
@@ -190,12 +190,12 @@ private fun ProjectForm(cloud: CloudSyncController) {
         style = body(14.sp),
     )
     Spacer(Modifier.height(16.dp))
-    CloudInput("DATABASE URL", url, "https://your-project-default-rtdb.firebaseio.com", enabled = !state.busy, keyboard = KeyboardType.Uri) { url = it }
+    CloudInput("Database URL", url, "https://your-project-default-rtdb.firebaseio.com", enabled = !state.busy, keyboard = KeyboardType.Uri) { url = it }
     Spacer(Modifier.height(14.dp))
-    CloudInput("API KEY", apiKey, "From Project settings", enabled = !state.busy, keyboard = KeyboardType.Ascii) { apiKey = it }
+    CloudInput("API key", apiKey, "From Project settings", enabled = !state.busy, keyboard = KeyboardType.Ascii) { apiKey = it }
     state.message?.let { Problem(it) }
     Spacer(Modifier.height(20.dp))
-    PrimaryButton("SAVE", enabled = url.isNotBlank() && apiKey.isNotBlank(), loading = state.busy) {
+    PrimaryButton("Save", enabled = url.isNotBlank() && apiKey.isNotBlank(), loading = state.busy) {
         scope.launch { if (cloud.configure(CloudConfig(url, apiKey)) is Outcome.Ok) apiKey = "" }
     }
 }
@@ -266,7 +266,7 @@ private fun CloudInput(
                             .clickable(role = Role.Button) { shown = !shown }
                             .padding(horizontal = 12.dp),
                         contentAlignment = Alignment.Center,
-                    ) { Text(if (shown) "HIDE" else "SHOW", style = label(11.sp, Palette.Dim)) }
+                    ) { Text(if (shown) "Hide" else "Show", style = label(11.sp, Palette.Dim)) }
                 }
             }
         },

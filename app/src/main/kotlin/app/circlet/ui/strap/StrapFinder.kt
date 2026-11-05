@@ -34,7 +34,7 @@ import app.circlet.ui.design.title
 import app.circlet.ui.design.words
 import app.circlet.ui.state.PairingPhase
 
-private fun distance(rssiDbm: Int) = if (rssiDbm > -65) "VERY CLOSE" else if (rssiDbm > -80) "NEARBY" else "FAR"
+private fun distance(rssiDbm: Int) = if (rssiDbm > -65) "Very close" else if (rssiDbm > -80) "Nearby" else "Far"
 
 /** What the user can do about a pairing failure, when it is something other than trying again. */
 enum class PairingFix { ALLOW_NEARBY, BLUETOOTH_SETTINGS }
@@ -102,8 +102,8 @@ fun StrapFinder(
         }
         Spacer(Modifier.height(12.dp))
         when (val fix = error.fix()) {
-            PairingFix.ALLOW_NEARBY -> SecondaryButton("ALLOW NEARBY DEVICES") { onFix(fix) }
-            PairingFix.BLUETOOTH_SETTINGS -> SecondaryButton("OPEN BLUETOOTH SETTINGS") { onFix(fix) }
+            PairingFix.ALLOW_NEARBY -> SecondaryButton("Allow nearby devices") { onFix(fix) }
+            PairingFix.BLUETOOTH_SETTINGS -> SecondaryButton("Open Bluetooth settings") { onFix(fix) }
             null -> Unit
         }
         if (error.fix() != null) Spacer(Modifier.height(8.dp))
@@ -117,6 +117,6 @@ fun StrapFinder(
             Text("No strap found yet. Bring it close and make sure it is not connected to another phone.", style = body(13.sp, Palette.Faint))
             Spacer(Modifier.height(12.dp))
         }
-        PrimaryButton(if (found.isEmpty()) "SEARCH FOR STRAP" else "SEARCH AGAIN", onClick = onScan)
+        PrimaryButton(if (found.isEmpty()) "Search for strap" else "Search again", onClick = onScan)
     }
 }

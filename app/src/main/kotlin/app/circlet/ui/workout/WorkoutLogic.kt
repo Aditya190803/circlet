@@ -37,12 +37,12 @@ internal fun canMerge(day: List<Activity>, selectedIds: Set<String>, zone: ZoneI
     return day.none { it.id !in selectedIds && it.start >= first && it.start < last }
 }
 
-/** "42 MIN" under an hour, "1 H 05 MIN" from an hour up. A reversed span reads as zero. */
+/** "42 min" under an hour, "1 h 05 min" from an hour up. A reversed span reads as zero. */
 internal fun durationText(start: Instant, end: Instant): String {
     val minutes = Duration.between(start, end).toMinutes().coerceAtLeast(0L)
     val hours = minutes / 60
     val rest = minutes % 60
-    return if (hours == 0L) "$rest MIN" else "$hours H ${rest.toString().padStart(2, '0')} MIN"
+    return if (hours == 0L) "$rest min" else "$hours h ${rest.toString().padStart(2, '0')} min"
 }
 
 /** "05:12" under an hour, "1:02:05" from an hour up. A negative elapsed time reads as zero. */

@@ -38,9 +38,10 @@ fun NotificationsScreen(settings: UserSettings, onChange: (UserSettings) -> Unit
     val end = settings.quietEndMinute
     val quietOn = start != null && end != null
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("NOTIFICATIONS", onBack = onBack)
+        DetailHeader("Notifications", onBack = onBack)
         ScreenColumn {
-            Card("ALERTS") {
+            CallBuzzCard(settings, onChange)
+            Card("Alerts") {
                 ListRow("Off wrist", subtitle = "When the connected strap stays off your wrist for 5 minutes") {
                     Toggle(settings.offWristAlerts, "Off wrist alert") { onChange(settings.copy(offWristAlerts = it)) }
                 }
@@ -49,7 +50,7 @@ fun NotificationsScreen(settings: UserSettings, onChange: (UserSettings) -> Unit
                     Toggle(settings.lowBatteryAlerts, "Low battery alert") { onChange(settings.copy(lowBatteryAlerts = it)) }
                 }
                 Column(Modifier.padding(vertical = 12.dp)) {
-                    Text("ALERT AT", style = label())
+                    Text("Alert at", style = label())
                     Spacer(Modifier.height(10.dp))
                     Segmented(
                         THRESHOLDS.map { "$it%" },
@@ -58,7 +59,7 @@ fun NotificationsScreen(settings: UserSettings, onChange: (UserSettings) -> Unit
                     ) { onChange(settings.copy(lowBatteryThreshold = THRESHOLDS[it])) }
                 }
             }
-            Card("QUIET HOURS") {
+            Card("Quiet hours") {
                 ListRow("Quiet hours", subtitle = "No alerts in this window") {
                     Toggle(quietOn, "Quiet hours") {
                         onChange(
@@ -69,9 +70,9 @@ fun NotificationsScreen(settings: UserSettings, onChange: (UserSettings) -> Unit
                 }
                 if (start != null && end != null) {
                     Divider()
-                    HourStepper("FROM", start) { onChange(settings.copy(quietStartMinute = it)) }
+                    HourStepper("From", start) { onChange(settings.copy(quietStartMinute = it)) }
                     Divider()
-                    HourStepper("UNTIL", end) { onChange(settings.copy(quietEndMinute = it)) }
+                    HourStepper("Until", end) { onChange(settings.copy(quietEndMinute = it)) }
                     Spacer(Modifier.height(6.dp))
                     Text("A window that ends before it starts runs overnight.", style = body(13.sp, Palette.Faint))
                 }

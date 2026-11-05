@@ -76,14 +76,14 @@ fun shiftDay(date: LocalDate, days: Long, today: LocalDate): LocalDate = clampTo
 fun clampToToday(date: LocalDate, today: LocalDate): LocalDate = if (date > today) today else date
 
 fun CorrelationMetric.label(): String = when (this) {
-    CorrelationMetric.RECOVERY -> "RECOVERY"
+    CorrelationMetric.RECOVERY -> "Recovery"
     CorrelationMetric.HRV -> "HRV"
-    CorrelationMetric.SLEEP_PERFORMANCE -> "SLEEP"
+    CorrelationMetric.SLEEP_PERFORMANCE -> "Sleep"
 }
 
 fun CorrelationMetric.unit(): String = when (this) {
-    CorrelationMetric.RECOVERY -> "PTS"
-    CorrelationMetric.HRV -> "MS"
+    CorrelationMetric.RECOVERY -> "pts"
+    CorrelationMetric.HRV -> "ms"
     CorrelationMetric.SLEEP_PERFORMANCE -> "%"
 }
 

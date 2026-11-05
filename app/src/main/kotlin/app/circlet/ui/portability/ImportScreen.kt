@@ -36,9 +36,9 @@ fun ImportScreen(onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        DetailHeader("IMPORT WHOOP HISTORY", onBack = onBack)
+        DetailHeader("Import WHOOP history", onBack = onBack)
         ScreenColumn {
-            Card("WHOOP EXPORT") {
+            Card("WHOOP export") {
                 Text(
                     "Bring in your past days from the official app, so trends and your baselines start with that history.",
                     style = body(14.sp, Palette.Dim),
@@ -59,7 +59,7 @@ fun ImportScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(Space.sm))
                 }
                 SecondaryButton(
-                    if (importing) "IMPORTING" else "CHOOSE THE EXPORT FILE",
+                    if (importing) "Importing" else "Choose the export file",
                     enabled = !importing,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
