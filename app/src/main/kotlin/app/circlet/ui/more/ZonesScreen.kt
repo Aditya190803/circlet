@@ -102,7 +102,7 @@ class ZonesViewModel(
 }
 
 /** Zone lower bounds with the top of zone 5 last, from custom zones; null when the profile has none. */
-private fun Profile.customBounds(): List<Int>? {
+internal fun Profile.customBounds(): List<Int>? {
     if (customZones.isEmpty()) return null
     val ordered = customZones.sortedBy { it.index }
     return ordered.map { it.fromBpm } + ordered.last().untilBpm

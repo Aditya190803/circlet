@@ -22,6 +22,11 @@ import java.time.ZoneId
 private const val NUDGE_INTERVAL_MS = 5 * 60_000L
 private const val BATCH_LATENCY_US = 5_000_000
 
+/** One wall-clock anchor keeps rounding between clock reads from reversing sensor events. */
+internal class StepEventClock(private val wallTimeMs: Long, private val elapsedNanos: Long) {
+    fun epochMs(eventNanos: Long): Long = wallTimeMs + Math.floorDiv(eventNanos - elapsedNanos, 1_000_000L)
+}
+
 /** Lets the first call through, then one call per [intervalMs]. */
 internal class NudgeGate(private val intervalMs: Long) {
     private var last: Long? = null
@@ -52,6 +57,7 @@ class PhoneStepRecorder(
     private val gate = NudgeGate(NUDGE_INTERVAL_MS)
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
+    private var eventClock: StepEventClock? = null
     private val dirtyDates = linkedSetOf<LocalDate>()
     private var refreshPending = false
     private val refresh = Runnable {
@@ -75,6 +81,7 @@ class PhoneStepRecorder(
             thread?.quitSafely()
             thread = null
             handler = null
+            eventClock = null
             return
         }
         val counter = sensors?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) ?: return
@@ -83,6 +90,7 @@ class PhoneStepRecorder(
         if (!granted) return
         val worker = HandlerThread("circlet-steps").also { it.start() }
         val workerHandler = Handler(worker.looper)
+        eventClock = StepEventClock(System.currentTimeMillis(), SystemClock.elapsedRealtimeNanos())
         val registered = try {
             sensors.registerListener(this, counter, SensorManager.SENSOR_DELAY_NORMAL, BATCH_LATENCY_US, workerHandler)
         } catch (_: SecurityException) {
@@ -92,6 +100,7 @@ class PhoneStepRecorder(
             handler = workerHandler
             thread = worker
         } else {
+            eventClock = null
             worker.quitSafely()
         }
     }
@@ -100,14 +109,14 @@ class PhoneStepRecorder(
     override fun onSensorChanged(event: SensorEvent) {
         if (thread == null) return
         if (event.values.isEmpty() || !event.values[0].isFinite() || event.values[0] < 0) return
-        val ageMs = (SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000
-        val reading = StepReading(System.currentTimeMillis() - ageMs, event.values[0].toLong())
+        val clock = eventClock ?: return
+        val reading = StepReading(clock.epochMs(event.timestamp), event.values[0].toLong())
         val zone = ZoneId.systemDefault()
         val date = Instant.ofEpochMilli(reading.epochMs).atZone(zone).toLocalDate()
         try {
             app.circlet.core.RecordingFiles.locked {
                 dir.mkdirs()
-                File(dir, StepCsv.fileName(date)).appendText(StepCsv.line(reading) + "\n")
+                app.circlet.core.RecordingFiles.append(File(dir, StepCsv.fileName(date)), StepCsv.line(reading) + "\n")
             }
         } catch (error: IOException) {
             return

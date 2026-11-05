@@ -7,6 +7,9 @@ import app.circlet.core.DaySummary
 import app.circlet.core.LiveWorkout
 import app.circlet.core.MetricsRepository
 import app.circlet.core.Outcome
+import app.circlet.core.ProfileRepository
+import app.circlet.core.ZoneDefaults
+import app.circlet.ui.more.customBounds
 import app.circlet.core.Route
 import app.circlet.core.RoutePoint
 import app.circlet.core.Sport
@@ -110,10 +113,15 @@ class WorkoutsViewModel(
     }
 }
 
+/** Resting history behind a day's default zones, matching the zones screen. */
+private const val ZONE_HISTORY_DAYS = 60L
+
 class ActivityDetailViewModel(
     private val metrics: MetricsRepository,
     private val workouts: WorkoutController,
     private val routes: RouteStore,
+    private val profiles: ProfileRepository,
+    private val zoneDefaults: ZoneDefaults,
 ) : ViewModel() {
     private val target = MutableStateFlow<Pair<String, LocalDate>?>(null)
     private val messageChannel = Channel<String>(Channel.BUFFERED)
@@ -138,6 +146,24 @@ class ActivityDetailViewModel(
     val dayHeartRate: StateFlow<List<Int?>> = target.flatMapLatest { open ->
         if (open == null) flowOf(emptyList()) else metrics.observeDay(open.second).map { it.heartRateByMinute }.catch { emit(emptyList()) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Zone lower bounds with the top of zone 5 last, as they stood on the activity's day: the
+     * user's own zones, or the defaults from the resting rate up to that day. Null when unknown.
+     */
+    val zoneBounds: StateFlow<List<Int>?> = target.flatMapLatest { open ->
+        if (open == null) {
+            flowOf(null)
+        } else {
+            combine(
+                profiles.profile,
+                metrics.observeRange(open.second.minusDays(ZONE_HISTORY_DAYS - 1), open.second).catch { emit(emptyList()) },
+            ) { profile, days ->
+                val resting = days.sortedBy { it.date }.mapNotNull { it.heart.resting.bpm.value?.toDouble() }
+                profile.customBounds() ?: zoneDefaults.bounds(profile, open.second, resting)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun open(id: String, date: LocalDate) {
         target.value = id to date

@@ -2,6 +2,7 @@ package app.circlet
 
 import android.content.Context
 import app.circlet.core.AlarmController
+import app.circlet.core.BandSteps
 import app.circlet.core.DataPortability
 import app.circlet.core.JournalRepository
 import app.circlet.core.MetricsRepository
@@ -37,6 +38,8 @@ class AppContainer(
     val onboarding: OnboardingState,
     val zoneDefaults: ZoneDefaults = PercentOfMaxZones,
     val diagnostics: SyncDiagnostics = NoSyncDiagnostics,
+    val cloud: app.circlet.core.CloudSyncController = app.circlet.core.NoCloudSync,
+    val bandSteps: BandSteps? = null,
 ) {
     companion object {
         @Volatile

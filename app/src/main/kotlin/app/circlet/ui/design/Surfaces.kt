@@ -40,15 +40,15 @@ fun Card(
         modifier
             .fillMaxWidth()
             .clip(Shapes.card)
-            .background(Palette.Card)
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .background(Palette.CardFill)
+            .padding(horizontal = 20.dp, vertical = 20.dp),
     ) {
         if (title != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = label(13.sp, Palette.White), modifier = Modifier.weight(1f))
+                Text(title, style = label(14.sp, Palette.White), modifier = Modifier.weight(1f))
                 trailing?.invoke()
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
         }
         content()
     }
@@ -176,6 +176,33 @@ fun <T : Any> MetricRow(
         tag = tag,
         onClick = onClick,
     )
+}
+
+/**
+ * One value in a grid of statistics: the name above, the number below.
+ * A null [value] draws the dash, and [absent] says why.
+ */
+@Composable
+fun StatCell(
+    name: String,
+    value: String?,
+    unit: String = "",
+    absent: AbsentReason? = null,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.padding(vertical = 10.dp)) {
+        Text(name, style = label(10.sp, Palette.Faint), maxLines = 1)
+        Spacer(Modifier.height(4.dp))
+        if (value == null) {
+            AbsentDash(Modifier.padding(vertical = 11.dp))
+            if (absent != null) Text(absent.words(), style = body(12.sp, Palette.Faint))
+        } else {
+            Row {
+                Text(value, style = number(22.sp), modifier = Modifier.alignByBaseline())
+                if (unit.isNotEmpty()) Text(" $unit", style = label(10.sp, Palette.Faint), modifier = Modifier.alignByBaseline())
+            }
+        }
+    }
 }
 
 /**

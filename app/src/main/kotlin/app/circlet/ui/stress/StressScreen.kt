@@ -70,7 +70,7 @@ fun StressScreen(date: LocalDate, onBack: () -> Unit) {
                             message = if (value == null) {
                                 absentReason(score).words()
                             } else {
-                                "Higher means more stress on your body today."
+                                "Higher means more stress on your body."
                             },
                         )
                     }

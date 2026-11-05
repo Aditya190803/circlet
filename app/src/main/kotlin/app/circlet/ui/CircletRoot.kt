@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import app.circlet.ui.design.body
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Text
@@ -54,6 +57,8 @@ import app.circlet.core.LinkState
 import app.circlet.core.MetricKind
 import app.circlet.ui.alarm.AlarmsScreen
 import app.circlet.ui.day.DayScreen
+import app.circlet.ui.day.LocalTabTaps
+import kotlinx.coroutines.flow.MutableStateFlow
 import app.circlet.ui.day.HomeScreen
 import app.circlet.ui.day.RecoveryScreen
 import app.circlet.ui.day.SleepScreen
@@ -186,6 +191,20 @@ val LocalMessenger = staticCompositionLocalOf { Messenger() }
 @Composable
 fun CircletRoot() {
     val context = LocalContext.current
+    val cloud = remember { app.circlet.AppBootstrap.cloud(context) }
+    val cloudState by cloud.state.collectAsStateWithLifecycle()
+    // Offered once at start; the app works without it, and More › Data can connect later.
+    val prompts = remember { context.getSharedPreferences("circlet_ui", android.content.Context.MODE_PRIVATE) }
+    var cloudPromptDismissed by remember { mutableStateOf(prompts.getBoolean("cloud_prompt_dismissed", false)) }
+    if (cloudState.supported && !cloudState.signedIn && !cloudPromptDismissed) {
+        CircletTheme(TimeFormat(ZoneId.systemDefault(), DateFormat.is24HourFormat(context))) {
+            app.circlet.ui.portability.CloudSetupScreen(cloud) {
+                prompts.edit().putBoolean("cloud_prompt_dismissed", true).apply()
+                cloudPromptDismissed = true
+            }
+        }
+        return
+    }
     var attempt by remember { mutableIntStateOf(0) }
     var opened by remember { mutableStateOf<Result<AppContainer>?>(null) }
     LaunchedEffect(attempt) {
@@ -204,8 +223,8 @@ fun CircletRoot() {
     if (container == null) {
         CircletTheme(TimeFormat(ZoneId.systemDefault(), DateFormat.is24HourFormat(context))) {
             Box(Modifier.fillMaxSize().background(Palette.Background).padding(24.dp), contentAlignment = Alignment.Center) {
-                if (opened == null) Text("Opening your data…", color = Palette.Dim)
-                else app.circlet.ui.design.ErrorState("Your local data could not be opened. Restart Circlet and try again. Your saved data has not been replaced.") { attempt++ }
+                if (opened == null) Text("Loading your cloud history…", color = Palette.Dim)
+                else app.circlet.ui.design.ErrorState("Your data could not be opened. Check your cloud connection and try again. Unsent changes have not been cleared.") { attempt++ }
             }
         }
         return
@@ -230,6 +249,17 @@ fun CircletRoot() {
                     .background(Palette.Background),
             ) { Shell(container, messenger) }
         }
+    }
+}
+
+/**
+ * Opens [tab] from inside another tab's stack and drops that stack, so its tab opens at its
+ * own top next time instead of returning to the screen the jump came from.
+ */
+private fun NavHostController.jumpTo(tab: Tab) {
+    navigate(tab.route) {
+        popUpTo(Tab.HOME.route)
+        launchSingleTop = true
     }
 }
 
@@ -258,8 +288,16 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
     LaunchedEffect(day) { day.messages.collect(messenger::show) }
     val inApp = entry != null && entry?.destination?.route != Routes.ONBOARDING
     LifecycleStartEffect(inApp) {
-        if (inApp) day.setLive(true)
-        onStopOrDispose { if (inApp) day.setLive(false) }
+        if (inApp) {
+            day.setLive(true)
+            container.bandSteps?.setForeground(true)
+        }
+        onStopOrDispose {
+            if (inApp) {
+                day.setLive(false)
+                container.bandSteps?.setForeground(false)
+            }
+        }
     }
     LaunchedEffect(messenger.shown) {
         if (messenger.text != null) {
@@ -274,232 +312,242 @@ private fun Shell(container: AppContainer, messenger: Messenger) {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .then(if (tab == null) Modifier.navigationBarsPadding() else Modifier),
-        ) {
-            NavHost(
-                nav,
-                startDestination = start,
-                modifier = Modifier.weight(1f),
-                enterTransition = { fadeIn(tween(Motion.ENTER)) + slideInVertically(tween(Motion.RISE)) { it / 24 } },
-                exitTransition = { fadeOut(tween(Motion.EXIT)) },
-                popEnterTransition = { fadeIn(tween(Motion.ENTER)) },
-                popExitTransition = { fadeOut(tween(Motion.EXIT)) + slideOutDown() },
+    val tabTaps = remember { MutableStateFlow(0) }
+    CompositionLocalProvider(LocalTabTaps provides tabTaps) {
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .then(if (tab == null) Modifier.navigationBarsPadding() else Modifier),
             ) {
-                composable(Routes.ONBOARDING) {
-                    OnboardingFlow {
-                        nav.navigate(Tab.HOME.route) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
-                    }
-                }
-                composable(Tab.HOME.route) {
-                    HomeScreen(
-                        state, refreshing,
-                        onRefresh = day::sync,
-                        onShift = day::shift,
-                        onOpen = { screen ->
-                            nav.select(
-                                when (screen) {
-                                    DayScreen.SLEEP -> Tab.SLEEP
-                                    DayScreen.RECOVERY -> Tab.RECOVERY
-                                    DayScreen.STRAIN -> Tab.STRAIN
-                                },
-                            )
-                        },
-                        onNotice = { notice ->
-                            when (notice) {
-                                Notice.NeedsPermission -> access.requestNearby()
-                                Notice.Unpaired -> nav.navigate(Routes.PAIR)
-                                else -> nav.select(Tab.MORE)
-                            }
-                        },
-                        onRetry = day::retry,
-                        onProfile = { nav.navigate(Routes.PROFILE) },
-                        onStrap = { nav.select(Tab.MORE) },
-                        onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
-                        onOpenAllActivities = { nav.navigate(Routes.workouts(state.date)) },
-                        live = liveWorkout,
-                        onStartWorkout = { nav.navigate(Routes.START_WORKOUT) },
-                        onOpenLive = { nav.navigate(Routes.LIVE_WORKOUT) },
-                        onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
-                    )
-                }
-                composable(Tab.SLEEP.route) { SleepScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
-                composable(Tab.RECOVERY.route) { RecoveryScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
-                composable(Tab.STRAIN.route) {
-                    StrainScreen(
-                        state,
-                        onBack = { nav.popBackStack() },
-                        onRetry = day::retry,
-                        onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
-                    )
-                }
-                composable(Tab.MORE.route) {
-                    val more = moreViewModel(messenger)
-                    val strap by more.strapState.collectAsStateWithLifecycle()
-                    val settings by more.settings.collectAsStateWithLifecycle()
-                    val checks by more.checks.collectAsStateWithLifecycle()
-                    val busy by more.busy.collectAsStateWithLifecycle()
-                    MoreScreen(
-                        strap, settings, checks, access, busy,
-                        MoreActions(
-                            sync = more::sync,
-                            buzz = more::buzz,
-                            find = more::find,
-                            rename = more::rename,
-                            forget = more::forget,
-                            setBroadcast = more::setBroadcast,
-                            setDoubleTap = { more.update(settings.copy(doubleTap = it)) },
-                            pair = { nav.navigate(Routes.PAIR) },
-                            profile = { nav.navigate(Routes.PROFILE) },
-                            units = { nav.navigate(Routes.UNITS) },
-                            notifications = { nav.navigate(Routes.NOTIFICATIONS) },
-                            about = { nav.navigate(Routes.ABOUT) },
-                            trends = { nav.navigate(Routes.TRENDS) },
-                            journal = { nav.navigate(Routes.journal(state.date)) },
-                            alarms = { nav.navigate(Routes.ALARMS) },
-                            stress = { nav.navigate(Routes.stress(state.date)) },
-                            workouts = { nav.navigate(Routes.workouts(state.date)) },
-                            data = { nav.navigate(Routes.DATA) },
-                            importHistory = { nav.navigate(Routes.IMPORT) },
-                            breathe = { nav.navigate(Routes.BREATHE) },
-                            diagnostics = { nav.navigate(Routes.DIAGNOSTICS) },
-                            gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
-                        ),
-                    )
-                }
-                composable(Routes.PROFILE) {
-                    val more = moreViewModel(messenger)
-                    val profile by more.profile.collectAsStateWithLifecycle()
-                    val settings by more.settings.collectAsStateWithLifecycle()
-                    val error by more.profileError.collectAsStateWithLifecycle()
-                    ProfileScreen(
-                        profile, settings.mass, error, more::saveProfile,
-                        onZones = { nav.navigate(Routes.ZONES) },
-                        onBack = { nav.popBackStack() },
-                    )
-                }
-                composable(Routes.UNITS) {
-                    val more = moreViewModel(messenger)
-                    val settings by more.settings.collectAsStateWithLifecycle()
-                    UnitsScreen(settings, more::update) { nav.popBackStack() }
-                }
-                composable(Routes.NOTIFICATIONS) {
-                    val more = moreViewModel(messenger)
-                    val settings by more.settings.collectAsStateWithLifecycle()
-                    NotificationsScreen(settings, more::update) { nav.popBackStack() }
-                }
-                composable(Routes.ABOUT) {
-                    val notice = rememberNotice()
-                    val version = remember {
-                        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
-                    }
-                    AboutScreen(version, notice?.getOrNull(), noticeMissing = notice?.isFailure == true) { nav.popBackStack() }
-                }
-                composable(Routes.PAIR) {
-                    val pairing = containerViewModel { c, _ -> PairingViewModel(c.strap) }
-                    val strap by pairing.strapState.collectAsStateWithLifecycle()
-                    val scanning by pairing.scanning.collectAsStateWithLifecycle()
-                    val found by pairing.found.collectAsStateWithLifecycle()
-                    val phase by pairing.phase.collectAsStateWithLifecycle()
-                    LaunchedEffect(Unit) { pairing.scan() }
-                    DisposableEffect(Unit) { onDispose { pairing.stopScan() } }
-                    LaunchedEffect(strap.link) {
-                        if (strap.link == LinkState.CONNECTED) {
-                            messenger.show("${strap.name ?: "Your strap"} is connected.")
-                            nav.popBackStack()
+                NavHost(
+                    nav,
+                    startDestination = start,
+                    modifier = Modifier.weight(1f),
+                    enterTransition = { fadeIn(tween(Motion.ENTER)) + slideInVertically(tween(Motion.RISE)) { it / 24 } },
+                    exitTransition = { fadeOut(tween(Motion.EXIT)) },
+                    popEnterTransition = { fadeIn(tween(Motion.ENTER)) },
+                    popExitTransition = { fadeOut(tween(Motion.EXIT)) + slideOutDown() },
+                ) {
+                    composable(Routes.ONBOARDING) {
+                        OnboardingFlow {
+                            nav.navigate(Tab.HOME.route) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
                         }
                     }
-                    PairScreen(phase, scanning, found, pairing::scan, pairing::pair, fixPairing) { nav.popBackStack() }
+                    composable(Tab.HOME.route) {
+                        HomeScreen(
+                            state, refreshing,
+                            onRefresh = day::sync,
+                            onShift = day::shift,
+                            onOpen = { screen ->
+                                nav.select(
+                                    when (screen) {
+                                        DayScreen.SLEEP -> Tab.SLEEP
+                                        DayScreen.RECOVERY -> Tab.RECOVERY
+                                        DayScreen.STRAIN -> Tab.STRAIN
+                                    },
+                                )
+                            },
+                            onNotice = { notice ->
+                                when (notice) {
+                                    Notice.NeedsPermission -> access.requestNearby()
+                                    Notice.Unpaired -> nav.navigate(Routes.PAIR)
+                                    else -> nav.select(Tab.MORE)
+                                }
+                            },
+                            onRetry = day::retry,
+                            onProfile = { nav.navigate(Routes.PROFILE) },
+                            onStrap = { nav.select(Tab.MORE) },
+                            onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
+                            onOpenAllActivities = { nav.navigate(Routes.workouts(state.date)) },
+                            live = liveWorkout,
+                            onStartWorkout = { nav.navigate(Routes.START_WORKOUT) },
+                            onOpenLive = { nav.navigate(Routes.LIVE_WORKOUT) },
+                            onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
+                            onOpenStress = { nav.navigate(Routes.stress(state.date)) },
+                        )
+                    }
+                    composable(Tab.SLEEP.route) { SleepScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
+                    composable(Tab.RECOVERY.route) { RecoveryScreen(state, onBack = { nav.popBackStack() }, onRetry = day::retry) }
+                    composable(Tab.STRAIN.route) {
+                        StrainScreen(
+                            state,
+                            onBack = { nav.popBackStack() },
+                            onRetry = day::retry,
+                            onOpenActivity = { id -> nav.navigate(Routes.workout(id, state.date)) },
+                            bandSteps = container.bandSteps,
+                        )
+                    }
+                    composable(Tab.MORE.route) {
+                        val more = moreViewModel(messenger)
+                        val strap by more.strapState.collectAsStateWithLifecycle()
+                        val settings by more.settings.collectAsStateWithLifecycle()
+                        val checks by more.checks.collectAsStateWithLifecycle()
+                        val busy by more.busy.collectAsStateWithLifecycle()
+                        MoreScreen(
+                            strap, settings, checks, access, busy,
+                            MoreActions(
+                                sync = more::sync,
+                                buzz = more::buzz,
+                                find = more::find,
+                                rename = more::rename,
+                                forget = more::forget,
+                                setBroadcast = more::setBroadcast,
+                                setDoubleTap = { more.update(settings.copy(doubleTap = it)) },
+                                pair = { nav.navigate(Routes.PAIR) },
+                                profile = { nav.navigate(Routes.PROFILE) },
+                                units = { nav.navigate(Routes.UNITS) },
+                                notifications = { nav.navigate(Routes.NOTIFICATIONS) },
+                                about = { nav.navigate(Routes.ABOUT) },
+                                trends = { nav.navigate(Routes.TRENDS) },
+                                journal = { nav.navigate(Routes.journal(state.date)) },
+                                alarms = { nav.navigate(Routes.ALARMS) },
+                                stress = { nav.navigate(Routes.stress(state.date)) },
+                                workouts = { nav.navigate(Routes.workouts(state.date)) },
+                                data = { nav.navigate(Routes.DATA) },
+                                importHistory = { nav.navigate(Routes.IMPORT) },
+                                breathe = { nav.navigate(Routes.BREATHE) },
+                                diagnostics = { nav.navigate(Routes.DIAGNOSTICS) },
+                                gallery =DebugHooks.gallery?.let { { nav.navigate(Routes.GALLERY) } },
+                            ),
+                        )
+                    }
+                    composable(Routes.PROFILE) {
+                        val more = moreViewModel(messenger)
+                        val profile by more.profile.collectAsStateWithLifecycle()
+                        val settings by more.settings.collectAsStateWithLifecycle()
+                        val error by more.profileError.collectAsStateWithLifecycle()
+                        ProfileScreen(
+                            profile, settings.mass, error, more::saveProfile,
+                            onZones = { nav.navigate(Routes.ZONES) },
+                            onBack = { nav.popBackStack() },
+                        )
+                    }
+                    composable(Routes.UNITS) {
+                        val more = moreViewModel(messenger)
+                        val settings by more.settings.collectAsStateWithLifecycle()
+                        UnitsScreen(settings, more::update) { nav.popBackStack() }
+                    }
+                    composable(Routes.NOTIFICATIONS) {
+                        val more = moreViewModel(messenger)
+                        val settings by more.settings.collectAsStateWithLifecycle()
+                        NotificationsScreen(settings, more::update) { nav.popBackStack() }
+                    }
+                    composable(Routes.ABOUT) {
+                        val notice = rememberNotice()
+                        val version = remember {
+                            runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
+                        }
+                        AboutScreen(version, notice?.getOrNull(), noticeMissing = notice?.isFailure == true) { nav.popBackStack() }
+                    }
+                    composable(Routes.PAIR) {
+                        val pairing = containerViewModel { c, _ -> PairingViewModel(c.strap) }
+                        val strap by pairing.strapState.collectAsStateWithLifecycle()
+                        val scanning by pairing.scanning.collectAsStateWithLifecycle()
+                        val found by pairing.found.collectAsStateWithLifecycle()
+                        val phase by pairing.phase.collectAsStateWithLifecycle()
+                        LaunchedEffect(Unit) { pairing.scan() }
+                        DisposableEffect(Unit) { onDispose { pairing.stopScan() } }
+                        LaunchedEffect(strap.link) {
+                            if (strap.link == LinkState.CONNECTED) {
+                                messenger.show("${strap.name ?: "Your strap"} is connected.")
+                                nav.popBackStack()
+                            }
+                        }
+                        PairScreen(phase, scanning, found, pairing::scan, pairing::pair, fixPairing) { nav.popBackStack() }
+                    }
+                    composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
+                    composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
+                    composable(Routes.BREATHE) { BreatheScreen { nav.popBackStack() } }
+                    composable(Routes.ZONES) { ZonesScreen { nav.popBackStack() } }
+                    composable(Routes.DIAGNOSTICS) { DiagnosticsScreen { nav.popBackStack() } }
+                    composable(Routes.TRENDS) {
+                        TrendsScreen(
+                            onBack = { nav.popBackStack() },
+                            onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
+                            onOpenDay = { date ->
+                                val target = minOf(date, state.today)
+                                day.shift(ChronoUnit.DAYS.between(state.date, target))
+                                nav.jumpTo(Tab.HOME)
+                            },
+                            onOpenRecap = { nav.navigate(Routes.RECAP) },
+                            onOpenRecords = { nav.navigate(Routes.RECORDS) },
+                        )
+                    }
+                    composable(
+                        "trends/metric/{kind}",
+                        arguments = listOf(stringArg("kind")),
+                    ) { entry ->
+                        MetricTrendScreen(MetricKind.valueOf(entry.arg("kind")), onBack = { nav.popBackStack() })
+                    }
+                    composable(Routes.RECAP) { WeeklyRecapScreen { nav.popBackStack() } }
+                    composable(Routes.RECORDS) { RecordsScreen { nav.popBackStack() } }
+                    composable(Routes.ALARMS) { AlarmsScreen { nav.popBackStack() } }
+                    composable("stress/{date}", arguments = listOf(stringArg("date"))) { entry ->
+                        StressScreen(entry.date("date")) { nav.popBackStack() }
+                    }
+                    composable("journal/{date}", arguments = listOf(stringArg("date"))) { entry ->
+                        JournalScreen(
+                            entry.date("date"),
+                            onBack = { nav.popBackStack() },
+                            onOpenInsights = { nav.navigate(Routes.JOURNAL_INSIGHTS) },
+                        )
+                    }
+                    composable(Routes.JOURNAL_INSIGHTS) { JournalInsightsScreen { nav.popBackStack() } }
+                    composable("workouts/{date}", arguments = listOf(stringArg("date"))) { entry ->
+                        val date = entry.date("date")
+                        WorkoutsScreen(
+                            date,
+                            onBack = { nav.popBackStack() },
+                            onOpenActivity = { id -> nav.navigate(Routes.workout(id, date)) },
+                            onStartWorkout = {
+                                nav.navigate(if (liveWorkout != null) Routes.LIVE_WORKOUT else Routes.START_WORKOUT)
+                            },
+                        )
+                    }
+                    composable(
+                        "workout/{id}/{date}",
+                        arguments = listOf(stringArg("id"), stringArg("date")),
+                    ) { entry ->
+                        ActivityDetailScreen(entry.arg("id"), entry.date("date")) { nav.popBackStack() }
+                    }
+                    composable(Routes.START_WORKOUT) {
+                        StartWorkoutScreen(
+                            onBack = { nav.popBackStack() },
+                            onStarted = {
+                                nav.navigate(Routes.LIVE_WORKOUT) { popUpTo(Routes.START_WORKOUT) { inclusive = true } }
+                            },
+                        )
+                    }
+                    composable(Routes.LIVE_WORKOUT) {
+                        LiveWorkoutScreen(
+                            onBack = { nav.popBackStack() },
+                            onFinished = { id ->
+                                nav.navigate(Routes.workout(id, state.today)) { popUpTo(Routes.LIVE_WORKOUT) { inclusive = true } }
+                            },
+                        )
+                    }
+                    DebugHooks.gallery?.let { gallery ->
+                        composable(Routes.GALLERY) { gallery { nav.popBackStack() } }
+                    }
                 }
-                composable(Routes.DATA) { DataScreen { nav.popBackStack() } }
-                composable(Routes.IMPORT) { ImportScreen { nav.popBackStack() } }
-                composable(Routes.BREATHE) { BreatheScreen { nav.popBackStack() } }
-                composable(Routes.ZONES) { ZonesScreen { nav.popBackStack() } }
-                composable(Routes.DIAGNOSTICS) { DiagnosticsScreen { nav.popBackStack() } }
-                composable(Routes.TRENDS) {
-                    TrendsScreen(
-                        onBack = { nav.popBackStack() },
-                        onOpenMetric = { kind -> nav.navigate(Routes.trend(kind)) },
-                        onOpenDay = { date ->
-                            val target = minOf(date, state.today)
-                            day.shift(ChronoUnit.DAYS.between(state.date, target))
-                            nav.select(Tab.HOME)
-                        },
-                        onOpenRecap = { nav.navigate(Routes.RECAP) },
-                        onOpenRecords = { nav.navigate(Routes.RECORDS) },
-                    )
-                }
-                composable(
-                    "trends/metric/{kind}",
-                    arguments = listOf(stringArg("kind")),
-                ) { entry ->
-                    MetricTrendScreen(MetricKind.valueOf(entry.arg("kind")), onBack = { nav.popBackStack() })
-                }
-                composable(Routes.RECAP) { WeeklyRecapScreen { nav.popBackStack() } }
-                composable(Routes.RECORDS) { RecordsScreen { nav.popBackStack() } }
-                composable(Routes.ALARMS) { AlarmsScreen { nav.popBackStack() } }
-                composable("stress/{date}", arguments = listOf(stringArg("date"))) { entry ->
-                    StressScreen(entry.date("date")) { nav.popBackStack() }
-                }
-                composable("journal/{date}", arguments = listOf(stringArg("date"))) { entry ->
-                    JournalScreen(
-                        entry.date("date"),
-                        onBack = { nav.popBackStack() },
-                        onOpenInsights = { nav.navigate(Routes.JOURNAL_INSIGHTS) },
-                    )
-                }
-                composable(Routes.JOURNAL_INSIGHTS) { JournalInsightsScreen { nav.popBackStack() } }
-                composable("workouts/{date}", arguments = listOf(stringArg("date"))) { entry ->
-                    val date = entry.date("date")
-                    WorkoutsScreen(
-                        date,
-                        onBack = { nav.popBackStack() },
-                        onOpenActivity = { id -> nav.navigate(Routes.workout(id, date)) },
-                        onStartWorkout = {
-                            nav.navigate(if (liveWorkout != null) Routes.LIVE_WORKOUT else Routes.START_WORKOUT)
-                        },
-                    )
-                }
-                composable(
-                    "workout/{id}/{date}",
-                    arguments = listOf(stringArg("id"), stringArg("date")),
-                ) { entry ->
-                    ActivityDetailScreen(entry.arg("id"), entry.date("date")) { nav.popBackStack() }
-                }
-                composable(Routes.START_WORKOUT) {
-                    StartWorkoutScreen(
-                        onBack = { nav.popBackStack() },
-                        onStarted = {
-                            nav.navigate(Routes.LIVE_WORKOUT) { popUpTo(Routes.START_WORKOUT) { inclusive = true } }
-                        },
-                    )
-                }
-                composable(Routes.LIVE_WORKOUT) {
-                    LiveWorkoutScreen(
-                        onBack = { nav.popBackStack() },
-                        onFinished = { id ->
-                            nav.navigate(Routes.workout(id, state.today)) { popUpTo(Routes.LIVE_WORKOUT) { inclusive = true } }
-                        },
-                    )
-                }
-                DebugHooks.gallery?.let { gallery ->
-                    composable(Routes.GALLERY) { gallery { nav.popBackStack() } }
+                if (tab != null) {
+                    BottomBar(tab) {
+                        tabTaps.value++
+                        if (it != tab) nav.select(it)
+                    }
                 }
             }
-            if (tab != null) BottomBar(tab) { nav.select(it) }
-        }
-        messenger.text?.let {
-            MessageBar(
-                it,
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = if (tab != null) 68.dp else 0.dp),
-            )
+            messenger.text?.let {
+                MessageBar(
+                    it,
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = if (tab != null) 84.dp else 0.dp),
+                )
+            }
         }
     }
 }
@@ -520,7 +568,11 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
         Modifier
             .fillMaxWidth()
             .background(Palette.BgBottom)
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(32.dp))
+            .background(Palette.CardFill)
+            .padding(horizontal = 4.dp),
     ) {
         for (tab in Tab.entries) {
             val on = tab == current
@@ -535,10 +587,14 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit) {
                     }
                     .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
-                Icon(tab.glyph, tint, 22.dp)
-                Text(tab.title, style = label(10.sp, tint), maxLines = 1)
+                Icon(tab.glyph, tint, 24.dp)
+                Text(
+                    tab.title.lowercase().replaceFirstChar { it.uppercase() },
+                    style = body(12.sp, tint).copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium),
+                    maxLines = 1,
+                )
             }
         }
     }

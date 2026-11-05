@@ -11,7 +11,7 @@ class RouteStore(context: Context) {
 
     private fun file(id: String) = File(dir, id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".jsonl")
 
-    fun exists(id: String): Boolean = file(id).exists()
+    fun exists(id: String): Boolean = app.circlet.core.RecordingFiles.read(file(id)) != null
 
     fun append(id: String, point: RoutePoint) = app.circlet.core.RecordingFiles.locked {
         dir.mkdirs()
@@ -20,26 +20,30 @@ class RouteStore(context: Context) {
             .put("lat", point.lat)
             .put("lon", point.lon)
             .put("acc", point.accuracyM)
-        file(id).appendText(line.toString() + "\n")
+        app.circlet.core.RecordingFiles.append(file(id), line.toString() + "\n")
     }
 
     fun read(id: String): List<RoutePoint> = app.circlet.core.RecordingFiles.locked {
         val source = file(id)
-        if (!source.exists()) return@locked emptyList()
-        source.readLines().mapNotNull { line ->
+        val bytes = app.circlet.core.RecordingFiles.read(source) ?: return@locked emptyList()
+        String(bytes, Charsets.UTF_8).lineSequence().mapNotNull { line ->
             runCatching {
                 val json = JSONObject(line)
                 RoutePoint(json.getLong("t"), json.getDouble("lat"), json.getDouble("lon"), json.getDouble("acc"))
             }.getOrNull()
-        }
+        }.toList()
     }
 
     fun rename(from: String, to: String) = app.circlet.core.RecordingFiles.locked {
         val source = file(from)
-        if (source.exists()) source.renameTo(file(to))
+        val bytes = app.circlet.core.RecordingFiles.read(source)
+        if (bytes != null) {
+            app.circlet.core.RecordingFiles.write(file(to), bytes)
+            app.circlet.core.RecordingFiles.delete(source)
+        }
     }
 
     fun delete(id: String) = app.circlet.core.RecordingFiles.locked {
-        file(id).delete()
+        app.circlet.core.RecordingFiles.delete(file(id))
     }
 }

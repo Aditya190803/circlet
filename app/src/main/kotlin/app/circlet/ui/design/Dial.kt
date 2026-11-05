@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -136,17 +137,17 @@ fun MetricDial(
             .clickable(role = Role.Button, onClickLabel = "Open $title", onClick = onClick)
             .padding(vertical = 6.dp),
     ) {
-        Ring(if (value == null) null else fraction, color, 104.dp, 7.dp, loading = loading) {
+        Ring(if (value == null) null else fraction, color, 108.dp, 9.dp, loading = loading) {
             when {
                 loading -> Unit
                 value == null -> Icon(glyph, Palette.Faint, 28.dp)
-                else -> RingValue(value, unit, 30.sp)
+                else -> RingValue(value, unit, 34.sp)
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = label(12.sp, Palette.White))
-            Icon(Glyph.ChevronRight, Palette.Faint, 14.dp, Modifier.padding(start = 2.dp))
+            Text(title, style = label(13.sp, Palette.White))
+            Icon(Glyph.ChevronRight, Palette.Dim, 15.dp, Modifier.padding(start = 3.dp))
         }
     }
 }
@@ -163,10 +164,11 @@ fun HeroDial(
     message: String,
     loading: Boolean = false,
     marker: Float? = null,
+    tag: String? = null,
 ) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(8.dp))
-        Ring(if (value == null) null else fraction, color, 220.dp, 13.dp, loading = loading, marker = if (value == null) null else marker) {
+        Ring(if (value == null) null else fraction, color, 250.dp, 16.dp, loading = loading, marker = if (value == null) null else marker) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 when {
                     loading -> Unit
@@ -174,10 +176,10 @@ fun HeroDial(
                         Icon(glyph, Palette.Faint, 44.dp)
                         Spacer(Modifier.height(10.dp))
                     }
-                    else -> RingValue(value, unit, 64.sp)
+                    else -> RingValue(value, unit, 84.sp)
                 }
                 if (!loading) {
-                    Text(caption, style = label(12.sp))
+                    Text(caption, style = label(14.sp, Palette.White), textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 200.dp))
                 }
             }
         }
@@ -187,7 +189,11 @@ fun HeroDial(
             Spacer(Modifier.height(8.dp))
             Skeleton(Modifier.size(width = 180.dp, height = 14.dp))
         } else {
-            Text(message, style = body(), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 20.dp))
+            if (tag != null) {
+                Tag(tag, Palette.Warn)
+                Spacer(Modifier.height(10.dp))
+            }
+            Text(message, style = body(14.sp, Palette.Dim), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
         }
         Spacer(Modifier.height(8.dp))
     }

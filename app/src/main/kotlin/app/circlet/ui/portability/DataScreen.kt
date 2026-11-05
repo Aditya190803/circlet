@@ -1,5 +1,11 @@
 package app.circlet.ui.portability
 
+import app.circlet.AppContainer
+import app.circlet.ui.design.Tag
+import app.circlet.ui.design.Divider
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -54,7 +60,7 @@ import kotlinx.coroutines.withContext
 /** Health Connect, export, backup and restore, with the privacy line that applies to all of them. */
 @Composable
 fun DataScreen(onBack: () -> Unit) {
-    val vm = containerViewModel { container, _ -> DataViewModel(container.portability, container.settings) }
+    val vm = containerViewModel { container, _ -> DataViewModel(container.portability, container.settings, container.cloud) }
     val messenger = LocalMessenger.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -63,6 +69,7 @@ fun DataScreen(onBack: () -> Unit) {
     LaunchedEffect(vm) { vm.messages.collect { messenger.show(it) } }
 
     val health by vm.healthConnect.collectAsState()
+    val cloudState by vm.cloud.state.collectAsState()
     val backup by vm.backup.collectAsState()
     val export by vm.export.collectAsState()
     val exporting by vm.exporting.collectAsState()
@@ -109,6 +116,7 @@ fun DataScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         DetailHeader("DATA", onBack = onBack)
         ScreenColumn {
+            if (cloudState.supported) CloudAccountPanel(vm.cloud)
             Card("STEPS") {
                 Text(
                     "Steps come from this phone's step counter, only while the phone is with you. " +
@@ -120,6 +128,27 @@ fun DataScreen(onBack: () -> Unit) {
                     checked = countSteps,
                     description = "Count steps with this phone",
                 ) { on -> if (on) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION) else vm.setCountPhoneSteps(false) }
+                val band = remember(context) { AppContainer.get(context).bandSteps }
+                if (band != null) {
+                    val bandOn by band.enabled.collectAsState()
+                    Spacer(Modifier.height(Space.md))
+                    Divider()
+                    Spacer(Modifier.height(Space.md))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("BAND STEPS", style = label(12.sp, Palette.White))
+                        Spacer(Modifier.width(Space.sm))
+                        Tag("EXPERIMENTAL", Palette.Warn)
+                    }
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        "Counts steps from the band's own motion while Circlet is open and the band is connected. " +
+                            "The band streams motion only then, which uses more of its battery. The count is not yet " +
+                            "validated and covers only the time the band streamed, so it sits beside the phone count rather than replacing it.",
+                        style = body(14.sp, Palette.Dim),
+                    )
+                    Spacer(Modifier.height(Space.sm))
+                    Toggle(checked = bandOn, description = "Count steps with the band") { band.setEnabled(it) }
+                }
             }
 
             Card("HEALTH CONNECT") {
@@ -218,8 +247,8 @@ fun DataScreen(onBack: () -> Unit) {
                     SecondaryButton("CHOOSE A FILE") { pickRestore.launch(arrayOf("*/*")) }
                 } else {
                     Text(
-                        "Restoring replaces all data on this phone with the data in the file. " +
-                            "Data on this phone that is not in the file will be lost.",
+                        "Restoring replaces your current history with the data in this file. " +
+                            "The replacement will also sync to your Firebase account.",
                         style = body(14.sp, Palette.Dim),
                     )
                     Spacer(Modifier.height(Space.sm))
@@ -234,7 +263,7 @@ fun DataScreen(onBack: () -> Unit) {
 
             Card("PRIVACY") {
                 Text(
-                    "Nothing leaves this phone unless you export it. Circlet has no internet permission.",
+                    "Your history is kept on this phone. When you connect Firebase, a compressed copy is backed up over HTTPS to your personal account. Export files are created only when you ask for them.",
                     style = body(13.sp, Palette.Faint),
                 )
             }

@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 
 private const val MIN_GAP_MS = 60_000L
 
@@ -43,27 +45,40 @@ object WidgetUpdater {
         if (!started.compareAndSet(false, true)) return
         val app = context.applicationContext
         scope.launch {
-            val container = AppContainer.get(app)
-            val zone = { container.time.zone() }
-            val date = flow {
-                while (true) {
-                    emit(container.time.now().atZone(zone()).toLocalDate())
+            while (isActive) {
+                try {
+                    watch(app)
+                    return@launch
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (_: Exception) {
+                    // A widget must not terminate the app if opening its data fails.
                     delay(MIN_GAP_MS)
                 }
-            }.distinctUntilChanged()
-            @OptIn(ExperimentalCoroutinesApi::class)
-            val reading = date.flatMapLatest { container.metrics.observeDay(it) }.map(TodayReading::of)
-            val strap = container.strap.state.map(BatteryReading::of)
-            combine(reading, strap) { day, power -> day to power }
-                .distinctUntilChanged()
-                .conflate()
-                .collect { (day, power) ->
-                    today = day
-                    battery = power
-                    renderLast(app)
-                    delay(MIN_GAP_MS)
-                }
+            }
         }
+    }
+
+    private suspend fun watch(app: Context) {
+        val container = AppContainer.get(app)
+        val zone = { container.time.zone() }
+        val date = flow {
+            while (true) {
+                emit(container.time.now().atZone(zone()).toLocalDate())
+                delay(MIN_GAP_MS)
+            }
+        }.distinctUntilChanged()
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val reading = date.flatMapLatest { container.metrics.observeDay(it) }.map(TodayReading::of)
+        val strap = container.strap.state.map(BatteryReading::of)
+        combine(reading, strap) { day, power -> day to power }
+            .distinctUntilChanged()
+            .conflate()
+            .collect { (day, power) ->
+                today = day
+                battery = power
+                renderLast(app)
+                delay(MIN_GAP_MS)
+            }
     }
 
     fun renderLast(context: Context) {

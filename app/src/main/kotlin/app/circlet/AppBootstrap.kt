@@ -56,6 +56,11 @@ object AppBootstrap {
         }
     }
 
+    fun cloud(context: Context): app.circlet.core.CloudSyncController {
+        val real = backend ?: return app.circlet.core.NoCloudSync
+        return real.javaClass.getMethod("cloud", Context::class.java).invoke(real, context.applicationContext) as app.circlet.core.CloudSyncController
+    }
+
     /** Gives the CompanionDeviceManager association dialog an activity to show on. */
     fun attach(activity: Activity) {
         call("attach", Activity::class.java, activity)

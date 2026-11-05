@@ -37,10 +37,19 @@ import app.circlet.core.DaySummary
 import app.circlet.core.LinkState
 import app.circlet.core.LiveWorkout
 import app.circlet.core.MetricKind
-import app.circlet.core.SkinTempFlag
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
+import app.circlet.ui.design.InfoButton
+import app.circlet.ui.design.Shapes
+import app.circlet.ui.design.StressTimeline
+import app.circlet.core.STRESS_HIGH_CUTOFF
+import app.circlet.core.STRESS_LOW_CUTOFF
+import androidx.compose.ui.draw.clip
+import app.circlet.ui.design.BaselineLegend
+import app.circlet.ui.design.BaselineTile
+import app.circlet.ui.design.SectionTitle
+import app.circlet.ui.design.change
 import app.circlet.ui.design.Card
 import app.circlet.ui.design.Divider
 import app.circlet.ui.design.ErrorState
@@ -95,6 +104,7 @@ fun HomeScreen(
     onOpenActivity: (String) -> Unit = {},
     onOpenAllActivities: () -> Unit = {},
     onOpenMetric: (MetricKind) -> Unit = {},
+    onOpenStress: () -> Unit = {},
     live: LiveWorkout? = null,
     onStartWorkout: () -> Unit = {},
     onOpenLive: () -> Unit = {},
@@ -121,17 +131,19 @@ fun HomeScreen(
                 val loading = state.day is Loadable.Loading
                 if (live != null) LiveWorkoutCard(live, onOpenLive)
                 Dials(summary, loading, onOpen)
+                HeartCard(state, summary, loading)
+                StressCard(state, summary, loading, onOpenStress)
                 when (val day = state.day) {
                     is Loadable.Failed -> ErrorState(day.message, onRetry)
                     else -> state.notice?.let { DayNotice(it) { onNotice(it) } }
                 }
-                HeartCard(state, summary, loading)
-                PlanCard(state, summary, loading)
+                SectionTitle("My Day")
                 MyDayCard(
                     summary, loading, onOpen, onOpenActivity, onOpenAllActivities,
-                    onStartWorkout = onStartWorkout.takeIf { state.isToday && live == null },
+                    onStartWorkout = onStartWorkout.takeIf { state.isToday && live == null }, today = state.isToday,
                 )
-                KeyStatistics(state, summary, loading, onOpenMetric)
+                PlanCard(state, summary, loading)
+                Dashboard(state, summary, onOpenMetric)
             }
         }
     }
@@ -226,7 +238,7 @@ private fun StrapState.status(): String = when {
 
 @Composable
 private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
-    Card("HEART RATE") {
+    Card("HEART RATE", trailing = { InfoButton("Heart rate", "Today shows the live reading from your strap; earlier days show the day's average. Hold and drag the chart to read any minute.") }) {
         val strap = state.strap
         val connected = strap.link == LinkState.CONNECTED
         // Today shows the live reading; an earlier day shows that day's average instead.
@@ -238,7 +250,7 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
                 shown != null -> Text(shown.toString(), style = number(40.sp))
                 else -> AbsentDash(Modifier.padding(vertical = 22.dp).size(width = 34.dp, height = 4.dp))
             }
-            Text(if (state.isToday) "  BPM" else "  AVG BPM", style = label(12.sp), modifier = Modifier.padding(top = 10.dp))
+            if (!state.isToday) Text("  AVG", style = label(12.sp), modifier = Modifier.padding(top = 10.dp))
             Spacer(Modifier.weight(1f))
             if (state.isToday) {
                 LiveDot(if (connected) Palette.Teal else Palette.Faint, connected && live != null)
@@ -255,14 +267,61 @@ private fun HeartCard(state: DayUiState, summary: DaySummary?, loading: Boolean)
     }
 }
 
+/** The day's stress score and its timeline. Tapping the card opens the full stress day. */
+@Composable
+private fun StressCard(state: DayUiState, summary: DaySummary?, loading: Boolean, onOpen: () -> Unit) {
+    val stress = summary?.stress
+    val score = stress?.score?.value
+    Card(
+        "STRESS MONITOR",
+        modifier = Modifier
+            .clip(Shapes.card)
+            .clickable(role = Role.Button, onClickLabel = "Open stress", onClick = onOpen),
+        trailing = { InfoButton("Stress monitor", "Stress runs from 0 to 100 and is read through the day from the rhythm of your heartbeats, using Baevsky's stress index. Higher means your body is under more load. Hold and drag the chart to read any hour, or tap the card for the full day.") },
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            when {
+                loading -> Skeleton(Modifier.padding(vertical = 12.dp).size(width = 56.dp, height = 16.dp))
+                score == null -> AbsentDash(Modifier.padding(vertical = 18.dp).size(width = 34.dp, height = 4.dp))
+                else -> {
+                    Text(score.toInt().toString(), style = number(40.sp, Palette.stress(score)))
+                    Text(" / 100", style = label(11.sp, Palette.Faint), modifier = Modifier.padding(bottom = 8.dp))
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (score != null) {
+                Text(
+                    when {
+                        score >= STRESS_HIGH_CUTOFF -> "HIGH"
+                        score >= STRESS_LOW_CUTOFF -> "MEDIUM"
+                        else -> "LOW"
+                    },
+                    style = label(12.sp, Palette.stress(score)),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+        }
+        if (!loading) {
+            Spacer(Modifier.height(8.dp))
+            StressTimeline(
+                stress?.timeline.orEmpty(),
+                state.date.atStartOfDay(LocalTimeFormat.current.zone).toInstant(),
+                if (state.isToday) "Stress draws here through the day as the strap syncs" else stress?.score?.absentReason?.words() ?: "No stress recorded this day",
+            )
+        }
+    }
+}
+
 @Composable
 private fun PlanCard(state: DayUiState, summary: DaySummary?, loading: Boolean) {
-    Card(if (state.isToday) "TODAY'S PLAN" else "PLAN FOR THE DAY") {
+    Card(if (state.isToday) "TODAY'S PLAN" else "PLAN FOR THE DAY", trailing = { InfoButton("Plan", "The optimal strain comes from that morning's recovery. Sleep need starts from your baseline need and rises with the day's strain and any sleep debt you carry.") }) {
         val target = summary?.targetStrain?.score
+        val optimal = summary?.targetStrain?.range
         val need = summary?.sleepNeed
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Figure(
-                target?.value?.decimal(), "STRAIN TARGET", Palette.Strain,
+                optimal?.let { "${it.low.decimal()}–${it.high.decimal()}" } ?: target?.value?.decimal(),
+                if (optimal != null) "OPTIMAL STRAIN" else "STRAIN TARGET", Palette.Strain,
                 absent = target?.absentReason, loading = loading,
                 modifier = Modifier.weight(1f),
             )
@@ -288,9 +347,10 @@ private fun MyDayCard(
     onOpenActivity: (String) -> Unit,
     onOpenAllActivities: () -> Unit,
     onStartWorkout: (() -> Unit)?,
+    today: Boolean,
 ) {
     val format = LocalTimeFormat.current
-    Card("MY DAY") {
+    Card(if (today) "TODAY'S ACTIVITIES" else "ACTIVITIES") {
         if (loading) {
             repeat(2) {
                 if (it > 0) Divider()
@@ -303,7 +363,7 @@ private fun MyDayCard(
             TileRow(sleep.timeAsleep.hoursMinutes(), Palette.Sleep, "SLEEP", format.range(sleep.start, sleep.end)) { onOpen(DayScreen.SLEEP) }
         } else {
             val reason = summary?.sleep?.absentReason?.takeIf { summary.hasData }
-            GhostRow(Glyph.Moon, "SLEEP", reason?.words() ?: "Picked up on its own overnight")
+            GhostRow(Glyph.Moon, "NO SLEEP YET", reason?.words() ?: "Sleep appears here after a night with the strap on")
         }
         summary?.naps?.forEach { nap ->
             Divider()
@@ -311,7 +371,7 @@ private fun MyDayCard(
         }
         Divider()
         val activities = summary?.activities.orEmpty()
-        if (activities.isEmpty()) GhostRow(Glyph.Bolt, "ACTIVITY", "Logged after ten minutes of raised heart rate")
+        if (activities.isEmpty()) GhostRow(Glyph.Bolt, "NO ACTIVITIES YET", "Activities appear here after ten minutes of raised heart rate")
         activities.forEachIndexed { i, activity ->
             if (i > 0) Divider()
             TileRow(
@@ -363,7 +423,6 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(live.heartRateBpm?.toString() ?: "–", style = number(26.sp, Palette.White))
-                Text("BPM", style = label(10.sp, Palette.Faint))
             }
             Icon(Glyph.ChevronRight, Palette.Faint, 18.dp, Modifier.padding(start = 8.dp))
         }
@@ -371,57 +430,60 @@ private fun LiveWorkoutCard(live: LiveWorkout, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Boolean, onOpenMetric: (MetricKind) -> Unit) {
-    Card("KEY STATISTICS") {
-        if (summary == null) {
-            for ((i, name) in listOf("HRV", "RESTING HEART RATE", "RESPIRATORY RATE", "HOURS OF SLEEP", "CALORIES", "STEPS").withIndex()) {
-                if (i > 0) Divider()
-                StatRow(name, null, loading = loading)
-            }
-            return@Card
-        }
-        val week = state.week
-        val hrv = average(week.mapNotNull { it.heart.hrv.rmssdMs.value })
-        val resting = average(week.mapNotNull { it.heart.resting.bpm.value?.toDouble() })
-        val breaths = average(week.mapNotNull { it.heart.respiratoryRate.breathsPerMinute.value })
-        val asleep = average(week.mapNotNull { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() })
-        val refs = summary.references
-        MetricRow(
-            "HRV", summary.heart.hrv.rmssdMs, "MS", note = hrv?.let { "7-day avg ${it.decimal(0)}" },
-            tag = positionTag(summary.heart.hrv.rmssdMs.value, refs.forKind(MetricKind.HRV)?.personal),
-            onClick = { onOpenMetric(MetricKind.HRV) },
-        ) { it.decimal(0) }
-        Divider()
-        MetricRow(
-            "RESTING HEART RATE", summary.heart.resting.bpm, "BPM", note = resting?.let { "7-day avg ${it.decimal(0)}" },
-            tag = positionTag(summary.heart.resting.bpm.value?.toDouble(), refs.forKind(MetricKind.RESTING_HEART_RATE)?.personal),
-            onClick = { onOpenMetric(MetricKind.RESTING_HEART_RATE) },
-        ) { it.toString() }
-        Divider()
-        MetricRow(
-            "RESPIRATORY RATE", summary.heart.respiratoryRate.breathsPerMinute, "RPM", note = breaths?.let { "7-day avg ${it.decimal()}" },
-            tag = positionTag(summary.heart.respiratoryRate.breathsPerMinute.value?.toDouble(), refs.forKind(MetricKind.RESPIRATORY_RATE)?.personal),
-            onClick = { onOpenMetric(MetricKind.RESPIRATORY_RATE) },
-        ) { it.decimal() }
-        Divider()
-        val skin = summary.skinTemperature
-        val scored = skin != null && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
-        val deviation = if (scored) skin?.deviation?.value else null
-        StatRow(
-            "SKIN TEMPERATURE", deviation?.signedDeviation(), "SD",
-            note = when {
-                skin == null -> "Current temperature unavailable from this strap"
-                !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
-                else -> "Deviation from your own nights"
-            },
-            absent = if (scored && deviation == null) skin?.deviation?.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
-            onClick = { onOpenMetric(MetricKind.SKIN_TEMPERATURE) },
-        )
-        Divider()
-        MetricRow("HOURS OF SLEEP", summary.sleep, note = asleep?.let { "7-day avg ${hoursMinutes(it.toInt())}" }, onClick = { onOpenMetric(MetricKind.SLEEP_DURATION) }) { it.timeAsleep.hoursMinutes() }
-        Divider()
-        MetricRow("CALORIES", summary.calories, "KCAL", onClick = { onOpenMetric(MetricKind.CALORIES) }) { it.grouped() }
-        Divider()
-        MetricRow("STEPS", summary.steps.count, onClick = { onOpenMetric(MetricKind.STEPS) }) { it.grouped() }
+private fun Dashboard(state: DayUiState, summary: DaySummary?, onOpenMetric: (MetricKind) -> Unit) {
+    SectionTitle("My Dashboard")
+    if (summary == null) {
+        for ((glyph, name) in listOf(
+            Glyph.Pulse to "HEART RATE VARIABILITY", Glyph.Heart to "RESTING HEART RATE", Glyph.Breathing to "RESPIRATORY RATE",
+            Glyph.Moon to "HOURS OF SLEEP", Glyph.Flame to "CALORIES", Glyph.Steps to "STEPS",
+        )) BaselineTile(glyph, name, null, null, null)
+        return
     }
+    fun usual(pick: (DaySummary) -> Double?) = average(state.earlier.mapNotNull(pick))
+
+    val hrv = summary.heart.hrv.rmssdMs.value
+    val hrvUsual = usual { it.heart.hrv.rmssdMs.value }
+    BaselineTile(
+        Glyph.Pulse, "HEART RATE VARIABILITY", hrv?.decimal(0), hrvUsual?.decimal(0), change(hrv, hrvUsual, true, 1.0),
+    ) { onOpenMetric(MetricKind.HRV) }
+
+    val resting = summary.heart.resting.bpm.value?.toDouble()
+    val restingUsual = usual { it.heart.resting.bpm.value?.toDouble() }
+    BaselineTile(
+        Glyph.Heart, "RESTING HEART RATE", resting?.decimal(0), restingUsual?.decimal(0), change(resting, restingUsual, false, 1.0),
+    ) { onOpenMetric(MetricKind.RESTING_HEART_RATE) }
+
+    val breaths = summary.heart.respiratoryRate.breathsPerMinute.value
+    val breathsUsual = usual { it.heart.respiratoryRate.breathsPerMinute.value }
+    BaselineTile(
+        Glyph.Breathing, "RESPIRATORY RATE", breaths?.decimal(), breathsUsual?.decimal(), change(breaths, breathsUsual, null, 0.1),
+    ) { onOpenMetric(MetricKind.RESPIRATORY_RATE) }
+
+    val importedSkin = summary.skinTemperature?.importedCelsius?.takeIf { it.isFinite() && it in 20.0..45.0 }
+    BaselineTile(
+        Glyph.Target, "SKIN TEMPERATURE", importedSkin?.let { "${it.decimal(1)} °C" },
+        if (importedSkin != null) "WHOOP IMPORT" else "UNAVAILABLE", null,
+    ) { onOpenMetric(MetricKind.SKIN_TEMPERATURE) }
+
+    val asleep = summary.sleep.value?.timeAsleep?.toMinutes()?.toDouble()
+    val asleepUsual = usual { it.sleep.value?.timeAsleep?.toMinutes()?.toDouble() }
+    BaselineTile(
+        Glyph.Moon, "HOURS OF SLEEP", asleep?.let { hoursMinutes(it.toInt()) }, asleepUsual?.let { hoursMinutes(it.toInt()) },
+        change(asleep, asleepUsual, true, 1.0),
+    ) { onOpenMetric(MetricKind.SLEEP_DURATION) }
+
+    val calories = summary.calories.value?.toDouble()
+    val caloriesUsual = usual { it.calories.value?.toDouble() }
+    BaselineTile(
+        Glyph.Flame, "CALORIES", summary.calories.value?.grouped(), caloriesUsual?.toInt()?.grouped(),
+        change(calories, caloriesUsual, null, 1.0),
+    ) { onOpenMetric(MetricKind.CALORIES) }
+
+    val steps = summary.steps.count.value?.toDouble()
+    val stepsUsual = usual { it.steps.count.value?.toDouble() }
+    BaselineTile(
+        Glyph.Steps, "STEPS", summary.steps.count.value?.grouped(), stepsUsual?.toInt()?.grouped(),
+        change(steps, stepsUsual, true, 1.0),
+    ) { onOpenMetric(MetricKind.STEPS) }
+    BaselineLegend(state.earlier.size, state.isToday)
 }

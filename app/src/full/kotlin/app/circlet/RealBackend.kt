@@ -55,6 +55,7 @@ object RealBackend {
 
     @Volatile
     private var stepRecorder: PhoneStepRecorder? = null
+    private var bandSteps: BandStepRecorder? = null
 
     private val workers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -85,9 +86,11 @@ object RealBackend {
 
     fun attach(activity: Activity) = StrapCompanion.attach(activity)
 
+    /** Runs on the main thread from onResume, so it never opens storage itself. */
+    @Suppress("UNUSED_PARAMETER")
     fun refreshStepRecording(context: Context) {
-        ensure(context.applicationContext)
         val opened = data ?: return
+        StrapService.ensureRunning(context)
         stepRecorder?.setEnabled(opened.settings.settings.value.countPhoneSteps)
     }
 
@@ -123,6 +126,7 @@ object RealBackend {
             strap = StrapModule.open(context, opened.ports, SystemTimeSource)
             data = opened
             recordPhoneSteps(context, opened)
+            bandSteps = BandStepRecorder(context, strap!!.strap, { ZoneId.systemDefault() }, workers)
             RouteRecorder.locationService = { ctx, wanted -> StrapService.setLocationWanted(ctx, wanted) }
         }
     }
@@ -170,6 +174,11 @@ object RealBackend {
             onboarding = data.onboarding,
             zoneDefaults = ZoneDefaults { profile, on, resting -> defaultZoneBounds(profile, on, resting) },
             diagnostics = strap.diagnostics,
+            cloud = data.cloud,
+            bandSteps = bandSteps,
         )
     }
+
+    fun cloud(context: Context): app.circlet.core.CloudSyncController = app.circlet.data.cloud.FirebaseCloud.get(context)
+
 }

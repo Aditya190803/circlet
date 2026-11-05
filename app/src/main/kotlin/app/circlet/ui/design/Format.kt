@@ -68,7 +68,11 @@ fun agoWords(since: Instant, now: Instant): String {
     }
 }
 
-fun Double.decimal(digits: Int = 1): String = "%.${digits}f".format(this)
+/** Fixed decimals. A value that rounds to zero prints without a sign, never as "-0.0". */
+fun Double.decimal(digits: Int = 1): String {
+    val text = "%.${digits}f".format(this)
+    return if (text.startsWith("-") && text.none { it in '1'..'9' }) text.drop(1) else text
+}
 
 fun Int.grouped(): String = "%,d".format(this)
 
@@ -89,6 +93,7 @@ fun AbsentReason.words(): String = when (this) {
     AbsentReason.SIGNAL_TOO_NOISY -> "Signal was too noisy to trust"
     AbsentReason.IMPLAUSIBLE -> "Reading was out of range, so it was left out"
     AbsentReason.NO_SLEEP -> "No sleep was found"
+    AbsentReason.UNSUPPORTED_SENSOR -> "Unavailable through this connection"
 }
 
 fun Confidence.words(): String = when (this) {

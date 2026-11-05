@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,11 +29,10 @@ import app.circlet.core.rejectedSleepWindow
 import app.circlet.ui.LocalMessenger
 import app.circlet.ui.design.Card
 import app.circlet.ui.design.Divider
-import app.circlet.ui.design.GhostRow
-import app.circlet.ui.design.Glyph
 import app.circlet.ui.design.LocalTimeFormat
 import app.circlet.ui.design.Palette
 import app.circlet.ui.design.PrimaryButton
+import app.circlet.ui.design.QuietButton
 import app.circlet.ui.design.SecondaryButton
 import app.circlet.ui.design.Sheet
 import app.circlet.ui.design.SmallButton
@@ -73,27 +73,28 @@ private fun rememberSleepEdit(date: LocalDate): SleepEdit? {
     return edit
 }
 
-/** Edit, add, remove or restore the night, with the sheets they open. */
+/** Which sleep sheet is open. Hoisted so the header's edit button and the empty night's ADD SLEEP open the same one. */
+@Stable
+class SleepEditor {
+    var editing by mutableStateOf(false)
+    var removing by mutableStateOf(false)
+}
+
+/** The sheets [editor] opens: edit or add the night, remove it, or bring back the detected one. */
 @Composable
-fun SleepEditActions(day: DaySummary, date: LocalDate) {
+fun SleepEditSheets(editor: SleepEditor, day: DaySummary, date: LocalDate) {
     val edit = rememberSleepEdit(date)
     val save = rememberSleepEditSaver(date)
     val format = LocalTimeFormat.current
     val sleep = day.sleep.value
-    var editing by remember { mutableStateOf(false) }
-    var removing by remember { mutableStateOf(false) }
 
-    SecondaryButton(if (sleep != null) "EDIT SLEEP" else "ADD SLEEP") { editing = true }
-    if (sleep != null) SecondaryButton("REMOVE SLEEP") { removing = true }
-    if (edit.changesMain) SecondaryButton("USE DETECTED SLEEP") { save(edit.withDetectedMain()) }
-
-    if (editing) {
+    if (editor.editing) {
         val now = remember { Instant.now() }
         val initial = remember { suggestedSleepWindow(date, format.zone, now, sleep) }
         var bed by remember { mutableStateOf(initial.first) }
         var wake by remember { mutableStateOf(initial.second) }
         val problem = rejectedSleepWindow(bed, wake, now)
-        Sheet(title = if (sleep != null) "EDIT SLEEP" else "ADD SLEEP", onDismiss = { editing = false }) {
+        Sheet(title = if (sleep != null) "EDIT SLEEP" else "ADD SLEEP", onDismiss = { editor.editing = false }) {
             TimeStepper("BED", bed, null, format) { bed = it }
             Spacer(Modifier.height(Space.md))
             TimeStepper("WAKE", wake, bed, format) { wake = it }
@@ -105,38 +106,58 @@ fun SleepEditActions(day: DaySummary, date: LocalDate) {
             }
             Spacer(Modifier.height(Space.md))
             PrimaryButton("SAVE", enabled = problem == null) {
-                editing = false
+                editor.editing = false
                 save(edit.withWindow(bed, wake))
+            }
+            if (edit.changesMain) {
+                QuietButton("USE DETECTED SLEEP") {
+                    editor.editing = false
+                    save(edit.withDetectedMain())
+                }
+            }
+            if (sleep != null) {
+                QuietButton("REMOVE SLEEP", Palette.Danger) {
+                    editor.editing = false
+                    editor.removing = true
+                }
             }
         }
     }
 
-    if (removing) {
-        Sheet(title = "REMOVE THIS SLEEP?", onDismiss = { removing = false }) {
+    if (editor.removing) {
+        Sheet(title = "REMOVE THIS SLEEP?", onDismiss = { editor.removing = false }) {
             Text(
                 "This night will count as no sleep. Recovery and the other figures worked out from it are scored again without it. You can bring the detected sleep back later.",
                 style = body(14.sp, Palette.Dim),
             )
             Spacer(Modifier.height(Space.md))
             PrimaryButton("REMOVE SLEEP", danger = true) {
-                removing = false
+                editor.removing = false
                 save(edit.withMainRemoved())
             }
             Spacer(Modifier.height(Space.xs))
-            SecondaryButton("KEEP SLEEP") { removing = false }
+            SecondaryButton("KEEP SLEEP") { editor.removing = false }
         }
     }
 }
 
-/** Detected naps, each with a REJECT button, and the rejected ones with KEEP. */
+/** Brings back the detected night after the user changed or removed it. Draws nothing when there is nothing to restore. */
+@Composable
+fun RestoreSleepButton(date: LocalDate) {
+    val edit = rememberSleepEdit(date)
+    val save = rememberSleepEditSaver(date)
+    if (edit.changesMain) QuietButton("USE DETECTED SLEEP") { save(edit.withDetectedMain()) }
+}
+
+/** Detected naps, each with a REJECT button, and the rejected ones with KEEP. Draws nothing on a day with neither. */
 @Composable
 fun NapsCard(day: DaySummary, date: LocalDate) {
     val format = LocalTimeFormat.current
     val edit = rememberSleepEdit(date)
     val save = rememberSleepEditSaver(date)
     val rejected = edit?.rejectedNaps.orEmpty().sorted()
+    if (day.naps.isEmpty() && rejected.isEmpty()) return
     Card("NAPS") {
-        if (day.naps.isEmpty() && rejected.isEmpty()) GhostRow(Glyph.Moon, "NAP", "Daytime sleep is kept apart from the night")
         day.naps.forEachIndexed { i, nap ->
             if (i > 0) Divider()
             NapRow(

@@ -35,6 +35,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -351,6 +355,17 @@ fun Sheet(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope
             )
         },
     ) {
+        // The sheet has its own window, which takes its bar colours from the system theme; the
+        // app is always dark, so keep the status and navigation icons light over it.
+        val view = LocalView.current
+        SideEffect {
+            generateSequence(view.parent) { it.parent }.filterIsInstance<DialogWindowProvider>().firstOrNull()?.window?.let {
+                WindowCompat.getInsetsController(it, view).apply {
+                    isAppearanceLightStatusBars = false
+                    isAppearanceLightNavigationBars = false
+                }
+            }
+        }
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp)) {
             Text(title, style = title(22.sp))
             Spacer(Modifier.height(10.dp))
