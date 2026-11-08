@@ -12,8 +12,8 @@ android {
         applicationId = "app.circlet"
         minSdk = 31
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.6.6"
+        versionCode = 34
+        versionName = "0.6.7"
     }
 
     buildTypes {
