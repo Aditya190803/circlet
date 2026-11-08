@@ -23,6 +23,7 @@ private val DIALERS = setOf(
  * What a posted notification says about a call.
  * [callType] is the call-style type when the app used one, else null.
  * [fullScreen] is true when the notification carries a full-screen intent; [chronometer] when it shows a running timer.
+ * [phoneRinging] is true when the notification comes from the dialer while the system ringer is sounding.
  */
 internal data class CallNotice(
     val packageName: String,
@@ -30,6 +31,7 @@ internal data class CallNotice(
     val callType: Int?,
     val fullScreen: Boolean,
     val chronometer: Boolean,
+    val phoneRinging: Boolean = false,
 )
 
 /** The source a notification's app counts as, or null when it is not a call app Circlet listens to. */
@@ -40,11 +42,15 @@ internal fun sourceOf(packageName: String, defaultDialer: String?): CallSource? 
 }
 
 /**
- * True while the call is ringing. A call style answers directly; without one, an incoming call
- * is the full-screen alert, and an answered call shows a running timer instead.
+ * True while the call is ringing. An incoming call style answers directly; without one, an
+ * incoming call is the full-screen alert, and an answered call shows a running timer instead.
+ * Some dialers (Samsung's among them) post neither shape, so a dialer call notice also rings
+ * while the system ringer sounds.
  */
 internal fun ringing(notice: CallNotice): Boolean {
-    if (notice.category != CATEGORY_CALL) return false
-    notice.callType?.let { return it == CALL_TYPE_INCOMING }
-    return notice.fullScreen && !notice.chronometer
+    if (notice.chronometer) return false
+    val call = notice.category == CATEGORY_CALL
+    if (call && notice.callType == CALL_TYPE_INCOMING) return true
+    if (call && notice.callType == null && notice.fullScreen) return true
+    return notice.phoneRinging && (call || notice.fullScreen)
 }
