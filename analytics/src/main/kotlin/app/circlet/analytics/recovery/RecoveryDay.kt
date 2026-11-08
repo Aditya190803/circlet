@@ -19,6 +19,7 @@ import app.circlet.core.Recovery
 import app.circlet.core.RecoveryDriver
 import app.circlet.core.RecoveryDriverKind
 import app.circlet.core.SleepPerformance
+import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.max
 
@@ -26,56 +27,38 @@ import kotlin.math.max
  * One recovery score for the day that produced [heart] and [sleepPerformance].
  *
  * [history] is older than that day, oldest first. A driver lists score points,
- * positive when the input raised readiness. Calibration is ready once fourteen
- * prior scores can be inverted back into the composite z this formula stores.
- * The inversion undoes the published logistic; rounding the stored score to an
- * integer loses a little of the original z.
+ * positive when the input raised readiness. The score is personal, and calibration
+ * ready, once its inputs have fourteen nights of baseline; until fourteen prior nights
+ * have a composite of their own, the spread is the design one rather than the user's.
  */
 fun computeRecovery(
     heart: DayHeart,
     sleepPerformance: SleepPerformance,
     history: List<DaySummary>,
 ): Recovery {
-    val hrvBase = ArrayList<Double>()
-    val rhrBase = ArrayList<Double>()
-    val respBase = ArrayList<Double>()
-    val sleepBase = ArrayList<Double>()
-    for (day in history) {
-        day.heart.hrv.rmssdMs.value?.let { if (it > 0.0) hrvBase.add(ln(it)) }
-        day.heart.resting.bpm.value?.let { rhrBase.add(it.toDouble()) }
-        day.heart.respiratoryRate.breathsPerMinute.value?.let { respBase.add(it) }
-        day.sleepPerformance.percent.value?.let { sleepBase.add(it.toDouble()) }
-    }
-    val hrv = heart.hrv.rmssdMs.value?.let { if (it > 0.0) ln(it) else null }
-    val rhr = heart.resting.bpm.value?.toDouble()
-    val resp = heart.respiratoryRate.breathsPerMinute.value
-    val sleep = sleepPerformance.percent.value?.toDouble()
-    val zHistory = reconstructCompositeZ(history)
-    val metric = readinessComposite(
-        inputs = listOf(
-            hrvInput(hrv, hrvBase),
-            rhrInput(rhr, rhrBase),
-            respInput(resp, respBase),
-            ReadinessInput("sleep", sleep, sleepBase, goodSign = 1, weight = 0.10),
-        ),
-        compositeZHistory = zHistory,
+    val nights = history.map(::nightInputs)
+    val tonight = NightInputs(
+        hrv = heart.hrv.rmssdMs.value?.let { if (it > 0.0) ln(it) else null },
+        rhr = heart.resting.bpm.value?.toDouble(),
+        resp = heart.respiratoryRate.breathsPerMinute.value,
+        sleep = sleepPerformance.percent.value?.toDouble(),
     )
-    val calibration = if (zHistory.size >= readinessCalibrationMinNights) {
-        CalibrationStatus.READY
-    } else {
-        CalibrationStatus.CALIBRATING
-    }
-    val score = metric.value?.let { value ->
-        val rounded = roundHalfAwayFromZero(value.score).toInt().coerceIn(0, 100)
+    val baseline = Baselines.before(nights, nights.size)
+    val zHistory = priorCompositeZ(nights)
+    val metric = readinessComposite(baseline.inputsFor(tonight))
+    val compositeZ = metric.value?.compositeZ
+    val calibration = if (compositeZ != null) CalibrationStatus.READY else CalibrationStatus.CALIBRATING
+    val score = compositeZ?.let { z ->
+        val rounded = roundHalfAwayFromZero(personalRecoveryScore(z, zHistory)).toInt().coerceIn(0, 100)
         coreValue(rounded, metric.confidence)
     } ?: Metric.absent(reasonFromNote(metric.note))
-    val points = scorePoints(metric.value?.compositeZ, zHistory, metric.drivers)
+    val points = scorePoints(compositeZ, zHistory, metric.drivers)
     val drivers = listOf(
         driver(
             RecoveryDriverKind.HRV,
             points["HRV"],
-            hrv,
-            hrvBase.size,
+            tonight.hrv,
+            baseline.hrv.size,
             heart.hrv.rmssdMs.absentReason,
             metric.note,
             "HRV",
@@ -83,8 +66,8 @@ fun computeRecovery(
         driver(
             RecoveryDriverKind.RESTING_HEART_RATE,
             points["RHR"],
-            rhr,
-            rhrBase.size,
+            tonight.rhr,
+            baseline.rhr.size,
             heart.resting.bpm.absentReason,
             metric.note,
             "RHR",
@@ -92,8 +75,8 @@ fun computeRecovery(
         driver(
             RecoveryDriverKind.SLEEP,
             points["sleep"],
-            sleep,
-            sleepBase.size,
+            tonight.sleep,
+            baseline.sleep.size,
             sleepPerformance.percent.absentReason ?: AbsentReason.NO_SLEEP,
             metric.note,
             "sleep",
@@ -101,8 +84,8 @@ fun computeRecovery(
         driver(
             RecoveryDriverKind.RESPIRATORY_RATE,
             points["RR"],
-            resp,
-            respBase.size,
+            tonight.resp,
+            baseline.resp.size,
             heart.respiratoryRate.breathsPerMinute.absentReason,
             metric.note,
             "RR",
@@ -111,28 +94,84 @@ fun computeRecovery(
     return Recovery(score, calibration, drivers)
 }
 
+/** Nights of each input a baseline keeps, newest first. Bounds the work when old history is loaded. */
+internal const val recoveryBaselineNights = 60
+
+/** Score of a night that sits exactly on this user's typical composite. */
+internal const val recoveryTypicalScore = 58.0
+
+/** Personal spreads above typical at which a night reaches the green band (67). */
+internal const val recoveryGreenSpread = 0.45
+
+private const val GREEN_FROM = 67.0
+
+private fun logit(p: Double): Double = ln(p / (1.0 - p))
+
+private val typicalLogit = logit(recoveryTypicalScore / 100.0)
+private val spreadSlope = (logit(GREEN_FROM / 100.0) - typicalLogit) / recoveryGreenSpread
+
 /**
- * Prior composite z, oldest first.
- * Fewer than fourteen nights used the uncalibrated logistic, so z is logit(score/100).
- * After that, invert `score/100 = 1 / (1 + exp(-0.65·(z − centre) / sigma))`
- * with centre and sigma taken from the z's already reconstructed, the same pair
- * [calibratedReadinessScore] would have used that night.
+ * Score for composite [z] against this user's prior composites [zHistory].
+ * The night is placed in the user's own spread: u = (z − centre) / σ, with the centre
+ * capped so a lasting step-down stays visible. A typical night scores [recoveryTypicalScore],
+ * about a third of nights land green and about one in eight red.
+ * Until fourteen prior composites exist, centre is 0 and σ is the design spread.
  */
-private fun reconstructCompositeZ(history: List<DaySummary>): List<Double> {
-    val z = ArrayList<Double>()
-    for (day in history) {
-        val score = day.recovery.score.value ?: continue
-        val p = score.coerceIn(1, 99) / 100.0
-        val logit = ln(p / (1.0 - p))
-        if (z.size < readinessCalibrationMinNights) {
-            z.add(logit)
-        } else {
-            val sigma = max(readinessCalibrationSigmaFloor, mad(z)!!)
-            val centre = median(z)!!.coerceIn(-readinessCentreCap, readinessCentreCap)
-            z.add(centre + logit * sigma / readinessDesignSigma)
+internal fun personalRecoveryScore(z: Double, zHistory: List<Double>): Double {
+    val calibrated = zHistory.size >= readinessCalibrationMinNights
+    val sigma = if (calibrated) max(readinessCalibrationSigmaFloor, mad(zHistory)!!) else readinessDesignSigma
+    val centre = if (calibrated) median(zHistory)!!.coerceIn(-readinessCentreCap, readinessCentreCap) else 0.0
+    val u = (z - centre) / sigma
+    return 100.0 / (1.0 + exp(-(typicalLogit + spreadSlope * u)))
+}
+
+private data class NightInputs(val hrv: Double?, val rhr: Double?, val resp: Double?, val sleep: Double?)
+
+private fun nightInputs(day: DaySummary) = NightInputs(
+    hrv = day.heart.hrv.rmssdMs.value?.let { if (it > 0.0) ln(it) else null },
+    rhr = day.heart.resting.bpm.value?.toDouble(),
+    resp = day.heart.respiratoryRate.breathsPerMinute.value,
+    sleep = day.sleepPerformance.percent.value?.toDouble(),
+)
+
+/** The last [recoveryBaselineNights] values of each input before one night. */
+private class Baselines(val hrv: List<Double>, val rhr: List<Double>, val resp: List<Double>, val sleep: List<Double>) {
+    fun inputsFor(night: NightInputs): List<ReadinessInput> = listOf(
+        hrvInput(night.hrv, hrv),
+        rhrInput(night.rhr, rhr),
+        respInput(night.resp, resp),
+        ReadinessInput("sleep", night.sleep, sleep, goodSign = 1, weight = 0.10),
+    )
+
+    companion object {
+        fun before(nights: List<NightInputs>, end: Int): Baselines {
+            fun take(pick: (NightInputs) -> Double?): List<Double> {
+                val out = ArrayList<Double>()
+                var i = end - 1
+                while (i >= 0 && out.size < recoveryBaselineNights) {
+                    pick(nights[i])?.let(out::add)
+                    i--
+                }
+                out.reverse()
+                return out
+            }
+            return Baselines(take { it.hrv }, take { it.rhr }, take { it.resp }, take { it.sleep })
         }
     }
-    return z
+}
+
+/**
+ * Composite z of every prior night, oldest first, each against the baseline that preceded it.
+ * Computed from the stored inputs rather than read back from stored scores: an early night's
+ * stored score may be the population-norm provisional one, and inverting it would set the
+ * user's typical level from strangers' numbers.
+ */
+private fun priorCompositeZ(nights: List<NightInputs>): List<Double> {
+    val z = ArrayList<Double>()
+    for (i in nights.indices) {
+        readinessComposite(Baselines.before(nights, i).inputsFor(nights[i])).value?.let { z.add(it.compositeZ) }
+    }
+    return z.takeLast(recoveryBaselineNights)
 }
 
 private fun scorePoints(
@@ -141,11 +180,10 @@ private fun scorePoints(
     drivers: List<app.circlet.analytics.foundations.Driver>?,
 ): Map<String, Double> {
     if (compositeZ == null || drivers.isNullOrEmpty()) return emptyMap()
-    val full = calibratedReadinessScore(compositeZ, zHistory).score
+    val full = personalRecoveryScore(compositeZ, zHistory)
     val points = LinkedHashMap<String, Double>()
     for (driver in drivers) {
-        val without = calibratedReadinessScore(compositeZ - driver.contribution, zHistory).score
-        points[driver.label] = full - without
+        points[driver.label] = full - personalRecoveryScore(compositeZ - driver.contribution, zHistory)
     }
     return points
 }

@@ -41,7 +41,7 @@ sealed interface Loadable<out T> {
 val <T> Loadable<T>.valueOrNull: T? get() = (this as? Loadable.Ready<T>)?.value
 
 /** The one thing the day screens need to tell the user right now, if anything. */
-/** Scored nights the recovery baseline needs before it stops being provisional. */
+/** Measured nights the recovery baseline needs before it stops being provisional. */
 const val BASELINE_NIGHTS = 14
 
 sealed interface Notice {
@@ -76,8 +76,14 @@ data class DayUiState(
 
     val nightsRecorded: Int get() = history.count { it.sleep.present }
 
-    /** Earlier nights that carry a recovery score: what the personal baseline is built from. */
-    val baselineNights: Int get() = earlier.count { it.recovery.score.present }.coerceAtMost(BASELINE_NIGHTS)
+    /**
+     * Earlier nights the personal recovery baseline is built from: a measured HRV, or a calibrated
+     * score such as an imported WHOOP night. A provisional score from typical adult values is neither.
+     */
+    val baselineNights: Int get() = earlier.count {
+        it.heart.hrv.rmssdMs.present ||
+            (it.recovery.score.present && it.recovery.calibration == CalibrationStatus.READY)
+    }.coerceAtMost(BASELINE_NIGHTS)
 
     val baselineNightsLeft: Int get() = BASELINE_NIGHTS - baselineNights
 

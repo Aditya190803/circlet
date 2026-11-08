@@ -49,8 +49,9 @@ import kotlin.math.roundToInt
 /**
  * Bump when stored days need recomputing. Version 9 repairs phone-step timestamp reversals.
  * Version 11 scores skin temperature from the warm half of every night, on both strap families.
+ * Version 12 rebuilds the recovery baseline from each night's inputs and re-centres the score scale.
  */
-const val CIRCLET_ALGORITHM_VERSION: Int = 11
+const val CIRCLET_ALGORITHM_VERSION: Int = 12
 
 /** The [InsightEngine] the app passes to storage. The maths live in [CircletInsight]. */
 fun circletInsightEngine(): InsightEngine = CircletInsight()
