@@ -38,6 +38,7 @@ import app.circlet.core.LinkState
 import app.circlet.core.LiveWorkout
 import app.circlet.core.MetricKind
 import app.circlet.core.SkinTempFlag
+import app.circlet.core.celsius
 import app.circlet.core.StrapState
 import app.circlet.core.WellnessKind
 import app.circlet.ui.design.AbsentDash
@@ -407,14 +408,19 @@ private fun KeyStatistics(state: DayUiState, summary: DaySummary?, loading: Bool
         val skin = summary.skinTemperature
         val scored = skin != null && skin.flag != SkinTempFlag.NOT_ENOUGH_BASELINE
         val deviation = if (scored) skin?.deviation?.value else null
+        val celsius = skin?.celsius
         StatRow(
-            "Skin temperature", deviation?.signedDeviation(), "SD",
+            "Skin temperature",
+            celsius?.decimal(1) ?: deviation?.signedDeviation(),
+            if (celsius != null) "°C" else "SD",
             note = when {
-                skin == null -> "Current temperature unavailable from this strap"
+                skin == null -> "No reading for this night yet"
+                celsius != null && deviation != null -> "${deviation.signedDeviation()} SD versus your usual nights"
+                celsius != null -> "Measured by your strap overnight"
                 !scored -> "Building your baseline, ${skin.baselineNights} nights so far"
-                else -> "Deviation from your own nights"
+                else -> "Versus your usual nights"
             },
-            absent = if (scored && deviation == null) skin?.deviation?.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
+            absent = if (celsius == null && scored && deviation == null) skin?.deviation?.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
             onClick = { onOpenMetric(MetricKind.SKIN_TEMPERATURE) },
         )
         Divider()

@@ -22,6 +22,15 @@ data class SkinTemperature(
     val unit: SkinTemperatureUnit = SkinTemperatureUnit.ADC_COUNTS,
 )
 
+/**
+ * The night's skin temperature in degrees Celsius when one is known: WHOOP's own figure on an
+ * imported night, or the strap's own warm-plateau reading on WHOOP 5.0, which reports centi-degrees.
+ * Null on WHOOP 4.0, whose thermistor counts WHOOP converts only in its cloud.
+ */
+val SkinTemperature.celsius: Double?
+    get() = importedCelsius
+        ?: settledMeanCounts?.takeIf { unit == SkinTemperatureUnit.CENTI_CELSIUS && it > 0.0 }?.div(100.0)
+
 /** Whether a night's relative skin temperature is ordinary, high, or not yet comparable. */
 enum class SkinTempFlag {
     NORMAL,

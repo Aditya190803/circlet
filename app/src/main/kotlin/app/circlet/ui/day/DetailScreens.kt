@@ -26,6 +26,7 @@ import app.circlet.core.RecoveryDriver
 import app.circlet.core.RecoveryDriverKind
 import app.circlet.core.SkinTempFlag
 import app.circlet.core.SkinTemperature
+import app.circlet.core.celsius
 import app.circlet.core.SleepSession
 import app.circlet.ui.design.AbsentDash
 import app.circlet.ui.design.StatCell
@@ -312,49 +313,71 @@ fun RecoveryScreen(state: DayUiState, onBack: () -> Unit, onRetry: () -> Unit) {
 }
 
 /**
- * Skin temperature for the night, as a deviation in standard deviations of the user's own nights.
- * Degrees appear only for a night imported from WHOOP, which carries WHOOP's own figure.
+ * Skin temperature for the night. Degrees appear when they are known: WHOOP's own figure on an
+ * imported night, or the reading a WHOOP 5.0 reports. On WHOOP 4.0 the night is shown as a deviation
+ * in standard deviations of the user's own nights, because that strap reports uncalibrated counts.
  */
 @Composable
 private fun SkinTemperatureCard(skin: SkinTemperature?) {
     Card("Skin temperature") {
-        when {
-            skin == null -> Text(
-                "Current body temperature is unavailable: the strap does not provide a verified reading in °C or °F through this connection. " +
-                    "Nightly relative readings appear here when enough usable history is available.",
+        if (skin == null) {
+            Text(
+                "No skin temperature for this night yet. It appears once the strap has recorded enough of a night's sleep.",
                 style = body(13.sp, Palette.Faint),
             )
-            skin.importedCelsius != null -> {
-                StatRow("Skin temperature", skin.importedCelsius?.decimal(1), "°C")
-                Spacer(Modifier.height(6.dp))
-                Text("As scored by WHOOP, from your imported history.", style = body(12.sp, Palette.Faint))
-            }
-            skin.flag == SkinTempFlag.NOT_ENOUGH_BASELINE -> Text(
-                "Building your baseline. ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"} so far, " +
-                    "so there is nothing to compare yet. Readings are a deviation from your own nights, not a temperature.",
-                style = body(13.sp, Palette.Faint),
-            )
-            else -> {
-                val deviation = skin.deviation.value
-                StatRow(
-                    "Deviation", deviation?.signedDeviation(), "SD",
-                    color = if (skin.flag == SkinTempFlag.ELEVATED) Palette.Warn else Palette.White,
-                    absent = if (deviation == null) skin.deviation.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    when {
-                        deviation == null -> "No reading for this night. The value is in standard deviations of your own nights, never degrees."
-                        skin.flag == SkinTempFlag.ELEVATED ->
-                            "Above your usual nights, compared with ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"}. This is relative to you, not a temperature."
-                        else ->
-                            "Close to your usual nights, compared with ${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"}. This is relative to you, not a temperature."
-                    },
-                    style = body(12.sp, Palette.Faint),
-                )
-            }
+            return@Card
         }
+        val celsius = skin.celsius
+        if (celsius != null) {
+            StatRow("Skin temperature", celsius.decimal(1), "°C")
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (skin.importedCelsius != null) {
+                    "As scored by WHOOP, from your imported history."
+                } else {
+                    "Measured by your strap over the warm part of the night, when the wrist was covered and settled."
+                },
+                style = body(12.sp, Palette.Faint),
+            )
+            if (skin.importedCelsius != null) return@Card
+            Spacer(Modifier.height(12.dp))
+        }
+        val nights = "${skin.baselineNights} prior ${if (skin.baselineNights == 1) "night" else "nights"}"
+        if (skin.flag == SkinTempFlag.NOT_ENOUGH_BASELINE) {
+            Text(
+                "Building your baseline: $nights so far. The comparison with your usual nights starts after seven.",
+                style = body(13.sp, Palette.Faint),
+            )
+            if (celsius == null) Gen4Note()
+            return@Card
+        }
+        val deviation = skin.deviation.value
+        StatRow(
+            "Versus your usual", deviation?.signedDeviation(), "SD",
+            color = if (skin.flag == SkinTempFlag.ELEVATED) Palette.Warn else Palette.White,
+            absent = if (deviation == null) skin.deviation.absentReason ?: AbsentReason.NOT_ENOUGH_DATA else null,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            when {
+                deviation == null -> "No comparable reading for this night."
+                skin.flag == SkinTempFlag.ELEVATED -> "Above your usual nights for two nights running, compared with $nights."
+                else -> "Close to your usual nights, compared with $nights."
+            },
+            style = body(12.sp, Palette.Faint),
+        )
+        if (celsius == null) Gen4Note()
     }
+}
+
+@Composable
+private fun Gen4Note() {
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "WHOOP 4.0 reports raw sensor counts, which WHOOP turns into degrees only on its servers. " +
+            "Circlet will not guess a temperature, so it shows how tonight compares with your own nights.",
+        style = body(12.sp, Palette.Faint),
+    )
 }
 
 private fun RecoveryDriverKind.label() = when (this) {
